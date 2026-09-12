@@ -32,10 +32,18 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
-body{background:#060918;font-family:'Inter',sans-serif;display:flex;justify-content:center;align-items:flex-start;min-height:100vh;min-height:100dvh;overflow-x:hidden}
+html,body{
+  height:100%;
+  overflow:hidden;
+  position:fixed;
+  top:0;left:0;right:0;bottom:0;
+  width:100%;
+  -webkit-overflow-scrolling:auto;
+}
+body{background:#060918;font-family:'Inter',sans-serif;display:flex;justify-content:center;align-items:flex-start;min-height:100vh;min-height:100dvh}
 
 .phone{
-  width:100%;max-width:430px;height:100vh;height:100dvh;background:#07091A;
+  width:100%;max-width:430px;height:100%;background:#07091A;
   border-radius:0;border:none;
   overflow:hidden;position:relative;display:flex;flex-direction:column;
   box-shadow:none;
