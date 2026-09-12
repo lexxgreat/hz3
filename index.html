@@ -380,12 +380,13 @@ body{background:#060918;font-family:'Inter',sans-serif;display:flex;justify-cont
 /* ── DOCK ── */
 .dock{
   display:flex;align-items:flex-start;justify-content:space-around;
-  padding:8px 8px max(48px, env(safe-area-inset-bottom));
+  padding:8px 8px max(36px, env(safe-area-inset-bottom));
   background:#07091A;
   border-top:0.5px solid rgba(255,255,255,0.06);
   flex-shrink:0;position:relative;z-index:3;
   min-height:50px;
   /* Dock extends to bottom of .phone, with bottom padding = safe-area-inset-bottom.
+     36px fallback matches typical Android 3-button nav height — minimizes extra dark space.
      Background color matches .phone (#07091A) so it looks continuous with the system nav area.
      Icons stay at the top of the dock, above the system nav overlay. */
 }
