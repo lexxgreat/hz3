@@ -380,15 +380,13 @@ body{background:#060918;font-family:'Inter',sans-serif;display:flex;justify-cont
 /* ── DOCK ── */
 .dock{
   display:flex;align-items:flex-start;justify-content:space-around;
-  padding:8px 8px max(36px, env(safe-area-inset-bottom));
+  padding:8px 8px 8px;
   background:#07091A;
   border-top:0.5px solid rgba(255,255,255,0.06);
   flex-shrink:0;position:relative;z-index:3;
   min-height:50px;
-  /* Dock extends to bottom of .phone, with bottom padding = safe-area-inset-bottom.
-     36px fallback matches typical Android 3-button nav height — minimizes extra dark space.
-     Background color matches .phone (#07091A) so it looks continuous with the system nav area.
-     Icons stay at the top of the dock, above the system nav overlay. */
+  /* CSS default: small padding. JS (below) will dynamically set padding-bottom
+     to exactly match the system nav height via visualViewport API. */
 }
 
 /* Defensive: force dock visible whenever any non-auth/non-splash screen is active.
@@ -3085,8 +3083,55 @@ onAuthStateChanged(auth, async (user) => {
     });
   }
 
-  // iOS: handle safe-area insets so content doesn't go under the notch
-  // (env() is applied directly in CSS — no JS needed. This block intentionally left minimal.)
+  // ── DYNAMIC DOCK PADDING ──
+  // Auto-detect system nav height (Android 3-button / gesture pill / iOS home indicator)
+  // and set .dock padding-bottom to exactly match it — no extra dark space on any device.
+  function adjustDockPadding() {
+    const dock = document.querySelector('.dock');
+    if (!dock) return;
+
+    let navHeight = 0;
+
+    // Method 1: probe env(safe-area-inset-bottom) via temp element
+    try {
+      const probe = document.createElement('div');
+      probe.style.cssText = 'position:fixed;left:-9999px;top:0;width:0;height:env(safe-area-inset-bottom);';
+      document.body.appendChild(probe);
+      navHeight = probe.offsetHeight || 0;
+      document.body.removeChild(probe);
+    } catch (e) {}
+
+    // Method 2: visualViewport API (works when env() returns 0 on Android)
+    if (navHeight < 8 && window.visualViewport) {
+      const layoutHeight = document.documentElement.clientHeight || window.innerHeight;
+      const visualHeight = window.visualViewport.height;
+      const diff = layoutHeight - visualHeight;
+      if (diff > 0 && diff < 200) {  // sanity check: nav height should be reasonable
+        navHeight = diff;
+      }
+    }
+
+    // Method 3: Fallback (if both methods failed)
+    if (navHeight < 8) {
+      navHeight = 36;  // typical Android 3-button nav height
+    }
+
+    // Apply the calculated padding
+    dock.style.paddingBottom = navHeight + 'px';
+    console.log('[PWA] Dock padding-bottom set to', navHeight + 'px (layout:', document.documentElement.clientHeight + ', visual:', (window.visualViewport ? window.visualViewport.height : 'n/a') + ')');
+  }
+
+  // Run on load, resize, orientation change, and visualViewport resize
+  window.addEventListener('load', adjustDockPadding);
+  window.addEventListener('resize', adjustDockPadding);
+  window.addEventListener('orientationchange', adjustDockPadding);
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', adjustDockPadding);
+    window.visualViewport.addEventListener('scroll', adjustDockPadding);
+  }
+  // Run immediately (in case load already fired)
+  if (document.readyState === 'complete') adjustDockPadding();
+  else setTimeout(adjustDockPadding, 100);  // fallback after a delay
 })();
 </script>
 
