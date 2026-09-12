@@ -381,6 +381,21 @@ body{background:#060918;font-family:'Inter',sans-serif;display:flex;justify-cont
   min-height:50px;
   /* Note: .phone already provides padding-bottom: max(56px, env(safe-area-inset-bottom)), so dock only needs its own internal 8px */
 }
+
+/* Defensive: force dock visible whenever any non-auth/non-splash screen is active.
+   This overrides any JS or inline style="display:none" that might accidentally hide the dock.
+   Auth and splash screens should hide the dock (handled by JS). */
+#screen-main.active ~ .dock,
+#screen-todo.active ~ .dock,
+#screen-hist.active ~ .dock,
+#screen-cloud.active ~ .dock,
+#screen-wishes.active ~ .dock,
+#screen-wishchat.active ~ .dock,
+#screen-chat.active ~ .dock,
+#screen-prompt.active ~ .dock,
+#screen-tags.active ~ .dock {
+  display: flex !important;
+}
 .dock-item{
   display:flex;flex-direction:column;align-items:center;gap:4px;
   cursor:pointer;padding:7px 10px;border-radius:16px;
