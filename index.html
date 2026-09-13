@@ -805,6 +805,13 @@ body{background:#060918;font-family:'Inter',sans-serif;display:flex;justify-cont
     <div style="padding:12px 16px 0;">
       <button onclick="goTo('tags')" style="width:100%;background:rgba(255,255,255,0.04);border:0.5px solid rgba(255,255,255,0.1);border-radius:12px;padding:9px;color:rgba(255,255,255,0.7);font-size:12.5px;font-weight:500;cursor:pointer;font-family:'Inter',sans-serif;">🏷️ Управление тегами</button>
     </div>
+    <!-- Account status / Register button -->
+    <div id="account-widget" style="display:none;padding:12px 16px 0;">
+      <button onclick="showAccountModal()" style="width:100%;background:rgba(108,71,255,0.08);border:0.5px solid rgba(108,71,255,0.35);border-radius:12px;padding:11px;color:#fff;font-size:12.5px;font-weight:600;cursor:pointer;font-family:Inter,sans-serif;display:flex;align-items:center;justify-content:space-between;">
+        <span id="account-status-text">💾 Сохранить данные</span>
+        <span style="color:rgba(255,255,255,0.4);">→</span>
+      </button>
+    </div>
     <div id="balance-widget" style="display:flex;align-items:center;justify-content:space-between;padding:10px 16px;margin:12px 16px 0;background:rgba(255,255,255,0.04);border:0.5px solid rgba(255,255,255,0.1);border-radius:12px;">
       <span style="font-size:12.5px;color:rgba(255,255,255,0.55);">💰 Баланс Polza: <span id="balance-amount" style="color:rgba(139,92,246,0.95);font-weight:600;">—</span></span>
       <button onclick="loadBalance()" style="background:none;border:none;color:rgba(255,255,255,0.35);font-size:14px;cursor:pointer;padding:4px;">↻</button>
@@ -884,7 +891,7 @@ body{background:#060918;font-family:'Inter',sans-serif;display:flex;justify-cont
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import { getFirestore, collection, addDoc, getDocs, updateDoc, deleteDoc, doc, orderBy, query, setDoc } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
-import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, signInAnonymously, linkWithCredential, EmailAuthProvider } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyAm5Sr2UO0PfKMe3YFkQ_XsWonKUMGDOKo",
@@ -900,6 +907,7 @@ const db = getFirestore(app);
 const auth = getAuth(app);
 
 let currentUid = null; // назначается после входа, все данные пользователя лежат под users/{currentUid}/...
+let isAnonymousUser = false; // true если пользователь вошёл как аноним (auto sign-in)
 
 function uCol(name) { return collection(db, 'users', currentUid, name); }
 function uDocRef(name, id) { return doc(db, 'users', currentUid, name, id); }
@@ -1319,6 +1327,8 @@ async function saveNote(text, type) {
     if (newNote) {
       setTimeout(() => findAndSaveLinksForNote(newNote), 100);
     }
+    // Проверяем, не пора ли предложить регистрацию
+    setTimeout(checkShowRegisterPrompt, 500);
   } catch(e) {
     setStatus('Ошибка: ' + e.message);
   }
@@ -3659,7 +3669,7 @@ function goTo(screen) {
   if (screen === 'hist') loadNotes();
   if (screen === 'todo') loadNotes();
   if (screen === 'chat') { renderChat(); checkRemindersOnOpen(); }
-  if (screen === 'prompt') { renderPromptRules(); loadBalance(); }
+  if (screen === 'prompt') { renderPromptRules(); loadBalance(); updateAccountWidget(); }
   if (screen === 'tags') renderTagsScreen();
   if (screen === 'cloud') renderWordCloud();
   if (screen === 'wishes') { renderWishes(); showHintOnce('wishes_intro','У каждого желания свой отдельный чат с ИИ — обсуди план прямо там.','wishes-hint'); }
@@ -5123,12 +5133,30 @@ document.getElementById('auth-submit-btn').addEventListener('click', async () =>
     if (password !== password2) { setAuthError('Пароли не совпадают'); return; }
   }
   try {
-    if (authMode === 'login') {
-      await signInWithEmailAndPassword(auth, email, password);
+    // Если пользователь уже анонимно вошёл — апгрейдим его аккаунт (сохраняя uid + данные)
+    if (isAnonymousUser && auth.currentUser) {
+      if (authMode === 'register') {
+        // Регистрируем anonymous → email (uid сохраняется, данные не теряются)
+        const credential = EmailAuthProvider.credential(email, password);
+        await linkWithCredential(auth.currentUser, credential);
+        console.log('[Auth] Anonymous upgraded to email account, uid preserved:', currentUid);
+      } else {
+        // Логин существующего аккаунта — нужно сначала разлогинить anonymous
+        await signOut(auth);
+        await signInWithEmailAndPassword(auth, email, password);
+      }
     } else {
-      await createUserWithEmailAndPassword(auth, email, password);
+      // Обычный логин/регистрация
+      if (authMode === 'login') {
+        await signInWithEmailAndPassword(auth, email, password);
+      } else {
+        await createUserWithEmailAndPassword(auth, email, password);
+      }
     }
     // дальше подхватит onAuthStateChanged
+    // Закрываем auth modal если он был открыт
+    const authModal = document.getElementById('register-prompt-modal');
+    if (authModal) authModal.classList.remove('open');
   } catch(e) {
     setAuthError(friendlyAuthError(e.code));
   }
@@ -5165,6 +5193,126 @@ function clearLocalUserData() {
   notes = []; tags = []; promptRules = []; chatHistory = [];
 }
 
+// ── REGISTER PROMPT — показываем после 10 заметок или 1 желания ──
+// Пользователь остаётся анонимом, но мягко предлагаем зарегистрироваться
+function checkShowRegisterPrompt() {
+  if (!isAnonymousUser) return;  // только для анонимных
+  const notesCount = (notes || []).length;
+  const wishesCount = (wishes || []).length;
+  // localStorage флаг чтобы не показывать повторно
+  const dismissed = localStorage.getItem('registerPromptDismissed') === '1';
+  if (dismissed) return;
+  if (notesCount < 10 && wishesCount < 1) return;  // ещё рано
+  // Показываем modal
+  showRegisterPromptModal(notesCount, wishesCount);
+}
+
+function showRegisterPromptModal(notesCount, wishesCount) {
+  let modal = document.getElementById('register-prompt-modal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'register-prompt-modal';
+    modal.className = 'modal-overlay';
+    document.body.appendChild(modal);
+  }
+  modal.innerHTML = `
+    <div class="modal" style="max-width:420px;text-align:center;">
+      <div style="font-size:48px;margin-bottom:14px;">💾</div>
+      <div class="modal-title" style="font-size:18px;line-height:1.4;">Сохранить ваши данные?</div>
+      <div style="font-size:13px;color:rgba(255,255,255,0.6);line-height:1.5;margin:10px 0 18px;font-family:Inter,sans-serif;">
+        У вас уже ${notesCount} ${pluralize(notesCount, 'заметка', 'заметки', 'заметок')}${wishesCount > 0 ? ' и ' + wishesCount + ' ' + pluralize(wishesCount, 'желание', 'желания', 'желаний') : ''}.<br>
+        Зарегистрируйтесь, чтобы:<br>
+        • получить доступ к данным с любого устройства<br>
+        • не потерять их при очистке браузера<br>
+        • синхронизировать между телефонами и компьютером
+      </div>
+      <div class="modal-btns">
+        <button class="modal-cancel" onclick="dismissRegisterPrompt()" style="flex:1;">Позже</button>
+        <button class="modal-save" onclick="openRegisterFromPrompt()" style="flex:2;">Создать аккаунт</button>
+      </div>
+      <button onclick="openLoginFromPrompt()" style="margin-top:10px;background:none;border:none;color:rgba(255,255,255,0.4);font-size:12px;cursor:pointer;font-family:Inter,sans-serif;text-decoration:underline;">У меня уже есть аккаунт</button>
+    </div>`;
+  modal.classList.add('open');
+}
+
+function pluralize(n, one, few, many) {
+  const m10 = n % 10, m100 = n % 100;
+  if (m10 === 1 && m100 !== 11) return one;
+  if (m10 >= 2 && m10 <= 4 && (m100 < 10 || m100 >= 20)) return few;
+  return many;
+}
+
+function dismissRegisterPrompt() {
+  const modal = document.getElementById('register-prompt-modal');
+  if (modal) modal.classList.remove('open');
+  localStorage.setItem('registerPromptDismissed', '1');
+}
+window.dismissRegisterPrompt = dismissRegisterPrompt;
+
+// Показать модалку аккаунта (кнопка в Настройках)
+function showAccountModal() {
+  // Если уже залогинен (не аноним) — показываем профиль
+  if (!isAnonymousUser && currentUid) {
+    alert('Вы уже вошли: ' + (auth.currentUser?.email || 'пользователь'));
+    return;
+  }
+  // Иначе — показываем стандартный prompt modal
+  const notesCount = (notes || []).length;
+  const wishesCount = (wishes || []).length;
+  showRegisterPromptModal(notesCount, wishesCount);
+}
+window.showAccountModal = showAccountModal;
+
+// Обновляем виджет аккаунта в Настройках
+function updateAccountWidget() {
+  const widget = document.getElementById('account-widget');
+  const text = document.getElementById('account-status-text');
+  if (!widget || !text) return;
+  if (isAnonymousUser) {
+    widget.style.display = 'block';
+    text.textContent = '💾 Сохранить данные (создать аккаунт)';
+  } else if (currentUid) {
+    widget.style.display = 'block';
+    text.textContent = '👤 Аккаунт: ' + (auth.currentUser?.email || 'пользователь');
+  } else {
+    widget.style.display = 'none';
+  }
+}
+window.updateAccountWidget = updateAccountWidget;
+
+function openRegisterFromPrompt() {
+  const modal = document.getElementById('register-prompt-modal');
+  if (modal) modal.classList.remove('open');
+  // Переключаемся в режим регистрации и показываем auth экран
+  authMode = 'register';
+  document.getElementById('auth-title').textContent = 'Регистрация';
+  document.getElementById('auth-submit-btn').textContent = 'Зарегистрироваться';
+  document.getElementById('auth-toggle-btn').textContent = 'Уже есть аккаунт? Войти';
+  document.getElementById('auth-password2').style.display = '';
+  document.getElementById('auth-password2').value = '';
+  document.getElementById('auth-email').value = '';
+  document.getElementById('auth-password').value = '';
+  setAuthError('');
+  // Показываем auth screen как модалку (поверх текущего экрана)
+  document.getElementById('screen-auth').classList.add('active');
+}
+window.openRegisterFromPrompt = openRegisterFromPrompt;
+
+function openLoginFromPrompt() {
+  const modal = document.getElementById('register-prompt-modal');
+  if (modal) modal.classList.remove('open');
+  authMode = 'login';
+  document.getElementById('auth-title').textContent = 'Вход';
+  document.getElementById('auth-submit-btn').textContent = 'Войти';
+  document.getElementById('auth-toggle-btn').textContent = 'Нет аккаунта? Зарегистрироваться';
+  document.getElementById('auth-password2').style.display = 'none';
+  document.getElementById('auth-email').value = '';
+  document.getElementById('auth-password').value = '';
+  setAuthError('');
+  document.getElementById('screen-auth').classList.add('active');
+}
+window.openLoginFromPrompt = openLoginFromPrompt;
+
 async function initUserData() {
   // 4 похода в базу не зависят друг от друга — грузим параллельно, а не по очереди
   await Promise.all([
@@ -5183,6 +5331,7 @@ onAuthStateChanged(auth, async (user) => {
   document.getElementById('screen-splash').classList.remove('active'); // сплэш скрываем в любом случае — статус уже известен
   if (user) {
     currentUid = user.uid;
+    isAnonymousUser = user.isAnonymous;
     document.getElementById('screen-auth').classList.remove('active');
     if (dockEl) dockEl.style.display = '';
     if (statusEl) statusEl.style.display = '';
@@ -5194,16 +5343,27 @@ onAuthStateChanged(auth, async (user) => {
     setTimeout(() => checkAndGenerateDailySummary(), 2000);
     // AI-психолог — раз в 7 дней, после daily summary
     setTimeout(() => checkAndGeneratePsychologistInsight(), 5000);
+    // Проверяем, нужно ли показать prompt «Зарегистрируйся» (после 10 заметок или 1 желания)
+    setTimeout(checkShowRegisterPrompt, 3000);
   } else {
+    // Пользователь не залогинен — пробуем авто-войти в anonymous
+    // Это позволит новому пользователю сразу начать пользоваться приложением
     currentUid = null;
+    isAnonymousUser = false;
     clearLocalUserData();
     if (dockEl) dockEl.style.display = 'none';
     if (statusEl) statusEl.style.display = 'none';
     document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
-    document.getElementById('screen-auth').classList.add('active');
-    document.getElementById('auth-email').value = '';
-    document.getElementById('auth-password').value = '';
-    document.getElementById('auth-password2').value = '';
+    // НЕ показываем screen-auth — вместо этого авто-входим в anonymous
+    // onAuthStateChanged сработает снова когда anonymous uid будет создан
+    try {
+      await signInAnonymously(auth);
+      console.log('[Auth] Auto anonymous sign-in successful');
+    } catch(e) {
+      console.error('[Auth] Anonymous sign-in failed:', e);
+      // Если anonymous не сработал (например, отключён в Firebase console) — показываем auth screen
+      document.getElementById('screen-auth').classList.add('active');
+    }
   }
 });
 </script>
