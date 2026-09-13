@@ -1664,6 +1664,32 @@ async function toggleDone(id, currentDone) {
     });
     if (willBeDone) celebrateTaskDone(); // празднуем только при завершении, не при отмене
     await loadNotes();
+
+    // Если у заметки есть milestoneLink — синхронизируем с milestone в желании
+    const note = notes.find(n => n.id === id);
+    if (note && note.milestoneLink) {
+      const [wishId, msId] = note.milestoneLink.split('/');
+      if (wishId && msId) {
+        const w = wishes.find(x => x.id === wishId);
+        if (w && w.milestones) {
+          const ms = w.milestones.find(m => m.id === msId);
+          if (ms && ms.done !== willBeDone) {
+            ms.done = willBeDone;
+            ms.completedAt = willBeDone ? new Date().toISOString() : null;
+            // Проверяем все ли milestones done
+            const allDone = w.milestones.length > 0 && w.milestones.every(m => m.done);
+            const newState = allDone ? 'done' : 'active';
+            await updateDoc(uDocRef('wishes', wishId), {
+              milestones: w.milestones,
+              state: newState,
+              done: allDone
+            });
+            await loadWishes();
+            renderWishes();
+          }
+        }
+      }
+    }
   } catch(e) { alert('Ошибка: ' + e.message); }
 }
 window.toggleDone = toggleDone;
@@ -2503,7 +2529,12 @@ async function showWishSuggestionModal(text) {
   try {
     suggestion = await suggestWishEnhancements(text);
   } catch(e) {
-    suggestion = { icon:'⭐', category:'other', moodImagePrompt:'dreamy landscape oil painting calm mood', milestones:[] };
+    suggestion = {
+      icon: '⭐',
+      category: 'other',
+      moodImagePrompt: `${text.slice(0, 100)}, oil painting style, warm lighting, vibrant colors, peaceful mood`,
+      milestones: []
+    };
   }
 
   // Сохраняем suggestion в глобальную переменную для confirm
@@ -2511,6 +2542,7 @@ async function showWishSuggestionModal(text) {
 
   // Рендерим форму с возможностью редактировать
   const cat = WISH_CATEGORIES[suggestion.category] || WISH_CATEGORIES.other;
+  const shortTagVal = suggestion.shortTag || text.toLowerCase().split(/\s+/).filter(w => w.length > 2).pop() || 'желание';
   content.innerHTML = `
     <div style="margin-bottom:14px;">
       <div style="font-size:10px;color:rgba(255,255,255,0.5);margin-bottom:6px;text-transform:uppercase;letter-spacing:1px;">Текст желания</div>
@@ -2527,6 +2559,10 @@ async function showWishSuggestionModal(text) {
           ${Object.entries(WISH_CATEGORIES).map(([k,v]) => `<option value="${k}" ${k===suggestion.category?'selected':''} style="background:#0F1228;color:#fff;">${v.icon} ${k}</option>`).join('')}
         </select>
       </div>
+      <div style="flex:2;">
+        <div style="font-size:10px;color:rgba(255,255,255,0.5);margin-bottom:6px;text-transform:uppercase;letter-spacing:1px;">Короткий тег</div>
+        <input id="ws-shorttag" value="${escHtml(shortTagVal)}" style="width:100%;background:rgba(255,255,255,0.04);border:0.5px solid rgba(108,71,255,0.3);border-radius:8px;padding:8px 10px;color:#fff;font-size:13px;font-family:Inter,sans-serif;outline:none;" placeholder="бали">
+      </div>
     </div>
     <div style="margin-bottom:14px;">
       <div style="font-size:10px;color:rgba(255,255,255,0.5);margin-bottom:6px;text-transform:uppercase;letter-spacing:1px;">Промпт для картинки (англ)</div>
@@ -2537,7 +2573,8 @@ async function showWishSuggestionModal(text) {
       <textarea id="ws-milestones" style="width:100%;background:rgba(255,255,255,0.04);border:0.5px solid rgba(108,71,255,0.3);border-radius:8px;padding:8px 10px;color:#fff;font-size:12px;font-family:Inter,sans-serif;resize:vertical;min-height:90px;outline:none;" rows="5">${(suggestion.milestones || []).map(m => escHtml(m)).join('\n')}</textarea>
     </div>
     <div style="background:rgba(0,212,255,0.06);border:0.5px solid rgba(0,212,255,0.2);border-radius:8px;padding:8px 10px;font-size:11px;color:rgba(0,212,255,0.7);line-height:1.5;">
-      💡 После сохранения AI сгенерирует картинку-настроение (~10-30 сек). Карточка обновится автоматически.
+      💡 Каждый шаг станет задачей в Тудушке с тегом #${escHtml(shortTagVal)}.<br>
+      💡 После сохранения AI сгенерирует картинку-настроение (~10-30 сек).
     </div>
   `;
 }
@@ -2557,8 +2594,11 @@ async function confirmWishSuggestion() {
   const category = document.getElementById('ws-category').value;
   const moodImagePrompt = document.getElementById('ws-prompt').value.trim();
   const milestonesText = document.getElementById('ws-milestones').value.trim();
+  const shortTagInput = document.getElementById('ws-shorttag');
+  const shortTag = (shortTagInput ? shortTagInput.value.trim() : '') || text.toLowerCase().split(/\s+/).filter(w => w.length > 2).pop() || 'желание';
+
   const milestones = milestonesText.split('\n').map(s => s.trim()).filter(s => s.length > 0)
-    .map(s => ({ id: 'ms_' + Date.now() + '_' + Math.random().toString(36).slice(2,7), text: s, done: false, completedAt: null }));
+    .map(s => ({ id: 'ms_' + Date.now() + '_' + Math.random().toString(36).slice(2,7), text: s, done: false, completedAt: null, noteId: null }));
 
   const btn = document.getElementById('ws-save-btn');
   btn.disabled = true; btn.textContent = 'Сохранение…';
@@ -2566,14 +2606,39 @@ async function confirmWishSuggestion() {
     const docRef = await addDoc(uCol('wishes'), {
       text, done: false,
       state: milestones.length > 0 ? 'plan' : 'dream',
-      icon, category, moodImagePrompt,
+      icon, category, moodImagePrompt, shortTag,
       milestones,
       moodImage: null,
       createdAt: new Date().toISOString(),
     });
+    // Создаём задачи в тудушке для каждого milestone
+    for (const ms of milestones) {
+      try {
+        const noteRef = await addDoc(notesCol(), {
+          text: ms.text,
+          type: 'text',
+          tag: shortTag,
+          inTodo: true,
+          todoOrder: Date.now() + Math.random(),
+          done: false,
+          doneAt: null,
+          milestoneLink: docRef.id + '/' + ms.id,
+          wishId: docRef.id,
+          createdAt: new Date().toISOString(),
+        });
+        ms.noteId = noteRef.id;
+      } catch(e) {
+        console.warn('[Wish] failed to create todo for milestone', ms.id, e);
+      }
+    }
+    // Сохраняем noteId обратно в wish
+    if (milestones.some(m => m.noteId)) {
+      await updateDoc(uDocRef('wishes', docRef.id), { milestones });
+    }
     closeWishSuggestion();
     await loadWishes();
     renderWishes();
+    await loadNotes();
     // Запускаем генерацию картинки в фоне (async, не блокируя UI)
     if (moodImagePrompt) {
       setTimeout(() => generateWishMoodImage(docRef.id, moodImagePrompt), 500);
@@ -2619,6 +2684,19 @@ async function toggleMilestone(wishId, msId) {
   ms.done = !ms.done;
   ms.completedAt = ms.done ? new Date().toISOString() : null;
   await updateDoc(uDocRef('wishes', wishId), { milestones: w.milestones });
+
+  // Синхронизируем с задачей в тудушке (если есть noteId)
+  if (ms.noteId) {
+    try {
+      await updateDoc(uDocRef('notes', ms.noteId), {
+        done: ms.done,
+        doneAt: ms.done ? new Date().toISOString() : null
+      });
+    } catch(e) {
+      console.warn('[Wish] failed to sync milestone with todo', ms.noteId, e);
+    }
+  }
+
   // Если все milestones done → состояние 'done', иначе 'active'
   const allDone = w.milestones.length > 0 && w.milestones.every(m => m.done);
   if (allDone && w.state !== 'done') {
@@ -2628,6 +2706,7 @@ async function toggleMilestone(wishId, msId) {
     await updateDoc(uDocRef('wishes', wishId), { state: 'active', done: false });
   }
   await loadWishes(); renderWishes();
+  await loadNotes();  // перезагружаем задачи в тудушке
   openWishDetail(wishId);
 }
 window.toggleMilestone = toggleMilestone;
@@ -2637,10 +2716,33 @@ async function addMilestone(wishId) {
   if (!text || !text.trim()) return;
   const w = wishes.find(x => x.id === wishId);
   if (!w) return;
-  const newMs = { id: 'ms_' + Date.now() + '_' + Math.random().toString(36).slice(2,7), text: text.trim(), done: false, completedAt: null };
+  const msId = 'ms_' + Date.now() + '_' + Math.random().toString(36).slice(2,7);
+  const newMs = { id: msId, text: text.trim(), done: false, completedAt: null, noteId: null };
   const milestones = [...(w.milestones || []), newMs];
   await updateDoc(uDocRef('wishes', wishId), { milestones, state: w.state === 'dream' ? 'plan' : w.state });
+
+  // Создаём задачу в тудушке с тегом желания
+  try {
+    const noteRef = await addDoc(notesCol(), {
+      text: text.trim(),
+      type: 'text',
+      tag: w.shortTag || 'желание',
+      inTodo: true,
+      todoOrder: Date.now() + Math.random(),
+      done: false,
+      doneAt: null,
+      milestoneLink: wishId + '/' + msId,
+      wishId: wishId,
+      createdAt: new Date().toISOString(),
+    });
+    newMs.noteId = noteRef.id;
+    await updateDoc(uDocRef('wishes', wishId), { milestones });
+  } catch(e) {
+    console.warn('[Wish] failed to create todo for new milestone', e);
+  }
+
   await loadWishes(); renderWishes();
+  await loadNotes();
   openWishDetail(wishId);
 }
 window.addMilestone = addMilestone;
@@ -2648,9 +2750,15 @@ window.addMilestone = addMilestone;
 async function deleteMilestone(wishId, msId) {
   const w = wishes.find(x => x.id === wishId);
   if (!w || !w.milestones) return;
+  const ms = w.milestones.find(m => m.id === msId);
   const milestones = w.milestones.filter(m => m.id !== msId);
   await updateDoc(uDocRef('wishes', wishId), { milestones });
+  // Удаляем связанную задачу из тудушки
+  if (ms && ms.noteId) {
+    try { await deleteDoc(uDocRef('notes', ms.noteId)); } catch(e) {}
+  }
   await loadWishes(); renderWishes();
+  await loadNotes();
   openWishDetail(wishId);
 }
 window.deleteMilestone = deleteMilestone;
@@ -2679,7 +2787,7 @@ async function regenerateWishMoodImage(wishId) {
 
     try {
       const suggestion = await suggestWishEnhancements(w.text);
-      prompt = (suggestion.moodImagePrompt || 'dreamy landscape oil painting calm mood').trim();
+      prompt = (suggestion.moodImagePrompt || `${w.text.slice(0, 100)}, oil painting style, warm lighting, vibrant colors, peaceful mood`).trim();
       // Сохраняем промпт + бонус поля (только если их не было — не перезатираем)
       const updates = { moodImagePrompt: prompt, moodImage: null };
       if (!w.icon || w.icon === '🌠') updates.icon = suggestion.icon || '⭐';
@@ -3019,20 +3127,42 @@ function renderWishChat() {
 
 document.getElementById('wishchat-send').addEventListener('click', async () => {
   const inp = document.getElementById('wishchat-input');
+  if (!inp) { console.error('[WishChat] input element not found'); return; }
   const text = inp.value.trim();
-  if (!text || !currentWishId) return;
+  console.log('[WishChat] send clicked, text:', text, 'currentWishId:', currentWishId);
+  if (!text || !currentWishId) {
+    console.warn('[WishChat] skipping: empty text or no currentWishId');
+    return;
+  }
   inp.value = '';
   const w = wishes.find(x => x.id === currentWishId);
-  const perspective = currentWishPerspective;
+  console.log('[WishChat] wish found:', w ? w.text : 'NOT FOUND');
+  if (!w) { alert('Желание не найдено'); return; }
+  const perspective = currentWishPerspective || 'general';
+  console.log('[WishChat] using perspective:', perspective);
   const userMsg = { role:'user', content:text, time:new Date().toISOString(), perspective };
   wishChatMessages.push(userMsg);
   renderWishChat();
-  await addDoc(wishMessagesCol(currentWishId), userMsg);
+  try {
+    await addDoc(wishMessagesCol(currentWishId), userMsg);
+    console.log('[WishChat] user message saved to Firestore');
+  } catch(e) {
+    console.error('[WishChat] failed to save user message:', e);
+  }
 
   // Системный промпт зависит от perspective
   const sysPrompt = WISH_PERSPECTIVES[perspective].system(w);
   const apiMsgs = [{role:'system',content:sysPrompt}, ...wishChatMessages.map(m=>({role:m.role,content:m.content}))];
-  const msg = await callChatAPI(apiMsgs);
+  console.log('[WishChat] calling API with', apiMsgs.length, 'messages');
+  let msg;
+  try {
+    msg = await callChatAPI(apiMsgs);
+    console.log('[WishChat] API response received:', msg ? 'OK' : 'EMPTY');
+  } catch(e) {
+    console.error('[WishChat] API call failed:', e);
+    alert('Ошибка при обращении к AI: ' + e.message);
+    return;
+  }
   let reply = (msg && msg.content) ? msg.content.trim() : '';
   const call = (msg && msg.tool_calls || []).find(c => c.function.name === 'propose_note');
   if (call) {
@@ -3043,13 +3173,18 @@ document.getElementById('wishchat-send').addEventListener('click', async () => {
         await loadNotes();
         reply += '\n\n📋 Добавил заметку: ' + args.text;
       }
-    } catch(e) {}
+    } catch(e) { console.warn('[WishChat] failed to handle tool call', e); }
   }
   if (reply) {
     const aiMsg = { role:'assistant', content: reply, time:new Date().toISOString(), perspective };
     wishChatMessages.push(aiMsg);
     renderWishChat();
-    await addDoc(wishMessagesCol(currentWishId), aiMsg);
+    try {
+      await addDoc(wishMessagesCol(currentWishId), aiMsg);
+    } catch(e) { console.error('[WishChat] failed to save AI message:', e); }
+  } else {
+    console.warn('[WishChat] empty reply from AI');
+    alert('AI вернул пустой ответ. Попробуйте переформулировать.');
   }
 });
 document.getElementById('wishchat-input').addEventListener('keydown', e => { if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();document.getElementById('wishchat-send').click();} });
@@ -4376,26 +4511,37 @@ window.generateWishMoodImage = generateWishMoodImage;
 // ── WISH SUGGESTION — AI предлагает icon, category, mood prompt, milestones ──
 async function suggestWishEnhancements(text) {
   const systemPrompt = `Ты — креативный ИИ-ассистент для приложения «Хэзэнштейн».
-Пользователь загадал желание. Твоя задача — обогатить его: подобрать иконку, категорию, конкретный визуальный промпт для генерации картинки и первоначальный план.
+Пользователь загадал желание. Твоя задача — обогатить его: подобрать иконку, категорию, конкретный визуальный промпт для генерации картинки, короткий тег и первоначальный план.
 
 Верни ТОЛЬКО валидный JSON (без markdown), формат:
-{"icon":"эмодзи","category":"категория","moodImagePrompt":"английский промпт 15-30 слов","milestones":["шаг1","шаг2","шаг3"]}
+{"icon":"эмодзи","category":"категория","shortTag":"короткий тег 1-2 слова","moodImagePrompt":"английский промпт 15-30 слов","milestones":["шаг1","шаг2","шаг3"]}
 
-КРИТИЧЕСКИ ВАЖНО про moodImagePrompt:
-- Это промпт для генерации КАРТИНКИ через Stable Diffusion / DALL-E
-- Опиши КОНКРЕТНО что на картинке, основываясь на тексте желания
-- Включай: локацию + объекты + действие + освещение + стиль
-- Никогда не возвращай общие фразы типа "dreamy landscape" или "calm mood" — это слишком абстрактно
+КРИТИЧЕСКИ ВАЖНО:
+
+1. shortTag — короткий тег НА РУССКОМ, 1-2 слова, выражающий суть желания.
+   Берём САМОЕ КЛЮЧЕВОЕ слово/словосочетание из желания.
+   Примеры:
+   - "Хочу поехать на Бали" → shortTag: "бали"
+   - "Сделать своё приложение" → shortTag: "приложение"
+   - "Выучить испанский" → shortTag: "испанский"
+   - "Бросить курить" → shortTag: "некурение"
+   - "Пробежать марафон" → shortTag: "марафон"
+   Только lowercase, без пробелов в начале/конце, без решётки #.
+
+2. moodImagePrompt — промпт для генерации КАРТИНКИ через Stable Diffusion / DALL-E
+   - Опиши КОНКРЕТНО что на картинке, основываясь на тексте желания
+   - Включай: локацию + объекты + действие + освещение + стиль
+   - Никогда не возвращай общие фразы типа "dreamy landscape" — слишком абстрактно
 
 ПРИМЕРЫ:
 Желание "Хочу поехать на Бали":
-{"icon":"🏝️","category":"travel","moodImagePrompt":"Bali tropical beach at sunset, palm trees silhouettes, traditional Balinese temple in background, turquoise ocean waves, oil painting style, golden hour lighting, vibrant warm colors","milestones":["Забронировать билеты на Бали","Найти отель на 2 недели","Собрать документы и страховку","Спланировать маршрут по острову"]}
+{"icon":"🏝️","category":"travel","shortTag":"бали","moodImagePrompt":"Bali tropical beach at sunset, palm trees silhouettes, traditional Balinese temple in background, turquoise ocean waves, oil painting style, golden hour lighting, vibrant warm colors","milestones":["Забронировать билеты на Бали","Найти отель на 2 недели","Собрать документы и страховку","Спланировать маршрут по острову"]}
 
 Желание "Хочу выучить испанский":
-{"icon":"🗣️","category":"language","moodImagePrompt":"Spanish language learning scene, open book with Spanish words, cup of coffee, sunny cafe table with view of Mediterranean, oil painting style, warm morning light, cozy atmosphere","milestones":["Установить Duolingo и заниматься 10 минут в день","Найти носителя языка для практики","Смотреть сериалы на испанском с субтитрами","Пройти B1 уровень за 3 месяца"]}
+{"icon":"🗣️","category":"language","shortTag":"испанский","moodImagePrompt":"Spanish language learning scene, open book with Spanish words, cup of coffee, sunny cafe table with view of Mediterranean, oil painting style, warm morning light, cozy atmosphere","milestones":["Установить Duolingo и заниматься 10 минут в день","Найти носителя языка для практики","Смотреть сериалы на испанском с субтитрами","Пройти B1 уровень за 3 месяца"]}
 
 Желание "Бросить курить":
-{"icon":"🫁","category":"health","moodImagePrompt":"Person standing on mountain peak breathing deeply fresh air, blue sky, healthy glowing lungs visualization, morning sunlight, oil painting style, hopeful and vibrant colors","milestones":["Назначить дату отказа от сигарет","Удалить все пепельницы и зажигалки","Найти замену: жвачка или вода при желании","Держаться 30 дней без срыва"]}
+{"icon":"🫁","category":"health","shortTag":"некурение","moodImagePrompt":"Person standing on mountain peak breathing deeply fresh air, blue sky, healthy glowing lungs visualization, morning sunlight, oil painting style, hopeful and vibrant colors","milestones":["Назначить дату отказа от сигарет","Удалить все пепельницы и зажигалки","Найти замену: жвачка или вода при желании","Держаться 30 дней без срыва"]}
 
 Категории: language|career|health|travel|creativity|relationships|finance|learning|other
 milestones: 3-5 конкретных шага, 3-7 слов каждый.`;
@@ -4442,11 +4588,16 @@ milestones: 3-5 конкретных шага, 3-7 слов каждый.`;
     }
   }
 
-  // Полный fallback — генерируем простой промпт из текста
+  // Полный fallback — генерируем промпт из текста желания
+  const textForPrompt = text.slice(0, 100).replace(/"/g, '');
+  // Простое правило для shortTag: последние 1-2 слова текста (часто это существительное)
+  const words = text.toLowerCase().replace(/[^а-яёa-z\s]/gi, '').split(/\s+/).filter(w => w.length > 2);
+  const fallbackShortTag = words.length > 0 ? words[words.length - 1] : 'желание';
   return {
     icon: parsed?.icon || '⭐',
     category: parsed?.category || 'other',
-    moodImagePrompt: `${text.slice(0, 100)} scene, oil painting style, warm lighting, vibrant colors`,
+    shortTag: parsed?.shortTag || fallbackShortTag,
+    moodImagePrompt: `${textForPrompt}, oil painting style, warm lighting, vibrant colors, peaceful mood`,
     milestones: parsed?.milestones || []
   };
 }
