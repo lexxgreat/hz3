@@ -2038,8 +2038,14 @@ function drawAllStrokes() {
   for (const s of xGestureStrokes) {
     const age = (now - s.time) / 1500;
     const alpha = 1 - age;
-    drawPath(s.points, (0.35 * alpha).toFixed(3), 'rgba(0,212,255,ALPHA)', 14);
-    drawPath(s.points, (0.9 * alpha).toFixed(3), 'rgba(108,71,255,ALPHA)', 4);
+    // Matched strokes (part of a successful X) flash bright green, others purple
+    if (s.matched) {
+      drawPath(s.points, (0.5 * alpha).toFixed(3), 'rgba(0,255,140,ALPHA)', 14);  // green glow
+      drawPath(s.points, alpha.toFixed(3), 'rgba(0,255,140,ALPHA)', 6);  // green core
+    } else {
+      drawPath(s.points, (0.35 * alpha).toFixed(3), 'rgba(0,212,255,ALPHA)', 14);  // cyan glow
+      drawPath(s.points, (0.9 * alpha).toFixed(3), 'rgba(108,71,255,ALPHA)', 4);  // purple core
+    }
   }
 
   if (xGestureCurrent && xGestureCurrent.points.length >= 2) {
@@ -2159,38 +2165,21 @@ function xGestureEnd(x, y) {
   );
 
   if (match) {
-    // Подсветим X зелёным И СРАЗУ вызовем completeFocusTaskByGesture — без задержки
-    if (xCtx && xCanvas) {
-      const r = xCanvas.getBoundingClientRect();
-      xCtx.clearRect(0, 0, xCanvas.width, xCanvas.height);
-      // glow
-      xCtx.strokeStyle = 'rgba(0,255,140,0.4)';
-      xCtx.lineWidth = 14;
-      xCtx.lineCap = 'round';
-      xCtx.lineJoin = 'round';
-      xCtx.beginPath();
-      xCtx.moveTo(match.points[0].x - r.left, match.points[0].y - r.top);
-      for (let i = 1; i < match.points.length; i++) {
-        xCtx.lineTo(match.points[i].x - r.left, match.points[i].y - r.top);
-      }
-      xCtx.moveTo(start.x - r.left, start.y - r.top);
-      for (let i = 1; i < points.length; i++) {
-        xCtx.lineTo(points[i].x - r.left, points[i].y - r.top);
-      }
-      xCtx.stroke();
-      // core
-      xCtx.strokeStyle = 'rgba(0,255,140,1)';
-      xCtx.lineWidth = 6;
-      xCtx.stroke();
+    // Помечаем оба штриха как "matched" — они будут рисоваться зелёным и плавно затухать через rAF
+    match.matched = true;
+    match.time = now;  // refresh timestamp so fade starts now
+
+    // Find the current stroke in xGestureStrokes (last one we just added) and mark it matched
+    const lastStroke = xGestureStrokes[xGestureStrokes.length - 1];
+    if (lastStroke) {
+      lastStroke.matched = true;
+      lastStroke.time = now;
     }
-    xGestureStrokes = [];
-    // НЕ вызываем startFadeAnimation — зелёный X должен исчезнуть через краткое затухание
-    // Запускаем tick анимации чтобы очистить canvas через короткое время
-    setTimeout(() => {
-      if (xCtx && xCanvas) xCtx.clearRect(0, 0, xCanvas.width, xCanvas.height);
-    }, 400);
+
     // СРАЗУ вызываем completeFocusTaskByGesture — галочка и спецэффекты появятся одновременно с X
     completeFocusTaskByGesture();
+    // Запускаем плавное затухание зелёного X (через rAF, как для обычных штрихов)
+    startFadeAnimation();
     return;
   }
 
