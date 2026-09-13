@@ -654,7 +654,7 @@ body{background:#060918;font-family:'Inter',sans-serif;display:flex;justify-cont
           <button onclick="goTo('cloud')" style="padding:6px 14px;border-radius:99px;border:0.5px solid rgba(255,255,255,0.15);background:rgba(255,255,255,0.04);color:rgba(255,255,255,0.6);font-size:12px;font-weight:500;cursor:pointer;font-family:'Inter',sans-serif;transition:all 0.2s">☁️ Облако</button>
           <button id="hist-select-toggle" onclick="toggleSelectionMode()" style="padding:6px 14px;border-radius:99px;border:0.5px solid rgba(255,255,255,0.15);background:rgba(255,255,255,0.04);color:rgba(255,255,255,0.6);font-size:12px;font-weight:500;cursor:pointer;font-family:'Inter',sans-serif;transition:all 0.2s">☑ Выделить</button>
           <button onclick="document.getElementById('import-file-input').click()" style="padding:6px 14px;border-radius:99px;border:0.5px solid rgba(0,200,140,0.35);background:rgba(0,180,120,0.1);color:rgba(0,220,150,0.9);font-size:12px;font-weight:500;cursor:pointer;font-family:'Inter',sans-serif;transition:all 0.2s">⬆ Импорт</button>
-          <input type="file" id="import-file-input" accept=".txt,.csv" style="display:none;">
+          <input type="file" id="import-file-input" accept=".json,.txt,.csv" style="display:none;">
           <button onclick="exportNotes()" style="padding:6px 14px;border-radius:99px;border:0.5px solid rgba(108,71,255,0.4);background:rgba(108,71,255,0.1);color:rgba(139,92,246,0.9);font-size:12px;font-weight:500;cursor:pointer;font-family:'Inter',sans-serif;transition:all 0.2s">⬇ Экспорт</button>
         </div>
       </div>
@@ -701,6 +701,24 @@ body{background:#060918;font-family:'Inter',sans-serif;display:flex;justify-cont
         <div class="modal-btns">
           <button class="modal-cancel" onclick="closeModal()">Отмена</button>
           <button class="modal-save" onclick="saveEdit()">Сохранить</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Import preview modal — shows what will be imported, allows deselect -->
+    <div class="modal-overlay" id="import-modal">
+      <div class="modal" style="max-width:480px;max-height:80vh;display:flex;flex-direction:column;">
+        <div class="modal-title">Импорт записей</div>
+        <div id="import-summary" style="font-size:12px;color:rgba(255,255,255,0.6);margin-bottom:10px;"></div>
+        <div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap;">
+          <button id="import-select-all" onclick="importToggleAll(true)" style="padding:5px 12px;border-radius:99px;border:0.5px solid rgba(108,71,255,0.4);background:rgba(108,71,255,0.1);color:rgba(139,92,246,0.9);font-size:11px;cursor:pointer;font-family:'Inter',sans-serif;">☑ Все</button>
+          <button id="import-deselect-all" onclick="importToggleAll(false)" style="padding:5px 12px;border-radius:99px;border:0.5px solid rgba(255,255,255,0.15);background:rgba(255,255,255,0.04);color:rgba(255,255,255,0.6);font-size:11px;cursor:pointer;font-family:'Inter',sans-serif;">☐ Ни одной</button>
+          <span id="import-count" style="margin-left:auto;font-size:11px;color:rgba(255,255,255,0.5);align-self:center;"></span>
+        </div>
+        <div id="import-list" style="flex:1;overflow-y:auto;padding:4px 8px;background:rgba(255,255,255,0.02);border-radius:8px;"></div>
+        <div class="modal-btns" style="margin-top:12px;">
+          <button class="modal-cancel" onclick="closeImportModal()">Отмена</button>
+          <button class="modal-save" id="import-confirm-btn" onclick="confirmImport()">Импортировать</button>
         </div>
       </div>
     </div>
@@ -2923,37 +2941,158 @@ window.exportNotes = async function() {
   } catch(e) { alert('Ошибка экспорта: ' + e.message); }
 };
 
-// импорт заметок из текстового файла (например, экспортированного из стандартных Заметок телефона) —
-// каждая непустая строка становится отдельной записью; реальная синхронизация с приложением заметок
-// телефона технически недоступна веб-приложению, это осознанная замена через файл
+// ИМПОРТ — поддерживает JSON (формат экспорта) и простые текстовые файлы (построчно)
+// Перед импортом показывает модалку с превью: каждая запись + её тег, можно снять выделение
+let importCandidates = []; // массив объектов {text, type, tag, createdAt, selected}
+
+function parseImportFile(text, filename) {
+  // 1) Попытка распарсить как JSON
+  if (filename.toLowerCase().endsWith('.json') || text.trim().startsWith('[') || text.trim().startsWith('{')) {
+    try {
+      const data = JSON.parse(text);
+      const arr = Array.isArray(data) ? data : [data];
+      // Валидные записи — только объекты с полем text
+      return arr
+        .filter(o => o && typeof o === 'object' && typeof o.text === 'string' && o.text.trim().length > 0)
+        .map(o => ({
+          text: String(o.text).trim(),
+          type: typeof o.type === 'string' ? o.type : 'text',
+          tag: typeof o.tag === 'string' && o.tag.trim() ? o.tag.trim() : null,
+          createdAt: typeof o.createdAt === 'string' ? o.createdAt : null,
+        }));
+    } catch (e) {
+      // не JSON — ниже обработаем как текст
+    }
+  }
+  // 2) Текстовый файл — каждая непустая строка = запись
+  const lines = text.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0);
+  return lines.map(l => ({ text: l, type: 'text', tag: null, createdAt: null }));
+}
+
 document.getElementById('import-file-input').addEventListener('change', async (e) => {
   const file = e.target.files[0];
-  e.target.value = ''; // сбрасываем, чтобы можно было выбрать тот же файл повторно
+  e.target.value = '';
   if (!file) return;
   try {
     const text = await file.text();
-    const lines = text.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0);
-    if (!lines.length) { alert('В файле не нашлось текста для импорта'); return; }
-    const MAX_IMPORT = 500;
-    const toImport = lines.slice(0, MAX_IMPORT);
-    const truncated = lines.length > MAX_IMPORT;
-    if (!confirm(`Найдено строк: ${lines.length}${truncated ? ' (импортируем первые ' + MAX_IMPORT + ')' : ''}.\nКаждая строка станет отдельной записью. Продолжить?`)) return;
+    const parsed = parseImportFile(text, file.name);
+    if (!parsed.length) { alert('В файле не найдено записей для импорта'); return; }
 
-    let imported = 0;
-    const baseTime = Date.now();
-    for (let i = 0; i < toImport.length; i++) {
-      // сдвигаем время на секунду назад для каждой следующей строки — чтобы сохранить порядок файла в Истории
-      const createdAt = new Date(baseTime - i * 1000).toISOString();
-      await addDoc(notesCol(), { text: toImport[i], type: 'text', tag: null, createdAt });
-      imported++;
+    const MAX_IMPORT = 500;
+    importCandidates = parsed.slice(0, MAX_IMPORT).map(n => ({ ...n, selected: true }));
+    if (parsed.length > MAX_IMPORT) {
+      alert('В файле ' + parsed.length + ' записей. Импортируем первые ' + MAX_IMPORT + '.');
     }
-    alert('Импортировано записей: ' + imported);
-    await loadNotes();
-    checkTagSuggestions(); // возможно теперь заметок достаточно, чтобы ИИ предложил теги
+
+    renderImportModal();
+    document.getElementById('import-modal').classList.add('open');
   } catch(e) {
-    alert('Ошибка импорта: ' + e.message);
+    alert('Ошибка чтения файла: ' + e.message);
   }
 });
+
+function renderImportModal() {
+  const list = document.getElementById('import-list');
+  const summary = document.getElementById('import-summary');
+  const count = document.getElementById('import-count');
+
+  // Сводка: сколько записей, какие теги
+  const tags = {};
+  for (const n of importCandidates) {
+    if (n.tag) tags[n.tag] = (tags[n.tag] || 0) + 1;
+  }
+  const tagList = Object.keys(tags).length ? Object.entries(tags).map(([t,c]) => `#${t} (${c})`).join(', ') : 'нет тегов';
+  summary.textContent = `Всего: ${importCandidates.length} · Теги: ${tagList}`;
+
+  // Список с чекбоксами
+  list.innerHTML = '';
+  importCandidates.forEach((n, i) => {
+    const item = document.createElement('label');
+    item.style.cssText = 'display:flex;gap:8px;align-items:flex-start;padding:8px;border-radius:8px;cursor:pointer;border:0.5px solid transparent;transition:background 0.15s;';
+    item.onmouseenter = () => item.style.background = 'rgba(108,71,255,0.06)';
+    item.onmouseleave = () => item.style.background = 'transparent';
+
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.checked = n.selected;
+    checkbox.style.cssText = 'margin-top:3px;accent-color:#6C47FF;cursor:pointer;';
+    checkbox.onchange = () => {
+      n.selected = checkbox.checked;
+      item.style.background = n.selected ? 'rgba(108,71,255,0.08)' : 'transparent';
+      item.style.opacity = n.selected ? '1' : '0.5';
+      updateImportCount();
+    };
+
+    const textWrap = document.createElement('div');
+    textWrap.style.cssText = 'flex:1;min-width:0;';
+    const textEl = document.createElement('div');
+    textEl.style.cssText = 'font-size:13px;color:rgba(255,255,255,0.85);line-height:1.4;word-break:break-word;';
+    textEl.textContent = n.text.length > 200 ? n.text.slice(0, 200) + '…' : n.text;
+    const tagEl = document.createElement('div');
+    tagEl.style.cssText = 'font-size:11px;color:rgba(139,92,246,0.7);margin-top:3px;';
+    tagEl.textContent = n.tag ? '#' + n.tag : (n.createdAt ? new Date(n.createdAt).toLocaleString('ru-RU') : '');
+    textWrap.appendChild(textEl);
+    if (tagEl.textContent) textWrap.appendChild(tagEl);
+
+    item.appendChild(checkbox);
+    item.appendChild(textWrap);
+    list.appendChild(item);
+  });
+
+  updateImportCount();
+}
+
+function updateImportCount() {
+  const selected = importCandidates.filter(n => n.selected).length;
+  document.getElementById('import-count').textContent = `Выбрано: ${selected} из ${importCandidates.length}`;
+  document.getElementById('import-confirm-btn').disabled = selected === 0;
+  document.getElementById('import-confirm-btn').style.opacity = selected === 0 ? '0.4' : '1';
+}
+
+function importToggleAll(select) {
+  importCandidates.forEach(n => n.selected = select);
+  renderImportModal();
+}
+
+function closeImportModal() {
+  document.getElementById('import-modal').classList.remove('open');
+}
+
+async function confirmImport() {
+  const selected = importCandidates.filter(n => n.selected);
+  if (!selected.length) return;
+  const btn = document.getElementById('import-confirm-btn');
+  btn.disabled = true;
+  btn.textContent = 'Импорт…';
+  try {
+    const baseTime = Date.now();
+    let imported = 0;
+    for (let i = 0; i < selected.length; i++) {
+      const n = selected[i];
+      // Если есть original createdAt — сохраняем порядок (но со сдвигом чтобы не конфликтовать)
+      const createdAt = n.createdAt || new Date(baseTime - i * 1000).toISOString();
+      await addDoc(notesCol(), {
+        text: n.text,
+        type: n.type || 'text',
+        tag: n.tag || null,
+        createdAt,
+      });
+      imported++;
+    }
+    closeImportModal();
+    alert('Импортировано записей: ' + imported);
+    await loadNotes();
+    checkTagSuggestions();
+  } catch(e) {
+    alert('Ошибка импорта: ' + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Импортировать';
+  }
+}
+window.importToggleAll = importToggleAll;
+window.closeImportModal = closeImportModal;
+window.confirmImport = confirmImport;
 
 // голос в чате — та же модель удержания: зажал, сказал, отпустил — само распознаётся и уходит в чат
 let chatActiveRecorder = null;
