@@ -2912,6 +2912,7 @@ async function openWishDetail(id) {
         <!-- Actions -->
         <div style="display:flex;gap:8px;flex-wrap:wrap;">
           <button onclick="closeWishDetail(); setTimeout(() => openWishChat('${w.id}'), 100);" style="flex:1;padding:10px;border-radius:10px;border:none;background:linear-gradient(135deg,rgba(108,71,255,0.5),rgba(139,92,246,0.5));color:#fff;font-size:13px;font-weight:600;cursor:pointer;font-family:Inter,sans-serif;">💬 Обсудить с ИИ</button>
+          <button onclick="shareWishCard('${w.id}')" style="padding:10px 14px;border-radius:10px;border:0.5px solid rgba(0,200,140,0.35);background:rgba(0,180,120,0.1);color:rgba(0,220,150,0.9);font-size:13px;cursor:pointer;font-family:Inter,sans-serif;" title="Поделиться карточкой">📤</button>
           <button onclick="regenerateWishMoodImage('${w.id}')" style="padding:10px 14px;border-radius:10px;border:0.5px solid rgba(255,255,255,0.15);background:rgba(255,255,255,0.04);color:rgba(255,255,255,0.7);font-size:13px;cursor:pointer;font-family:Inter,sans-serif;" title="Сгенерировать новую картинку">🎨</button>
           <button onclick="editWishMoodPrompt('${w.id}')" style="padding:10px 14px;border-radius:10px;border:0.5px solid rgba(0,212,255,0.3);background:rgba(0,212,255,0.08);color:rgba(0,212,255,0.8);font-size:13px;cursor:pointer;font-family:Inter,sans-serif;" title="Редактировать промпт">✏️</button>
           <button onclick="if(confirm('Удалить желание?')) { deleteWish('${w.id}'); closeWishDetail(); }" style="padding:10px 14px;border-radius:10px;border:0.5px solid rgba(255,80,80,0.3);background:rgba(255,80,80,0.1);color:rgba(255,100,100,0.8);font-size:13px;cursor:pointer;font-family:Inter,sans-serif;">🗑</button>
@@ -3013,6 +3014,211 @@ async function saveWishMoodPromptAndRegenerate(wishId) {
   }
 }
 window.saveWishMoodPromptAndRegenerate = saveWishMoodPromptAndRegenerate;
+
+// ── SHAREABLE CARD — генерация PNG-карточки для шеринга в соцсетях ──
+// Размер 1080x1920 (Instagram Story / Telegram)
+// Состав: mood-image фон + состояние + название + прогресс + дата + брендинг
+async function generateShareableCard(wishId) {
+  const w = wishes.find(x => x.id === wishId);
+  if (!w) { alert('Желание не найдено'); return; }
+
+  // Создаём canvas
+  const canvas = document.createElement('canvas');
+  canvas.width = 1080;
+  canvas.height = 1920;
+  const ctx = canvas.getContext('2d');
+
+  const cat = WISH_CATEGORIES[w.category] || WISH_CATEGORIES.other;
+  const state = WISH_STATES[w.state] || WISH_STATES.dream;
+
+  // 1. Заливаем фон (gradient fallback)
+  const gradient = ctx.createLinearGradient(0, 0, 1080, 1920);
+  gradient.addColorStop(0, cat.color + '88');
+  gradient.addColorStop(1, '#07091A');
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, 1080, 1920);
+
+  // 2. Если есть mood-image — загружаем и рисуем
+  if (w.moodImage) {
+    try {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      await new Promise((resolve, reject) => {
+        img.onload = resolve;
+        img.onerror = reject;
+        img.src = w.moodImage;
+        setTimeout(reject, 10000);  // timeout 10 sec
+      });
+      // Рисуем cover-стиль
+      const imgRatio = img.width / img.height;
+      const canvasRatio = 1080 / 1920;
+      let sx = 0, sy = 0, sw = img.width, sh = img.height;
+      if (imgRatio > canvasRatio) {
+        // image wider — crop sides
+        sw = img.height * (1080 / 1920);
+        sx = (img.width - sw) / 2;
+      } else {
+        // image taller — crop top/bottom
+        sh = img.width * (1920 / 1080);
+        sy = (img.height - sh) / 2;
+      }
+      ctx.drawImage(img, sx, sy, sw, sh, 0, 0, 1080, 1920);
+      // Затемнение снизу для читаемости текста
+      const overlayGrad = ctx.createLinearGradient(0, 800, 0, 1920);
+      overlayGrad.addColorStop(0, 'rgba(0,0,0,0)');
+      overlayGrad.addColorStop(1, 'rgba(0,0,0,0.85)');
+      ctx.fillStyle = overlayGrad;
+      ctx.fillRect(0, 800, 1080, 1120);
+    } catch(e) {
+      console.warn('[Share] image load failed, using gradient', e);
+    }
+  }
+
+  // 3. State badge (вверху)
+  const stateY = 120;
+  ctx.font = 'bold 42px Inter, sans-serif';
+  const stateText = `${state.icon} ${state.label.toUpperCase()}`;
+  const stateMetrics = ctx.measureText(stateText);
+  const statePadding = 30;
+  const stateBoxW = stateMetrics.width + statePadding * 2;
+  const stateBoxH = 70;
+  ctx.fillStyle = 'rgba(0,0,0,0.6)';
+  ctx.beginPath();
+  ctx.roundRect(60, stateY - stateBoxH/2, stateBoxW, stateBoxH, 35);
+  ctx.fill();
+  ctx.fillStyle = state.color;
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(stateText, 60 + statePadding, stateY);
+
+  // 4. Иконка + категория (вверху справа)
+  ctx.font = '80px Inter, sans-serif';
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(w.icon || cat.icon, 1020, stateY);
+
+  // 5. Заголовок «МОЁ ЖЕЛАНИЕ» (над текстом)
+  ctx.font = 'bold 28px Inter, sans-serif';
+  ctx.fillStyle = 'rgba(255,255,255,0.7)';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'top';
+  ctx.fillText('МОЁ ЖЕЛАНИЕ', 80, 1300);
+
+  // 6. Текст желания (с переносом строк)
+  ctx.font = 'bold 64px Inter, sans-serif';
+  ctx.fillStyle = '#fff';
+  const maxWidth = 920;
+  const lines = wrapText(ctx, w.text, maxWidth);
+  let textY = 1360;
+  for (const line of lines.slice(0, 4)) {  // максимум 4 строки
+    ctx.fillText(line, 80, textY);
+    textY += 80;
+  }
+
+  // 7. Прогресс (если есть milestones)
+  const totalMs = (w.milestones || []).length;
+  const doneMs = (w.milestones || []).filter(m => m.done).length;
+  if (totalMs > 0) {
+    const progressY = textY + 40;
+    ctx.font = '32px Inter, sans-serif';
+    ctx.fillStyle = 'rgba(255,255,255,0.8)';
+    ctx.fillText(`${doneMs}/${totalMs} шагов выполнено`, 80, progressY);
+    // Progress bar
+    const barY = progressY + 60;
+    const barW = 920;
+    const barH = 14;
+    ctx.fillStyle = 'rgba(255,255,255,0.15)';
+    ctx.beginPath();
+    ctx.roundRect(80, barY, barW, barH, 7);
+    ctx.fill();
+    const progress = totalMs > 0 ? doneMs / totalMs : 0;
+    ctx.fillStyle = state.color;
+    ctx.beginPath();
+    ctx.roundRect(80, barY, barW * progress, barH, 7);
+    ctx.fill();
+  }
+
+  // 8. Брендинг (снизу)
+  ctx.font = 'bold 36px Inter, sans-serif';
+  ctx.fillStyle = 'rgba(255,255,255,0.5)';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'bottom';
+  ctx.fillText('ХЭЗЭНШТЕЙН', 540, 1850);
+  ctx.font = '24px Inter, sans-serif';
+  ctx.fillStyle = 'rgba(255,255,255,0.3)';
+  ctx.fillText('архитектор своей реальности', 540, 1880);
+
+  // 9. Дата создания
+  ctx.font = '24px Inter, sans-serif';
+  ctx.fillStyle = 'rgba(255,255,255,0.4)';
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'bottom';
+  const dateStr = new Date(w.createdAt).toLocaleDateString('ru-RU', { day:'numeric', month:'long', year:'numeric' });
+  ctx.fillText(dateStr, 1020, 1880);
+
+  // Конвертируем в blob
+  return new Promise((resolve) => {
+    canvas.toBlob((blob) => {
+      resolve(blob);
+    }, 'image/png', 0.95);
+  });
+}
+
+// Перенос текста по ширине
+function wrapText(ctx, text, maxWidth) {
+  const words = text.split(' ');
+  const lines = [];
+  let currentLine = '';
+  for (const word of words) {
+    const testLine = currentLine ? currentLine + ' ' + word : word;
+    const metrics = ctx.measureText(testLine);
+    if (metrics.width > maxWidth && currentLine) {
+      lines.push(currentLine);
+      currentLine = word;
+    } else {
+      currentLine = testLine;
+    }
+  }
+  if (currentLine) lines.push(currentLine);
+  return lines;
+}
+
+// Поделиться карточкой
+async function shareWishCard(wishId) {
+  const btn = event?.target;
+  if (btn) { btn.disabled = true; btn.textContent = 'Генерация…'; }
+  try {
+    const blob = await generateShareableCard(wishId);
+    if (!blob) { alert('Не удалось сгенерировать карточку'); return; }
+    const w = wishes.find(x => x.id === wishId);
+    const fileName = 'wish_' + (w.shortTag || wishId) + '.png';
+    const file = new File([blob], fileName, { type: 'image/png' });
+
+    if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({
+        files: [file],
+        title: 'Моё желание',
+        text: w.text
+      });
+    } else {
+      // Fallback: download
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      alert('Картинка сохранена. Поделитесь ей через мессенджер или соцсеть!');
+    }
+  } catch(e) {
+    if (e.name !== 'AbortError') {
+      alert('Ошибка: ' + e.message);
+    }
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '📤 Поделиться'; }
+  }
+}
+window.shareWishCard = shareWishCard;
 
 function wishMessagesCol(wishId) { return collection(db,'users',currentUid,'wishes',wishId,'messages'); }
 
