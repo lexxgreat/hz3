@@ -2027,7 +2027,7 @@ function drawPath(points, alpha, color, width) {
 
 function drawAllStrokes() {
   if (!xCtx || !xCanvas) return;
-  ensureCanvasSized();  // Always check size before drawing
+  ensureCanvasSized();
   if (xCanvas.width === 0 || xCanvas.height === 0) return;
   const r = xCanvas.getBoundingClientRect();
   xCtx.clearRect(0, 0, xCanvas.width, xCanvas.height);
@@ -2037,7 +2037,7 @@ function drawAllStrokes() {
 
   for (const s of xGestureStrokes) {
     const age = (now - s.time) / 1500;
-    const alpha = (1 - age).toFixed(3);
+    const alpha = 1 - age;
     drawPath(s.points, (0.35 * alpha).toFixed(3), 'rgba(0,212,255,ALPHA)', 14);
     drawPath(s.points, (0.9 * alpha).toFixed(3), 'rgba(108,71,255,ALPHA)', 4);
   }
@@ -2048,7 +2048,29 @@ function drawAllStrokes() {
   }
 }
 
-// Запрос анимации (чтобы не дёргать drawAllStrokes слишком часто)
+// Continuous animation loop — runs only while there are strokes to fade out
+let xAnimRunning = false;
+function startFadeAnimation() {
+  if (xAnimRunning) return;
+  xAnimRunning = true;
+  const tick = () => {
+    drawAllStrokes();
+    // Continue while there are strokes (not yet faded) or current in-progress stroke
+    const hasUnfinished = xGestureStrokes.length > 0 || xGestureCurrent;
+    if (hasUnfinished) {
+      requestAnimationFrame(tick);
+    } else {
+      xAnimRunning = false;
+      // Final clear to make sure canvas is empty
+      if (xCtx && xCanvas) {
+        xCtx.clearRect(0, 0, xCanvas.width, xCanvas.height);
+      }
+    }
+  };
+  requestAnimationFrame(tick);
+}
+
+// Запрос анимации для текущего штриха (рисуется в реальном времени)
 let xRafId = null;
 function scheduleDraw() {
   if (xRafId) return;
@@ -2090,7 +2112,7 @@ function xGestureEnd(x, y) {
   const mainEl = document.getElementById('screen-main');
   if (!mainEl || !mainEl.classList.contains('active')) {
     xGestureCurrent = null;
-    scheduleDraw();
+    startFadeAnimation();
     return;
   }
 
@@ -2099,30 +2121,22 @@ function xGestureEnd(x, y) {
   const dist = Math.sqrt(dx*dx + dy*dy);
   const minSide = Math.min(mainEl.clientWidth, mainEl.clientHeight);
 
-  if (dist < minSide * 0.5) {
-    // Слишком короткий — не считаем частью "Х"
+  // Сохраняем штрих в историю (для затухания)
+  const saveAndFade = () => {
     xGestureCurrent.time = Date.now();
     xGestureStrokes.push(xGestureCurrent);
     xGestureCurrent = null;
-    scheduleDraw();
-    setTimeout(scheduleDraw, 300);
-    setTimeout(scheduleDraw, 600);
-    setTimeout(scheduleDraw, 1000);
-    setTimeout(scheduleDraw, 1500);
+    startFadeAnimation();
+  };
+
+  if (dist < minSide * 0.5) {
+    saveAndFade();
     return;
   }
 
   const ratio = Math.abs(dx) / (Math.abs(dy) || 1);
   if (ratio < 0.4 || ratio > 2.5) {
-    // Недостаточно диагонально — сохраняем как обычный штрих
-    xGestureCurrent.time = Date.now();
-    xGestureStrokes.push(xGestureCurrent);
-    xGestureCurrent = null;
-    scheduleDraw();
-    setTimeout(scheduleDraw, 300);
-    setTimeout(scheduleDraw, 600);
-    setTimeout(scheduleDraw, 1000);
-    setTimeout(scheduleDraw, 1500);
+    saveAndFade();
     return;
   }
 
@@ -2145,12 +2159,13 @@ function xGestureEnd(x, y) {
   );
 
   if (match) {
-    // Подсветим X зелёным
+    // Подсветим X зелёным И СРАЗУ вызовем completeFocusTaskByGesture — без задержки
     if (xCtx && xCanvas) {
       const r = xCanvas.getBoundingClientRect();
       xCtx.clearRect(0, 0, xCanvas.width, xCanvas.height);
-      xCtx.strokeStyle = 'rgba(0,255,140,1)';
-      xCtx.lineWidth = 6;
+      // glow
+      xCtx.strokeStyle = 'rgba(0,255,140,0.4)';
+      xCtx.lineWidth = 14;
       xCtx.lineCap = 'round';
       xCtx.lineJoin = 'round';
       xCtx.beginPath();
@@ -2163,18 +2178,23 @@ function xGestureEnd(x, y) {
         xCtx.lineTo(points[i].x - r.left, points[i].y - r.top);
       }
       xCtx.stroke();
+      // core
+      xCtx.strokeStyle = 'rgba(0,255,140,1)';
+      xCtx.lineWidth = 6;
+      xCtx.stroke();
     }
     xGestureStrokes = [];
-    setTimeout(() => completeFocusTaskByGesture(), 200);
-    setTimeout(scheduleDraw, 600);
+    // НЕ вызываем startFadeAnimation — зелёный X должен исчезнуть через краткое затухание
+    // Запускаем tick анимации чтобы очистить canvas через короткое время
+    setTimeout(() => {
+      if (xCtx && xCanvas) xCtx.clearRect(0, 0, xCanvas.width, xCanvas.height);
+    }, 400);
+    // СРАЗУ вызываем completeFocusTaskByGesture — галочка и спецэффекты появятся одновременно с X
+    completeFocusTaskByGesture();
     return;
   }
 
-  scheduleDraw();
-  setTimeout(scheduleDraw, 300);
-  setTimeout(scheduleDraw, 600);
-  setTimeout(scheduleDraw, 1000);
-  setTimeout(scheduleDraw, 1500);
+  startFadeAnimation();
 }
 
 function completeFocusTaskByGesture() {
