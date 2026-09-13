@@ -698,6 +698,11 @@ body{background:#060918;font-family:'Inter',sans-serif;display:flex;justify-cont
         <div class="modal-title">Редактировать запись</div>
         <textarea class="modal-textarea" id="modal-text"></textarea>
         <div id="modal-tag-picker" style="display:flex;flex-wrap:wrap;gap:6px;margin:10px 0;"></div>
+        <!-- AI-связи — появляются после openEdit, когда links загрузятся -->
+        <div id="modal-links-section" style="display:none;margin-top:14px;padding-top:14px;border-top:0.5px solid rgba(255,255,255,0.08);">
+          <div style="font-size:11px;color:rgba(255,255,255,0.5);margin-bottom:8px;letter-spacing:0.5px;text-transform:uppercase;font-weight:600;">🔗 Похожие записи</div>
+          <div id="modal-links-list" style="display:flex;flex-direction:column;gap:6px;max-height:200px;overflow-y:auto;"></div>
+        </div>
         <div class="modal-btns">
           <button class="modal-cancel" onclick="closeModal()">Отмена</button>
           <button class="modal-save" onclick="saveEdit()">Сохранить</button>
@@ -867,6 +872,7 @@ function uCol(name) { return collection(db, 'users', currentUid, name); }
 function uDocRef(name, id) { return doc(db, 'users', currentUid, name, id); }
 
 function notesCol() { return uCol('notes'); }
+function linksCol() { return uCol('links'); }
 function chatCol() { return uCol('chat'); }
 function promptRulesCol() { return uCol('promptRules'); }
 
@@ -1262,7 +1268,7 @@ window.setTag = setTag;
 async function saveNote(text, type) {
   if (!text.trim()) return;
   try {
-    await addDoc(notesCol(), {
+    const docRef = await addDoc(notesCol(), {
       text: text.trim(),
       type: type || 'text',
       tag: activeTag || null,
@@ -1275,6 +1281,11 @@ async function saveNote(text, type) {
     document.querySelectorAll('.qtag').forEach(b => { b.style.borderColor=''; b.style.background=''; });
     flashSaved();
     await loadNotes();
+    // AI auto-linking — для только что созданной заметки (в фоне, не блокируя UI)
+    const newNote = notes.find(n => n.id === docRef.id);
+    if (newNote) {
+      setTimeout(() => findAndSaveLinksForNote(newNote), 100);
+    }
   } catch(e) {
     setStatus('Ошибка: ' + e.message);
   }
@@ -1534,7 +1545,53 @@ function openEdit(id) {
   document.getElementById('modal-text').value = n.text;
   editingSelectedTag = n.tag || null;
   renderModalTagPicker();
+  // Загружаем AI-связи для этой заметки
+  renderModalLinks(id);
   document.getElementById('modal').classList.add('open');
+}
+
+async function renderModalLinks(noteId) {
+  const section = document.getElementById('modal-links-section');
+  const list = document.getElementById('modal-links-list');
+  if (!section || !list) return;
+  section.style.display = 'none';
+  list.innerHTML = '<div style="font-size:11px;color:rgba(255,255,255,0.4);">Загрузка…</div>';
+  section.style.display = 'block';
+  try {
+    const links = await loadLinksForNote(noteId);
+    if (!links.length) {
+      section.style.display = 'none';
+      return;
+    }
+    list.innerHTML = '';
+    for (const link of links) {
+      const otherNoteId = link.noteA === noteId ? link.noteB : link.noteA;
+      const otherNote = notes.find(n => n.id === otherNoteId);
+      if (!otherNote) continue;
+      const item = document.createElement('div');
+      item.style.cssText = 'display:flex;flex-direction:column;gap:2px;padding:8px;border-radius:8px;background:rgba(108,71,255,0.06);border:0.5px solid rgba(108,71,255,0.2);cursor:pointer;transition:background 0.15s;';
+      item.onmouseenter = () => item.style.background = 'rgba(108,71,255,0.12)';
+      item.onmouseleave = () => item.style.background = 'rgba(108,71,255,0.06)';
+      item.onclick = () => { closeModal(); setTimeout(() => openEdit(otherNoteId), 100); };
+
+      const textEl = document.createElement('div');
+      textEl.style.cssText = 'font-size:12px;color:rgba(255,255,255,0.85);line-height:1.4;word-break:break-word;';
+      textEl.textContent = otherNote.text.length > 120 ? otherNote.text.slice(0, 120) + '…' : otherNote.text;
+
+      const metaEl = document.createElement('div');
+      metaEl.style.cssText = 'font-size:10px;color:rgba(0,212,255,0.7);';
+      const score = Math.round((link.score || 0) * 100);
+      metaEl.textContent = `${link.reason || ''} · ${score}% совпадение${otherNote.tag ? ' · #' + otherNote.tag : ''}`;
+
+      item.appendChild(textEl);
+      item.appendChild(metaEl);
+      list.appendChild(item);
+    }
+    section.style.display = 'block';
+  } catch(e) {
+    section.style.display = 'none';
+    console.warn('[Modal-links] load failed', e);
+  }
 }
 window.openEdit = openEdit;
 
@@ -2710,6 +2767,132 @@ async function checkAndGenerateDailySummary() {
   }
 }
 window.checkAndGenerateDailySummary = checkAndGenerateDailySummary;
+
+// ── AI AUTO-LINKING — находит похожие заметки через Polza AI ──
+// Для новой заметки: берём candidate notes (по тегу + последние 50) → AI находит 5-7 похожих
+// Сохраняем в Firestore коллекцию links
+// Не ломает существующее — только добавляет новые документы
+
+// Уникальный идентификатор пары (noteA < noteB для детермина)
+function linkId(a, b) {
+  return [a, b].sort().join('__');
+}
+
+// Берём кандидатов для сравнения с новой заметкой
+function getCandidatesForLinking(newNote) {
+  // Стратегия: берём все заметки с тем же тегом (если есть) + последние 50 без тега
+  const sameTag = newNote.tag
+    ? notes.filter(n => n.id !== newNote.id && n.tag === newNote.tag)
+    : [];
+  const others = notes.filter(n => n.id !== newNote.id && n.tag !== newNote.tag);
+  // Сортируем по дате (новые сначала), берём 50
+  const recent = [...sameTag, ...others]
+    .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''))
+    .slice(0, 50);
+  return recent;
+}
+
+// Основная функция: AI находит похожие заметки
+async function findAndSaveLinksForNote(note) {
+  if (!note || !note.id || !note.text) return;
+  try {
+    const candidates = getCandidatesForLinking(note);
+    if (candidates.length === 0) return;
+
+    // Готовим данные для AI
+    const candidatesText = candidates.map((c, i) => {
+      const time = c.createdAt ? new Date(c.createdAt).toLocaleDateString('ru-RU') : '';
+      return `${i+1}. [id:${c.id}]${c.tag ? ' #' + c.tag : ''} ${time}: ${c.text.slice(0, 200)}`;
+    }).join('\n');
+
+    const systemPrompt = `Ты — ИИ-ассистент для поиска семантических связей между заметками.
+Тебе дана новая заметка пользователя и список существующих заметок.
+Найди ВСЕ заметки, которые связаны по смыслу, теме, эмоции или контексту с новой.
+
+Правила:
+- Возвращай ТОЛЬКО валидный JSON, без markdown
+- Формат: {"links": [{"noteId": "id_существующей_заметки", "reason": "кратко почему связаны", "score": 0.0-1.0}]}
+- Возвращай 5-7 наиболее связанных (если есть столько)
+- score: 1.0 = почти идентичная тема, 0.4 = слабая связь (только score >= 0.4 включай)
+- reason: 5-12 слов, на русском, конкретно
+- Если связей нет вообще — верни {"links": []}`;
+
+    const userPrompt = `Новая заметка:
+"${note.text.slice(0, 500)}"${note.tag ? '\n(тег: ' + note.tag + ')' : ''}
+
+Существующие заметки (id — идентификатор):
+${candidatesText}
+
+Найди 5-7 самых связанных с новой:`;
+
+    const response = await callPolzaAI([
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userPrompt }
+    ], { max_tokens: 1000, temperature: 0.3 });
+
+    // Парсим ответ — ищем JSON
+    let linksData = [];
+    try {
+      // AI может вернуть JSON с разным мусором вокруг — берём только {...}
+      const jsonMatch = response.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        const parsed = JSON.parse(jsonMatch[0]);
+        linksData = Array.isArray(parsed.links) ? parsed.links : [];
+      }
+    } catch(e) {
+      console.warn('[Auto-link] failed to parse AI response:', e, response.slice(0, 200));
+      return;
+    }
+
+    // Фильтруем по score >= 0.4 и валидируем noteId
+    const validLinks = linksData.filter(l =>
+      l && typeof l.noteId === 'string' &&
+      typeof l.score === 'number' && l.score >= 0.4 &&
+      candidates.some(c => c.id === l.noteId)  // noteId должен быть из candidates
+    );
+
+    if (validLinks.length === 0) return;
+
+    // Сохраняем в Firestore (с детерминированным id пары)
+    for (const link of validLinks) {
+      const id = linkId(note.id, link.noteId);
+      try {
+        await setDoc(doc(db, 'users', currentUid, 'links', id), {
+          noteA: note.id,
+          noteB: link.noteId,
+          reason: String(link.reason || '').slice(0, 200),
+          score: link.score,
+          createdAt: new Date().toISOString(),
+          createdBy: 'auto',
+        });
+      } catch(e) {
+        console.warn('[Auto-link] save error for', id, e);
+      }
+    }
+    console.log(`[Auto-link] saved ${validLinks.length} links for note ${note.id}`);
+  } catch(e) {
+    console.error('[Auto-link] error for note', note.id, e);
+  }
+}
+window.findAndSaveLinksForNote = findAndSaveLinksForNote;
+
+// Загружаем все линки пользователя (для отображения в модалке)
+async function loadLinksForNote(noteId) {
+  if (!currentUid) return [];
+  try {
+    // Запрашиваем линки где noteA = noteId ИЛИ noteB = noteId
+    const q1 = query(linksCol(), orderBy('score', 'desc'));
+    const snap = await getDocs(q1);
+    return snap.docs
+      .map(d => d.data())
+      .filter(l => l.noteA === noteId || l.noteB === noteId)
+      .slice(0, 10);  // максимум 10 связей показываем
+  } catch(e) {
+    console.error('[Auto-link] load error', e);
+    return [];
+  }
+}
+window.loadLinksForNote = loadLinksForNote;
 
 function showTyping() {
   const el = document.getElementById('chat-messages');
