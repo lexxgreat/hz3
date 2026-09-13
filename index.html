@@ -1913,6 +1913,7 @@ let graphNodes = [];     // [{id, text, tag, x, y, vx, vy, connections}]
 let graphEdges = [];     // [{a, b, score}] — индексы в graphNodes
 let graphCanvas = null, graphCtx = null, graphRafId = null;
 let graphAnimating = false;
+let graphSelectedIdx = null;  // выбранный узел (тап-селекция) — для подсветки связей
 
 // Тёплые цвета для тегов (детерминированно по хешу строки)
 function tagColor(tag) {
@@ -2039,6 +2040,34 @@ function simulateGraphStep() {
     b.vy -= fy;
   }
 
+  // Слабое притяжение между заметками с одинаковым тегом — формирует кластеры по сферам
+  // Пропускаем пары уже связанные (для них работает пружина)
+  for (let i = 0; i < graphNodes.length; i++) {
+    for (let j = i + 1; j < graphNodes.length; j++) {
+      const a = graphNodes[i], b = graphNodes[j];
+      if (!a.tag || !b.tag || a.tag !== b.tag) continue;
+      // Проверяем, есть ли уже ребро между ними
+      const hasEdge = graphEdges.some(e =>
+        (e.a === i && e.b === j) || (e.a === j && e.b === i)
+      );
+      if (hasEdge) continue;
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      let dist = Math.sqrt(dx*dx + dy*dy);
+      if (dist < 1) dist = 1;
+      // Слабое притяжение — целевая дистанция 150px
+      const restLength = 150;
+      const force = (dist - restLength) * 0.0008;
+      if (Math.abs(force) < 0.01) continue;
+      const fx = (dx / dist) * force;
+      const fy = (dy / dist) * force;
+      a.vx += fx;
+      a.vy += fy;
+      b.vx -= fx;
+      b.vy -= fy;
+    }
+  }
+
   // Применяем скорость с трением + cap скорости, держим в границах
   const MAX_SPEED = 5;  // было без cap → jitter
   for (const n of graphNodes) {
@@ -2066,38 +2095,73 @@ function drawGraph() {
   const h = graphCanvas.height;
   graphCtx.clearRect(0, 0, w, h);
 
-  // Рисуем рёбра
+  // Draw edges (highlight connected if a node is selected)
   for (const e of graphEdges) {
     const a = graphNodes[e.a], b = graphNodes[e.b];
     if (!a || !b) continue;
-    const alpha = 0.15 + e.score * 0.5;
-    graphCtx.strokeStyle = `rgba(108,71,255,${alpha})`;
-    graphCtx.lineWidth = 0.5 + e.score * 2;
+    const isConnectedToSelected = graphSelectedIdx !== null &&
+      (e.a === graphSelectedIdx || e.b === graphSelectedIdx);
+    const alpha = isConnectedToSelected ? 0.9 : (0.15 + e.score * 0.4);
+    const color = isConnectedToSelected ? 'rgba(0,255,140,ALPHA)'.replace('ALPHA', alpha) : `rgba(108,71,255,${alpha})`;
+    graphCtx.strokeStyle = color;
+    graphCtx.lineWidth = isConnectedToSelected ? 2 + e.score * 2 : 0.5 + e.score * 1.5;
     graphCtx.beginPath();
     graphCtx.moveTo(a.x, a.y);
     graphCtx.lineTo(b.x, b.y);
     graphCtx.stroke();
   }
 
-  // Рисуем узлы
-  for (const n of graphNodes) {
-    const radius = 4 + Math.min(n.connections * 2, 12);
-    // glow для связанных
-    if (n.connections > 0) {
-      graphCtx.fillStyle = tagColor(n.tag).replace('0.85', '0.2');
+  // Draw nodes
+  for (let i = 0; i < graphNodes.length; i++) {
+    const n = graphNodes[i];
+    const isSelected = i === graphSelectedIdx;
+    const isConnectedToSelected = graphSelectedIdx !== null && graphEdges.some(e =>
+      (e.a === graphSelectedIdx && e.b === i) || (e.b === graphSelectedIdx && e.a === i)
+    );
+    const baseRadius = 4 + Math.min(n.connections * 1.5, 10);
+    const radius = isSelected ? baseRadius + 4 : (isConnectedToSelected ? baseRadius + 2 : baseRadius);
+
+    // glow for connected/selected
+    if (n.connections > 0 || isSelected) {
+      const glowAlpha = isSelected ? 0.4 : (isConnectedToSelected ? 0.25 : 0.15);
+      graphCtx.fillStyle = tagColor(n.tag).replace('0.85', glowAlpha);
       graphCtx.beginPath();
-      graphCtx.arc(n.x, n.y, radius + 6, 0, Math.PI * 2);
+      graphCtx.arc(n.x, n.y, radius + 8, 0, Math.PI * 2);
       graphCtx.fill();
     }
     // main node
-    graphCtx.fillStyle = tagColor(n.tag);
+    graphCtx.fillStyle = isSelected ? '#00FF8C' : tagColor(n.tag);
     graphCtx.beginPath();
     graphCtx.arc(n.x, n.y, radius, 0, Math.PI * 2);
     graphCtx.fill();
     // outline
-    graphCtx.strokeStyle = 'rgba(255,255,255,0.3)';
-    graphCtx.lineWidth = 0.5;
+    graphCtx.strokeStyle = isSelected ? 'rgba(255,255,255,0.8)' : 'rgba(255,255,255,0.3)';
+    graphCtx.lineWidth = isSelected ? 1.5 : 0.5;
     graphCtx.stroke();
+  }
+
+  // Draw labels: for selected node always, for high-connection nodes (>=3) or all if graph is small
+  const showAllLabels = graphNodes.length <= 30;
+  graphCtx.font = '11px Inter, sans-serif';
+  graphCtx.textAlign = 'center';
+  graphCtx.textBaseline = 'top';
+  for (let i = 0; i < graphNodes.length; i++) {
+    const n = graphNodes[i];
+    const isSelected = i === graphSelectedIdx;
+    const shouldShowLabel = isSelected || n.connections >= 3 || (showAllLabels && n.connections > 0);
+    if (!shouldShowLabel) continue;
+    const label = n.text.length > 30 ? n.text.slice(0, 28) + '…' : n.text;
+    const baseRadius = 4 + Math.min(n.connections * 1.5, 10);
+    const labelY = n.y + baseRadius + 4;
+    // bg for readability
+    const metrics = graphCtx.measureText(label);
+    const labelW = metrics.width + 8;
+    const labelH = 14;
+    graphCtx.fillStyle = isSelected ? 'rgba(0,255,140,0.2)' : 'rgba(0,0,0,0.6)';
+    graphCtx.fillRect(n.x - labelW/2, labelY, labelW, labelH);
+    // text
+    graphCtx.fillStyle = isSelected ? '#fff' : 'rgba(255,255,255,0.85)';
+    graphCtx.fillText(label, n.x, labelY + 1);
   }
 }
 
@@ -2160,9 +2224,12 @@ function setupGraphInteraction() {
     const idx = findNode(p.x, p.y);
     if (idx >= 0) {
       dragNode = idx;
-      // Запоминаем время начала — если быстро отпустим без движения = тап
       dragNodeStartTime = Date.now();
       dragNodeStartPos = { ...p };
+    } else {
+      // Тап мимо узла — снимаем селекцию
+      graphSelectedIdx = null;
+      hideGraphPopover();
     }
   }, { passive: true });
 
@@ -2181,21 +2248,18 @@ function setupGraphInteraction() {
   canvas.addEventListener('touchend', (e) => {
     if (dragNode === null || dragNode === undefined) return;
     const p = getPos(e);
-    // Если движение < 5px и время < 300мс = тап
     const dt = Date.now() - dragNodeStartTime;
     const moved = Math.hypot(p.x - dragNodeStartPos.x, p.y - dragNodeStartPos.y);
     if (dt < 300 && moved < 5) {
-      const n = graphNodes[dragNode];
-      if (n) {
-        closeGraphScreen();
-        setTimeout(() => openEdit(n.id), 100);
-      }
+      // Это тап — селекция узла + показ popover
+      graphSelectedIdx = dragNode;
+      showGraphPopover(dragNode);
     }
     dragNode = null;
   }, { passive: true });
 
   // Mouse для теста
-  let mouseDown = false, mouseDragNode = null, dragNodeStartTime = 0, dragNodeStartPos = null;
+  let mouseDown = false, mouseDragNode = null;
   canvas.addEventListener('mousedown', (e) => {
     const p = getPos(e);
     const idx = findNode(p.x, p.y);
@@ -2204,6 +2268,9 @@ function setupGraphInteraction() {
       mouseDown = true;
       dragNodeStartTime = Date.now();
       dragNodeStartPos = { ...p };
+    } else {
+      graphSelectedIdx = null;
+      hideGraphPopover();
     }
   });
   canvas.addEventListener('mousemove', (e) => {
@@ -2218,16 +2285,70 @@ function setupGraphInteraction() {
     const dt = Date.now() - dragNodeStartTime;
     const moved = Math.hypot(p.x - dragNodeStartPos.x, p.y - dragNodeStartPos.y);
     if (dt < 300 && moved < 5) {
-      const n = graphNodes[mouseDragNode];
-      if (n) {
-        closeGraphScreen();
-        setTimeout(() => openEdit(n.id), 100);
-      }
+      graphSelectedIdx = mouseDragNode;
+      showGraphPopover(mouseDragNode);
     }
     mouseDown = false;
     mouseDragNode = null;
   });
 }
+
+// Popover с информацией об узле — появляется при тапе на узел
+function showGraphPopover(idx) {
+  const n = graphNodes[idx];
+  if (!n) return;
+  let popover = document.getElementById('graph-popover');
+  if (!popover) {
+    popover = document.createElement('div');
+    popover.id = 'graph-popover';
+    popover.style.cssText = 'position:absolute;left:50%;bottom:calc(8px + env(safe-area-inset-bottom));transform:translateX(-50%);z-index:9999;max-width:90%;width:340px;background:rgba(15,18,40,0.97);border:1px solid rgba(108,71,255,0.5);border-radius:14px;padding:14px 16px;box-shadow:0 8px 32px rgba(0,0,0,0.6),0 0 24px rgba(108,71,255,0.25);font-family:Inter,sans-serif;backdrop-filter:blur(12px);';
+    // Находим контейнер (graph screen's relative div)
+    const container = document.querySelector('#screen-graph > div:nth-child(2)');
+    if (container) container.appendChild(popover);
+    else document.body.appendChild(popover);
+  }
+  const date = n.createdAt ? new Date(n.createdAt).toLocaleDateString('ru-RU', {day:'numeric',month:'short',year:'numeric'}) : '';
+  popover.innerHTML = `
+    <div style="font-size:13px;color:rgba(255,255,255,0.95);line-height:1.4;word-break:break-word;margin-bottom:8px;">${escapeHtml(n.text)}</div>
+    <div style="display:flex;gap:10px;font-size:10.5px;color:rgba(255,255,255,0.5);margin-bottom:10px;">
+      <span>🔗 ${n.connections} связей</span>
+      ${n.tag ? `<span>🏷 #${escapeHtml(n.tag)}</span>` : ''}
+    </div>
+    <div style="display:flex;gap:8px;">
+      <button onclick="openFromGraph(${idx})" style="flex:1;padding:8px;border-radius:8px;border:none;background:rgba(108,71,255,0.7);color:#fff;font-size:12px;font-weight:600;cursor:pointer;font-family:Inter,sans-serif;">📖 Открыть заметку</button>
+      <button onclick="closeGraphSelection()" style="padding:8px 12px;border-radius:8px;border:0.5px solid rgba(255,255,255,0.2);background:transparent;color:rgba(255,255,255,0.6);font-size:12px;cursor:pointer;font-family:Inter,sans-serif;">✕</button>
+    </div>
+  `;
+  popover.style.display = 'block';
+}
+
+function hideGraphPopover() {
+  const popover = document.getElementById('graph-popover');
+  if (popover) popover.style.display = 'none';
+}
+
+function closeGraphSelection() {
+  graphSelectedIdx = null;
+  hideGraphPopover();
+}
+
+function openFromGraph(idx) {
+  const n = graphNodes[idx];
+  if (!n) return;
+  hideGraphPopover();
+  graphSelectedIdx = null;
+  closeGraphScreen();
+  setTimeout(() => openEdit(n.id), 100);
+}
+
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+window.openFromGraph = openFromGraph;
+window.closeGraphSelection = closeGraphSelection;
 window.setupGraphInteraction = setupGraphInteraction;
 
 // Инициализация interaction на старте
