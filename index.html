@@ -656,6 +656,14 @@ body{background:#060918;font-family:'Inter',sans-serif;display:flex;justify-cont
       <button class="chat-clear-btn" onclick="goTo('wishes')" title="Назад">←</button>
       <div class="chat-title-wrap"><div class="chat-title" id="wishchat-title">Желание</div><div class="chat-subtitle">Обсуди план с ИИ</div></div>
     </div>
+    <!-- Perspective selector: 4 AI-наставника + general -->
+    <div id="wishchat-perspectives" style="display:flex;gap:6px;padding:8px 12px;overflow-x:auto;border-bottom:0.5px solid rgba(255,255,255,0.06);background:rgba(0,0,0,0.2);">
+      <button class="wish-perspective-chip active" data-perspective="general" onclick="setWishPerspective('general')" style="flex-shrink:0;padding:6px 10px;border-radius:99px;border:0.5px solid rgba(108,71,255,0.5);background:rgba(108,71,255,0.2);color:rgba(255,255,255,0.95);font-size:11px;font-weight:600;font-family:Inter,sans-serif;cursor:pointer;white-space:nowrap;">💬 Чат</button>
+      <button class="wish-perspective-chip" data-perspective="practitioner" onclick="setWishPerspective('practitioner')" style="flex-shrink:0;padding:6px 10px;border-radius:99px;border:0.5px solid rgba(255,255,255,0.15);background:rgba(255,255,255,0.04);color:rgba(255,255,255,0.6);font-size:11px;font-weight:600;font-family:Inter,sans-serif;cursor:pointer;white-space:nowrap;">🎯 Практик</button>
+      <button class="wish-perspective-chip" data-perspective="skeptic" onclick="setWishPerspective('skeptic')" style="flex-shrink:0;padding:6px 10px;border-radius:99px;border:0.5px solid rgba(255,255,255,0.15);background:rgba(255,255,255,0.04);color:rgba(255,255,255,0.6);font-size:11px;font-weight:600;font-family:Inter,sans-serif;cursor:pointer;white-space:nowrap;">🤔 Скептик</button>
+      <button class="wish-perspective-chip" data-perspective="dreamer" onclick="setWishPerspective('dreamer')" style="flex-shrink:0;padding:6px 10px;border-radius:99px;border:0.5px solid rgba(255,255,255,0.15);background:rgba(255,255,255,0.04);color:rgba(255,255,255,0.6);font-size:11px;font-weight:600;font-family:Inter,sans-serif;cursor:pointer;white-space:nowrap;">🌟 Мечтатель</button>
+      <button class="wish-perspective-chip" data-perspective="philosopher" onclick="setWishPerspective('philosopher')" style="flex-shrink:0;padding:6px 10px;border-radius:99px;border:0.5px solid rgba(255,255,255,0.15);background:rgba(255,255,255,0.04);color:rgba(255,255,255,0.6);font-size:11px;font-weight:600;font-family:Inter,sans-serif;cursor:pointer;white-space:nowrap;">🧠 Философ</button>
+    </div>
     <div class="chat-messages" id="wishchat-messages"></div>
     <div class="chat-input-wrap">
       <div class="chat-input-row">
@@ -2372,38 +2380,215 @@ async function loadWishes() {
   try {
     const snap = await getDocs(query(uCol('wishes'), orderBy('createdAt','asc')));
     wishes = snap.docs.map(d => ({ id:d.id, ...d.data() }));
+    // Миграция старых желаний — добавляем дефолтные поля если их нет
+    let needsUpdate = false;
+    for (const w of wishes) {
+      if (!w.state) { w.state = 'dream'; needsUpdate = true; }
+      if (!w.icon) { w.icon = '🌠'; needsUpdate = true; }
+      if (!w.category) { w.category = 'other'; needsUpdate = true; }
+      if (!w.milestones) w.milestones = [];
+      if (!w.moodImagePrompt) w.moodImagePrompt = '';
+    }
+    // Не делаем updateDoc при каждой загрузке — только если нужно (в фоне)
+    if (needsUpdate) {
+      for (const w of wishes) {
+        const updates = {};
+        if (!w.state) updates.state = 'dream';
+        if (!w.icon) updates.icon = '🌠';
+        if (!w.category) updates.category = 'other';
+        if (Object.keys(updates).length) {
+          try { await updateDoc(uDocRef('wishes', w.id), updates); } catch(e) {}
+        }
+      }
+    }
   } catch(e) { wishes = []; }
 }
+
+// Категории — для цвета/иконки
+const WISH_CATEGORIES = {
+  language:    { icon: '🗣️', color: '#10B981' },
+  career:      { icon: '💼', color: '#6C47FF' },
+  health:      { icon: '🏃', color: '#EF4444' },
+  travel:      { icon: '✈️', color: '#0EA5E9' },
+  creativity:  { icon: '🎨', color: '#F59E0B' },
+  relationships:{ icon: '❤️', color: '#EC4899' },
+  finance:     { icon: '💰', color: '#22C55E' },
+  learning:    { icon: '📚', color: '#8B5CF6' },
+  other:       { icon: '🌠', color: '#6C47FF' },
+};
+
+const WISH_STATES = {
+  dream:    { icon: '💭', label: 'Мечта',     color: 'rgba(255,255,255,0.4)' },
+  plan:     { icon: '🌱', label: 'План',      color: 'rgba(0,212,255,0.85)' },
+  active:   { icon: '🔥', label: 'В работе',  color: 'rgba(255,160,0,0.9)' },
+  done:     { icon: '✨', label: 'Достигнуто', color: 'rgba(0,255,140,0.9)' },
+  frozen:   { icon: '😴', label: 'Заморожено',color: 'rgba(150,150,180,0.7)' },
+};
 
 function renderWishes() {
   const el = document.getElementById('wishes-list');
   if (!el) return;
   document.getElementById('wishes-count').textContent = wishes.length + ' из 3';
   document.getElementById('wish-add-btn').style.opacity = wishes.length >= 3 ? '0.3' : '1';
-  if (!wishes.length) { el.innerHTML = '<div class="hist-empty"><div class="hist-empty-icon">🌠</div>Пока нет желаний</div>'; return; }
-  el.innerHTML = wishes.map(w => `
-    <div class="note-card" style="${w.done?'opacity:0.5;':''}">
-      <div class="note-text" style="${w.done?'text-decoration:line-through;':''}">${escHtml(w.text)}</div>
-      <div class="note-actions">
-        <button class="note-btn note-edit" onclick="openWishChat('${w.id}')">💬 Обсудить план</button>
-        <button class="note-btn ${w.done?'note-undone':'note-done'}" onclick="toggleWishDone('${w.id}', ${!!w.done})">${w.done?'↩ Открыть':'✓ Достигнуто'}</button>
-        <button class="note-btn note-del" onclick="deleteWish('${w.id}')">🗑</button>
-      </div>
-    </div>`).join('');
+  if (!wishes.length) {
+    el.innerHTML = '<div class="hist-empty"><div class="hist-empty-icon">🌠</div>Пока нет желаний</div>';
+    return;
+  }
+  el.innerHTML = wishes.map(w => {
+    const cat = WISH_CATEGORIES[w.category] || WISH_CATEGORIES.other;
+    const state = WISH_STATES[w.state] || WISH_STATES.dream;
+    const totalMs = (w.milestones || []).length;
+    const doneMs = (w.milestones || []).filter(m => m.done).length;
+    const progress = totalMs > 0 ? Math.round(doneMs / totalMs * 100) : 0;
+    const hasMood = !!w.moodImage;
+    // Fallback gradient based on category color
+    const gradient = `linear-gradient(135deg, ${cat.color}33, ${cat.color}11)`;
+    return `
+      <div class="note-card wish-card" onclick="openWishDetail('${w.id}')" style="padding:0;overflow:hidden;cursor:pointer;border:0.5px solid rgba(${w.state === 'done' ? '0,255,140' : '255,255,255'},0.15);${w.state === 'done' ? 'box-shadow:0 0 20px rgba(0,255,140,0.15);' : ''}">
+        <div style="position:relative;height:140px;background:${hasMood ? `url('${w.moodImage}') center/cover` : gradient};">
+          ${!hasMood && w.moodImagePrompt ? '<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:10px;color:rgba(255,255,255,0.4);">🎨 Генерится картинка…</div>' : ''}
+          <div style="position:absolute;top:8px;left:8px;font-size:22px;text-shadow:0 2px 8px rgba(0,0,0,0.8);">${w.icon || cat.icon}</div>
+          <div style="position:absolute;top:8px;right:8px;background:rgba(0,0,0,0.7);padding:3px 8px;border-radius:99px;font-size:10px;color:${state.color};font-weight:600;font-family:Inter,sans-serif;backdrop-filter:blur(8px);">${state.icon} ${state.label}</div>
+          ${totalMs > 0 ? `<div style="position:absolute;bottom:8px;left:8px;right:8px;display:flex;align-items:center;gap:6px;">
+            <div style="flex:1;height:4px;background:rgba(0,0,0,0.5);border-radius:2px;overflow:hidden;">
+              <div style="width:${progress}%;height:100%;background:${state.color};transition:width 0.3s;"></div>
+            </div>
+            <span style="font-size:9px;color:rgba(255,255,255,0.9);font-weight:600;text-shadow:0 1px 2px rgba(0,0,0,0.8);">${doneMs}/${totalMs}</span>
+          </div>` : ''}
+        </div>
+        <div style="padding:10px 12px;">
+          <div class="note-text" style="${w.state === 'done' ? 'text-decoration:line-through;opacity:0.7;' : ''}font-size:13.5px;line-height:1.4;">${escHtml(w.text)}</div>
+        </div>
+      </div>`;
+  }).join('');
 }
 
+// Создание желания — с AI suggestion + красивой модалкой подтверждения
 document.getElementById('wish-add-btn').addEventListener('click', async () => {
   const inp = document.getElementById('wish-input');
   const text = inp.value.trim();
   if (!text || wishes.length >= 3) return;
   inp.value = '';
-  await addDoc(uCol('wishes'), { text, done:false, createdAt:new Date().toISOString() });
-  await loadWishes(); renderWishes();
+  // Показываем модалку «AI думает…»
+  showWishSuggestionModal(text);
 });
+
+async function showWishSuggestionModal(text) {
+  // Создаём модалку если её нет
+  let modal = document.getElementById('wish-suggestion-modal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'wish-suggestion-modal';
+    modal.className = 'modal-overlay';
+    modal.innerHTML = `
+      <div class="modal" style="max-width:420px;max-height:90vh;display:flex;flex-direction:column;">
+        <div class="modal-title" id="ws-title">Новое желание ✨</div>
+        <div id="ws-content" style="flex:1;overflow-y:auto;padding:8px 4px;"></div>
+        <div class="modal-btns">
+          <button class="modal-cancel" onclick="closeWishSuggestion()">Отмена</button>
+          <button class="modal-save" id="ws-save-btn" onclick="confirmWishSuggestion()">Сохранить</button>
+        </div>
+      </div>`;
+    document.body.appendChild(modal);
+  }
+  const content = document.getElementById('ws-content');
+  content.innerHTML = `<div style="text-align:center;padding:30px 10px;color:rgba(255,255,255,0.5);font-size:13px;font-family:Inter,sans-serif;">
+    <div style="font-size:30px;margin-bottom:10px;animation:spin 2s linear infinite;display:inline-block;">✨</div>
+    <div>AI подбирает иконку, категорию,<br>настроение и план…</div>
+  </div>`;
+  modal.classList.add('open');
+
+  // Запрос к AI
+  let suggestion;
+  try {
+    suggestion = await suggestWishEnhancements(text);
+  } catch(e) {
+    suggestion = { icon:'⭐', category:'other', moodImagePrompt:'dreamy landscape oil painting calm mood', milestones:[] };
+  }
+
+  // Сохраняем suggestion в глобальную переменную для confirm
+  window._pendingWishSuggestion = { text, ...suggestion };
+
+  // Рендерим форму с возможностью редактировать
+  const cat = WISH_CATEGORIES[suggestion.category] || WISH_CATEGORIES.other;
+  content.innerHTML = `
+    <div style="margin-bottom:14px;">
+      <div style="font-size:10px;color:rgba(255,255,255,0.5);margin-bottom:6px;text-transform:uppercase;letter-spacing:1px;">Текст желания</div>
+      <textarea id="ws-text" style="width:100%;background:rgba(255,255,255,0.04);border:0.5px solid rgba(108,71,255,0.3);border-radius:8px;padding:8px 10px;color:#fff;font-size:13px;font-family:Inter,sans-serif;resize:vertical;min-height:50px;outline:none;" rows="2">${escHtml(text)}</textarea>
+    </div>
+    <div style="display:flex;gap:10px;margin-bottom:14px;">
+      <div style="flex:1;">
+        <div style="font-size:10px;color:rgba(255,255,255,0.5);margin-bottom:6px;text-transform:uppercase;letter-spacing:1px;">Иконка</div>
+        <input id="ws-icon" value="${escHtml(suggestion.icon)}" style="width:100%;background:rgba(255,255,255,0.04);border:0.5px solid rgba(108,71,255,0.3);border-radius:8px;padding:8px 10px;color:#fff;font-size:18px;text-align:center;font-family:Inter,sans-serif;outline:none;" maxlength="2">
+      </div>
+      <div style="flex:2;">
+        <div style="font-size:10px;color:rgba(255,255,255,0.5);margin-bottom:6px;text-transform:uppercase;letter-spacing:1px;">Категория</div>
+        <select id="ws-category" style="width:100%;background:rgba(255,255,255,0.04);border:0.5px solid rgba(108,71,255,0.3);border-radius:8px;padding:8px 10px;color:#fff;font-size:13px;font-family:Inter,sans-serif;outline:none;">
+          ${Object.entries(WISH_CATEGORIES).map(([k,v]) => `<option value="${k}" ${k===suggestion.category?'selected':''} style="background:#0F1228;color:#fff;">${v.icon} ${k}</option>`).join('')}
+        </select>
+      </div>
+    </div>
+    <div style="margin-bottom:14px;">
+      <div style="font-size:10px;color:rgba(255,255,255,0.5);margin-bottom:6px;text-transform:uppercase;letter-spacing:1px;">Промпт для картинки (англ)</div>
+      <input id="ws-prompt" value="${escHtml(suggestion.moodImagePrompt)}" style="width:100%;background:rgba(255,255,255,0.04);border:0.5px solid rgba(108,71,255,0.3);border-radius:8px;padding:8px 10px;color:#fff;font-size:12px;font-family:Inter,sans-serif;outline:none;">
+    </div>
+    <div style="margin-bottom:14px;">
+      <div style="font-size:10px;color:rgba(255,255,255,0.5);margin-bottom:6px;text-transform:uppercase;letter-spacing:1px;">План (milestones) — по одному на строку</div>
+      <textarea id="ws-milestones" style="width:100%;background:rgba(255,255,255,0.04);border:0.5px solid rgba(108,71,255,0.3);border-radius:8px;padding:8px 10px;color:#fff;font-size:12px;font-family:Inter,sans-serif;resize:vertical;min-height:90px;outline:none;" rows="5">${(suggestion.milestones || []).map(m => escHtml(m)).join('\n')}</textarea>
+    </div>
+    <div style="background:rgba(0,212,255,0.06);border:0.5px solid rgba(0,212,255,0.2);border-radius:8px;padding:8px 10px;font-size:11px;color:rgba(0,212,255,0.7);line-height:1.5;">
+      💡 После сохранения AI сгенерирует картинку-настроение (~10-30 сек). Карточка обновится автоматически.
+    </div>
+  `;
+}
+window.showWishSuggestionModal = showWishSuggestionModal;
+
+function closeWishSuggestion() {
+  const modal = document.getElementById('wish-suggestion-modal');
+  if (modal) modal.classList.remove('open');
+  window._pendingWishSuggestion = null;
+}
+window.closeWishSuggestion = closeWishSuggestion;
+
+async function confirmWishSuggestion() {
+  const text = document.getElementById('ws-text').value.trim();
+  if (!text) { alert('Текст не может быть пустым'); return; }
+  const icon = document.getElementById('ws-icon').value.trim() || '⭐';
+  const category = document.getElementById('ws-category').value;
+  const moodImagePrompt = document.getElementById('ws-prompt').value.trim();
+  const milestonesText = document.getElementById('ws-milestones').value.trim();
+  const milestones = milestonesText.split('\n').map(s => s.trim()).filter(s => s.length > 0)
+    .map(s => ({ id: 'ms_' + Date.now() + '_' + Math.random().toString(36).slice(2,7), text: s, done: false, completedAt: null }));
+
+  const btn = document.getElementById('ws-save-btn');
+  btn.disabled = true; btn.textContent = 'Сохранение…';
+  try {
+    const docRef = await addDoc(uCol('wishes'), {
+      text, done: false,
+      state: milestones.length > 0 ? 'plan' : 'dream',
+      icon, category, moodImagePrompt,
+      milestones,
+      moodImage: null,
+      createdAt: new Date().toISOString(),
+    });
+    closeWishSuggestion();
+    await loadWishes();
+    renderWishes();
+    // Запускаем генерацию картинки в фоне (async, не блокируя UI)
+    if (moodImagePrompt) {
+      setTimeout(() => generateWishMoodImage(docRef.id, moodImagePrompt), 500);
+    }
+  } catch(e) {
+    alert('Ошибка сохранения: ' + e.message);
+  } finally {
+    btn.disabled = false; btn.textContent = 'Сохранить';
+  }
+}
+window.confirmWishSuggestion = confirmWishSuggestion;
 document.getElementById('wish-input').addEventListener('keydown', e => { if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();document.getElementById('wish-add-btn').click();} });
 
 async function toggleWishDone(id, cur) {
-  await updateDoc(uDocRef('wishes', id), { done: !cur });
+  await updateDoc(uDocRef('wishes', id), { done: !cur, state: !cur ? 'done' : 'active' });
   if (!cur) celebrateTaskDone();
   await loadWishes(); renderWishes();
 }
@@ -2416,14 +2601,266 @@ async function deleteWish(id) {
 }
 window.deleteWish = deleteWish;
 
+async function setWishState(id, newState) {
+  await updateDoc(uDocRef('wishes', id), { state: newState, done: newState === 'done' });
+  if (newState === 'done') celebrateTaskDone();
+  await loadWishes(); renderWishes();
+  // Если открыта detail-модалка — перерисовать
+  const detail = document.getElementById('wish-detail-modal');
+  if (detail && detail.classList.contains('open')) openWishDetail(id);
+}
+window.setWishState = setWishState;
+
+async function toggleMilestone(wishId, msId) {
+  const w = wishes.find(x => x.id === wishId);
+  if (!w || !w.milestones) return;
+  const ms = w.milestones.find(m => m.id === msId);
+  if (!ms) return;
+  ms.done = !ms.done;
+  ms.completedAt = ms.done ? new Date().toISOString() : null;
+  await updateDoc(uDocRef('wishes', wishId), { milestones: w.milestones });
+  // Если все milestones done → состояние 'done', иначе 'active'
+  const allDone = w.milestones.length > 0 && w.milestones.every(m => m.done);
+  if (allDone && w.state !== 'done') {
+    await updateDoc(uDocRef('wishes', wishId), { state: 'done', done: true });
+    celebrateTaskDone();
+  } else if (!allDone && w.state === 'done') {
+    await updateDoc(uDocRef('wishes', wishId), { state: 'active', done: false });
+  }
+  await loadWishes(); renderWishes();
+  openWishDetail(wishId);
+}
+window.toggleMilestone = toggleMilestone;
+
+async function addMilestone(wishId) {
+  const text = prompt('Новый шаг:');
+  if (!text || !text.trim()) return;
+  const w = wishes.find(x => x.id === wishId);
+  if (!w) return;
+  const newMs = { id: 'ms_' + Date.now() + '_' + Math.random().toString(36).slice(2,7), text: text.trim(), done: false, completedAt: null };
+  const milestones = [...(w.milestones || []), newMs];
+  await updateDoc(uDocRef('wishes', wishId), { milestones, state: w.state === 'dream' ? 'plan' : w.state });
+  await loadWishes(); renderWishes();
+  openWishDetail(wishId);
+}
+window.addMilestone = addMilestone;
+
+async function deleteMilestone(wishId, msId) {
+  const w = wishes.find(x => x.id === wishId);
+  if (!w || !w.milestones) return;
+  const milestones = w.milestones.filter(m => m.id !== msId);
+  await updateDoc(uDocRef('wishes', wishId), { milestones });
+  await loadWishes(); renderWishes();
+  openWishDetail(wishId);
+}
+window.deleteMilestone = deleteMilestone;
+
+async function regenerateWishMoodImage(wishId) {
+  const w = wishes.find(x => x.id === wishId);
+  if (!w || !w.moodImagePrompt) { alert('Нет промпта для генерации'); return; }
+  // Очищаем старую картинку
+  await updateDoc(uDocRef('wishes', wishId), { moodImage: null });
+  await loadWishes(); renderWishes();
+  openWishDetail(wishId);
+  // Запускаем генерацию
+  generateWishMoodImage(wishId, w.moodImagePrompt);
+}
+window.regenerateWishMoodImage = regenerateWishMoodImage;
+
+// ── WISH DETAIL MODAL — большая красивая карточка с milestones, state, perspectives ──
+async function openWishDetail(id) {
+  const w = wishes.find(x => x.id === id);
+  if (!w) return;
+  const cat = WISH_CATEGORIES[w.category] || WISH_CATEGORIES.other;
+  const state = WISH_STATES[w.state] || WISH_STATES.dream;
+  const totalMs = (w.milestones || []).length;
+  const doneMs = (w.milestones || []).filter(m => m.done).length;
+  const progress = totalMs > 0 ? Math.round(doneMs / totalMs * 100) : 0;
+
+  let modal = document.getElementById('wish-detail-modal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'wish-detail-modal';
+    modal.className = 'modal-overlay';
+    document.body.appendChild(modal);
+  }
+  const hasMood = !!w.moodImage;
+  const gradient = `linear-gradient(135deg, ${cat.color}44, ${cat.color}11)`;
+  modal.innerHTML = `
+    <div class="modal" style="max-width:440px;max-height:90vh;display:flex;flex-direction:column;padding:0;overflow:hidden;">
+      <!-- Header with mood image -->
+      <div style="position:relative;height:180px;background:${hasMood ? `url('${w.moodImage}') center/cover` : gradient};flex-shrink:0;">
+        ${!hasMood && w.moodImagePrompt ? '<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:12px;color:rgba(255,255,255,0.5);background:rgba(0,0,0,0.3);">🎨 Генерится картинка…</div>' : ''}
+        <button onclick="closeWishDetail()" style="position:absolute;top:8px;right:8px;background:rgba(0,0,0,0.6);border:none;color:#fff;width:28px;height:28px;border-radius:50%;font-size:16px;cursor:pointer;backdrop-filter:blur(8px);">✕</button>
+        <div style="position:absolute;bottom:8px;left:8px;right:8px;display:flex;justify-content:space-between;align-items:flex-end;">
+          <div style="font-size:32px;text-shadow:0 2px 12px rgba(0,0,0,0.8);">${w.icon || cat.icon}</div>
+          <div style="background:rgba(0,0,0,0.7);padding:4px 10px;border-radius:99px;font-size:11px;color:${state.color};font-weight:600;font-family:Inter,sans-serif;backdrop-filter:blur(8px);">${state.icon} ${state.label}</div>
+        </div>
+      </div>
+      <div style="padding:14px 16px;overflow-y:auto;flex:1;">
+        <div style="font-size:16px;color:#fff;font-weight:600;line-height:1.4;margin-bottom:6px;font-family:Inter,sans-serif;">${escHtml(w.text)}</div>
+        <div style="display:flex;gap:10px;font-size:11px;color:rgba(255,255,255,0.5);margin-bottom:14px;font-family:Inter,sans-serif;">
+          <span>${cat.icon} ${w.category || 'other'}</span>
+          <span>📅 ${new Date(w.createdAt).toLocaleDateString('ru-RU')}</span>
+          ${totalMs > 0 ? `<span>✓ ${doneMs}/${totalMs} шагов</span>` : ''}
+        </div>
+
+        ${totalMs > 0 ? `
+          <div style="margin-bottom:14px;">
+            <div style="font-size:10px;color:rgba(255,255,255,0.5);margin-bottom:6px;text-transform:uppercase;letter-spacing:1px;font-family:Inter,sans-serif;">Прогресс · ${progress}%</div>
+            <div style="height:6px;background:rgba(255,255,255,0.08);border-radius:3px;overflow:hidden;">
+              <div style="width:${progress}%;height:100%;background:${state.color};transition:width 0.3s;"></div>
+            </div>
+          </div>
+        ` : ''}
+
+        <!-- State selector -->
+        <div style="margin-bottom:14px;">
+          <div style="font-size:10px;color:rgba(255,255,255,0.5);margin-bottom:8px;text-transform:uppercase;letter-spacing:1px;font-family:Inter,sans-serif;">Состояние</div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;">
+            ${Object.entries(WISH_STATES).map(([k,v]) => `
+              <button onclick="setWishState('${w.id}','${k}')" style="padding:6px 10px;border-radius:99px;border:0.5px solid ${k===w.state ? v.color : 'rgba(255,255,255,0.15)'};background:${k===w.state ? v.color.replace('0.85','0.15').replace('0.9','0.15').replace('0.7','0.15').replace('0.4','0.1') : 'rgba(255,255,255,0.04)'};color:${k===w.state ? v.color : 'rgba(255,255,255,0.6)'};font-size:11px;font-weight:600;font-family:Inter,sans-serif;cursor:pointer;">${v.icon} ${v.label}</button>
+            `).join('')}
+          </div>
+        </div>
+
+        <!-- Milestones -->
+        <div style="margin-bottom:14px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+            <div style="font-size:10px;color:rgba(255,255,255,0.5);text-transform:uppercase;letter-spacing:1px;font-family:Inter,sans-serif;">План · ${doneMs}/${totalMs}</div>
+            <button onclick="addMilestone('${w.id}')" style="background:rgba(108,71,255,0.2);border:0.5px solid rgba(108,71,255,0.4);border-radius:99px;padding:4px 10px;color:rgba(139,92,246,0.95);font-size:11px;font-weight:600;cursor:pointer;font-family:Inter,sans-serif;">+ Шаг</button>
+          </div>
+          ${totalMs === 0 ? '<div style="font-size:12px;color:rgba(255,255,255,0.4);padding:10px;text-align:center;background:rgba(255,255,255,0.02);border-radius:8px;">Пока нет шагов. Добавь первый!</div>' : ''}
+          <div style="display:flex;flex-direction:column;gap:6px;">
+            ${(w.milestones || []).map(m => `
+              <div style="display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:8px;background:rgba(255,255,255,0.03);border:0.5px solid rgba(255,255,255,0.06);">
+                <button onclick="toggleMilestone('${w.id}','${m.id}')" style="flex-shrink:0;width:22px;height:22px;border-radius:50%;border:1.5px solid ${m.done ? 'rgba(0,255,140,0.8)' : 'rgba(255,255,255,0.3)'};background:${m.done ? 'rgba(0,255,140,0.8)' : 'transparent'};color:#fff;font-size:11px;cursor:pointer;display:flex;align-items:center;justify-content:center;font-weight:700;">${m.done ? '✓' : ''}</button>
+                <div style="flex:1;font-size:12.5px;color:${m.done ? 'rgba(255,255,255,0.5)' : 'rgba(255,255,255,0.9)'};line-height:1.4;text-decoration:${m.done ? 'line-through' : 'none'};font-family:Inter,sans-serif;">${escHtml(m.text)}</div>
+                <button onclick="deleteMilestone('${w.id}','${m.id}')" style="flex-shrink:0;background:none;border:none;color:rgba(255,80,80,0.5);font-size:14px;cursor:pointer;padding:2px;">🗑</button>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+
+        <!-- Actions -->
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <button onclick="closeWishDetail(); setTimeout(() => openWishChat('${w.id}'), 100);" style="flex:1;padding:10px;border-radius:10px;border:none;background:linear-gradient(135deg,rgba(108,71,255,0.5),rgba(139,92,246,0.5));color:#fff;font-size:13px;font-weight:600;cursor:pointer;font-family:Inter,sans-serif;">💬 Обсудить с ИИ</button>
+          <button onclick="regenerateWishMoodImage('${w.id}')" style="padding:10px 14px;border-radius:10px;border:0.5px solid rgba(255,255,255,0.15);background:rgba(255,255,255,0.04);color:rgba(255,255,255,0.7);font-size:13px;cursor:pointer;font-family:Inter,sans-serif;" title="Сгенерировать новую картинку">🎨</button>
+          <button onclick="if(confirm('Удалить желание?')) { deleteWish('${w.id}'); closeWishDetail(); }" style="padding:10px 14px;border-radius:10px;border:0.5px solid rgba(255,80,80,0.3);background:rgba(255,80,80,0.1);color:rgba(255,100,100,0.8);font-size:13px;cursor:pointer;font-family:Inter,sans-serif;">🗑</button>
+        </div>
+      </div>
+    </div>`;
+  modal.classList.add('open');
+}
+window.openWishDetail = openWishDetail;
+
+function closeWishDetail() {
+  const modal = document.getElementById('wish-detail-modal');
+  if (modal) modal.classList.remove('open');
+}
+window.closeWishDetail = closeWishDetail;
+
 function wishMessagesCol(wishId) { return collection(db,'users',currentUid,'wishes',wishId,'messages'); }
+
+let currentWishPerspective = 'general';
+
+const WISH_PERSPECTIVES = {
+  general: {
+    icon: '💬',
+    name: 'Чат',
+    system: (wish) => `Ты помогаешь пользователю добиться конкретной цели-желания: "${wish.text}". Держись только этой темы. Задавай уточняющие вопросы, помогай построить конкретный пошаговый план, будь кратким и по-русски. Если пользователь просит добавить конкретный шаг как задачу — вызови propose_note.`,
+  },
+  practitioner: {
+    icon: '🎯',
+    name: 'Практик',
+    system: (wish) => `Ты — практик-наставник для желания: "${wish.text}".
+Твоя задача — помочь разбить это на конкретные выполнимые шаги.
+- Будь коротким и по делу
+- Предлагай СЛЕДУЮЩИЙ конкретный шаг (не весь план сразу)
+- Учитывай реальные ресурсы (время, деньги, навыки)
+- Фокус на действии, а не на размышлениях
+- Если есть milestones — выбери следующий невыполненный и помоги с ним`,
+  },
+  skeptic: {
+    icon: '🤔',
+    name: 'Скептик',
+    system: (wish) => `Ты — внутренний скептик для желания: "${wish.text}".
+- НЕ отговаривай, а помоги увидеть слабые места
+- Задавай вопросы про риски: «что если не хватит времени?», «что если столкнёшься с X?»
+- Помогай подготовиться к трудностям
+- Не пугай, а вооружай
+- Будь честным и прямым, но без негатива`,
+  },
+  dreamer: {
+    icon: '🌟',
+    name: 'Мечтатель',
+    system: (wish) => `Ты — мечтатель-наставник для желания: "${wish.text}".
+- Помоги представить, как будет когда достигнешь
+- Опиши эмоции, моменты, детали будущей реальности
+- Заряди вдохновением и энергией
+- Помоги увидеть масштаб: «а что это даст дальше?»
+- Эмоционально, образно, без пошаговых планов`,
+  },
+  philosopher: {
+    icon: '🧠',
+    name: 'Философ',
+    system: (wish) => `Ты — философ-наставник для желания: "${wish.text}".
+- Задавай вопросы про смыслы: «зачем тебе это?», «что это даст?»
+- Помоги найти глубинную мотивацию
+- Спрашивай про ценности и связи с другим
+- Не давай советов — только вопросы
+- Кратко, мудрёно, провокативно`,
+  },
+};
+
+function setWishPerspective(p) {
+  currentWishPerspective = p;
+  // Обновляем активный chip
+  document.querySelectorAll('.wish-perspective-chip').forEach(chip => {
+    const isActive = chip.dataset.perspective === p;
+    chip.classList.toggle('active', isActive);
+    if (isActive) {
+      chip.style.background = 'rgba(108,71,255,0.2)';
+      chip.style.borderColor = 'rgba(108,71,255,0.5)';
+      chip.style.color = 'rgba(255,255,255,0.95)';
+    } else {
+      chip.style.background = 'rgba(255,255,255,0.04)';
+      chip.style.borderColor = 'rgba(255,255,255,0.15)';
+      chip.style.color = 'rgba(255,255,255,0.6)';
+    }
+  });
+  // Обновляем placeholder input
+  const input = document.getElementById('wishchat-input');
+  if (input && WISH_PERSPECTIVES[p]) {
+    input.placeholder = `Спроси ${WISH_PERSPECTIVES[p].icon} ${WISH_PERSPECTIVES[p].name.toLowerCase()}…`;
+  }
+  // Перерисовываем чат (фильтруем сообщения по perspective)
+  if (currentWishId) {
+    loadWishChatMessages(currentWishId).then(() => renderWishChat());
+  }
+}
+window.setWishPerspective = setWishPerspective;
+
+async function loadWishChatMessages(wishId) {
+  try {
+    const snap = await getDocs(query(wishMessagesCol(wishId), orderBy('time','asc')));
+    const all = snap.docs.map(d => d.data());
+    // Фильтруем по текущей perspective
+    // old messages (без perspective field) → показываем в general
+    wishChatMessages = all.filter(m => (m.perspective || 'general') === currentWishPerspective);
+  } catch(e) {
+    wishChatMessages = [];
+  }
+}
 
 async function openWishChat(id) {
   currentWishId = id;
+  currentWishPerspective = 'general';
   const w = wishes.find(x => x.id === id);
   document.getElementById('wishchat-title').textContent = w ? w.text : 'Желание';
-  const snap = await getDocs(query(wishMessagesCol(id), orderBy('time','asc')));
-  wishChatMessages = snap.docs.map(d => d.data());
+  // Сбрасываем активную chip
+  setWishPerspective('general');
+  await loadWishChatMessages(id);
   renderWishChat();
   goTo('wishchat');
 }
@@ -2431,6 +2868,15 @@ window.openWishChat = openWishChat;
 
 function renderWishChat() {
   const el = document.getElementById('wishchat-messages');
+  if (!el) return;
+  if (!wishChatMessages.length) {
+    const p = WISH_PERSPECTIVES[currentWishPerspective];
+    el.innerHTML = `<div style="text-align:center;padding:30px 16px;color:rgba(255,255,255,0.4);font-size:12px;font-family:Inter,sans-serif;line-height:1.5;">
+      <div style="font-size:24px;margin-bottom:8px;">${p.icon}</div>
+      <div>Спроси что-нибудь у ${p.name.toLowerCase()}.</div>
+    </div>`;
+    return;
+  }
   el.innerHTML = wishChatMessages.map(m => `<div class="chat-bubble ${m.role==='user'?'bubble-user':'bubble-ai'}">${escHtmlChat(m.content)}</div>`).join('');
   el.scrollTop = el.scrollHeight;
 }
@@ -2441,12 +2887,14 @@ document.getElementById('wishchat-send').addEventListener('click', async () => {
   if (!text || !currentWishId) return;
   inp.value = '';
   const w = wishes.find(x => x.id === currentWishId);
-  const userMsg = { role:'user', content:text, time:new Date().toISOString() };
+  const perspective = currentWishPerspective;
+  const userMsg = { role:'user', content:text, time:new Date().toISOString(), perspective };
   wishChatMessages.push(userMsg);
   renderWishChat();
   await addDoc(wishMessagesCol(currentWishId), userMsg);
 
-  const sysPrompt = `Ты помогаешь пользователю добиться конкретной цели-желания: "${w.text}". Держись только этой темы. Задавай уточняющие вопросы, помогай построить конкретный пошаговый план, будь кратким и по-русски. Если пользователь просит добавить конкретный шаг как задачу — вызови propose_note.`;
+  // Системный промпт зависит от perspective
+  const sysPrompt = WISH_PERSPECTIVES[perspective].system(w);
   const apiMsgs = [{role:'system',content:sysPrompt}, ...wishChatMessages.map(m=>({role:m.role,content:m.content}))];
   const msg = await callChatAPI(apiMsgs);
   let reply = (msg && msg.content) ? msg.content.trim() : '';
@@ -2457,15 +2905,16 @@ document.getElementById('wishchat-send').addEventListener('click', async () => {
       if (args.text) {
         await addDoc(notesCol(), { text: args.text, type:'text', tag: args.tag || null, createdAt: new Date().toISOString() });
         await loadNotes();
-        reply = (reply ? reply + '\n\n' : '') + '✅ Добавил в задачи: «' + args.text + '»';
+        reply += '\n\n📋 Добавил заметку: ' + args.text;
       }
     } catch(e) {}
   }
-  if (!reply) reply = '...';
-  const aiMsg = { role:'assistant', content:reply, time:new Date().toISOString() };
-  wishChatMessages.push(aiMsg);
-  renderWishChat();
-  await addDoc(wishMessagesCol(currentWishId), aiMsg);
+  if (reply) {
+    const aiMsg = { role:'assistant', content: reply, time:new Date().toISOString(), perspective };
+    wishChatMessages.push(aiMsg);
+    renderWishChat();
+    await addDoc(wishMessagesCol(currentWishId), aiMsg);
+  }
 });
 document.getElementById('wishchat-input').addEventListener('keydown', e => { if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();document.getElementById('wishchat-send').click();} });
 
@@ -3746,6 +4195,89 @@ async function callPolzaAI(messages, options = {}) {
   return data.choices?.[0]?.message?.content || '';
 }
 window.callPolzaAI = callPolzaAI;
+
+// ── POLZA IMAGE GENERATION — async, returns URL when ready ──
+// 1. POST /v1/images/generations → returns {requestId}
+// 2. Poll GET /v1/images/{requestId} every 3s → {status:"COMPLETED", url, images}
+async function generatePolzaImage(prompt) {
+  const res = await fetch('https://api.polza.ai/api/v1/images/generations', {
+    method: 'POST',
+    headers: { 'Content-Type':'application/json', 'Authorization':'Bearer ' + POLZA_KEY },
+    body: JSON.stringify({ prompt, n:1, size:'1024x1024' })
+  });
+  if (!res.ok) throw new Error('Image gen start failed: ' + res.status);
+  const data = await res.json();
+  if (!data.requestId) throw new Error('No requestId');
+  // Poll
+  for (let i = 0; i < 20; i++) {  // max 60 seconds (20 × 3s)
+    await new Promise(r => setTimeout(r, 3000));
+    const stRes = await fetch(`https://api.polza.ai/api/v1/images/${data.requestId}`, {
+      headers: { 'Authorization':'Bearer ' + POLZA_KEY }
+    });
+    const stData = await stRes.json();
+    if (stData.status === 'COMPLETED' && stData.url) return stData.url;
+    if (stData.status === 'FAILED' || stData.error) throw new Error('Image gen failed');
+  }
+  throw new Error('Image gen timeout');
+}
+
+// Запуск генерации mood-image для желания (async, не блокирует UI)
+async function generateWishMoodImage(wishId, prompt) {
+  try {
+    const url = await generatePolzaImage(prompt);
+    // Сохраняем URL в Firestore
+    await updateDoc(uDocRef('wishes', wishId), { moodImage: url });
+    // Перерисовываем список если открыт
+    await loadWishes();
+    renderWishes();
+    console.log('[Wish] mood image ready for', wishId);
+  } catch(e) {
+    console.warn('[Wish] mood image generation failed:', e);
+  }
+}
+window.generateWishMoodImage = generateWishMoodImage;
+
+// ── WISH SUGGESTION — AI предлагает icon, category, mood prompt, milestones ──
+async function suggestWishEnhancements(text) {
+  const systemPrompt = `Ты — креативный ИИ-ассистент для приложения «Хэзэнштейн».
+Пользователь загадал желание. Твоя задача — обогатить его: подобрать иконку, категорию, описание настроения для генерации картинки и первоначальный план (milestones).
+
+Верни ТОЛЬКО валидный JSON (без markdown), формат:
+{
+  "icon": "1 эмодзи",
+  "category": "language|career|health|travel|creativity|relationships|finance|learning|other",
+  "moodImagePrompt": "короткий английский промпт для генерации картинки, в стиле 'oil painting' или 'watercolor', с настроением желания",
+  "milestones": ["шаг 1 (короткий, конкретный)", "шаг 2", "шаг 3", "шаг 4"]
+}
+
+Правила:
+- icon — один эмодзи, отражающий суть желания
+- category — выбери одну из списка
+- moodImagePrompt — 5-10 слов на английском, опиши визуальное настроение (НЕ текст желания, а абстрактная атмосфера)
+- milestones — 3-5 конкретных достижимых шагов, каждый 3-7 слов
+- Без воды, без пояснений — только JSON`;
+
+  const response = await callPolzaAI([
+    { role:'system', content: systemPrompt },
+    { role:'user', content: `Желание: "${text}"` }
+  ], { max_tokens: 600, temperature: 0.7 });
+
+  // Parse JSON from response
+  try {
+    const jsonMatch = response.match(/\{[\s\S]*\}/);
+    if (jsonMatch) return JSON.parse(jsonMatch[0]);
+  } catch(e) {
+    console.warn('[Wish] failed to parse suggestion:', e, response.slice(0, 200));
+  }
+  // Fallback — minimal enhancement
+  return {
+    icon: '⭐',
+    category: 'other',
+    moodImagePrompt: 'dreamy landscape, oil painting, calm mood',
+    milestones: []
+  };
+}
+window.suggestWishEnhancements = suggestWishEnhancements;
 
 async function sendChatMessage(userText) {
   if (!userText.trim()) return;
