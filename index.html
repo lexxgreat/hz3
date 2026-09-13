@@ -604,6 +604,7 @@ body{background:#060918;font-family:'Inter',sans-serif;display:flex;justify-cont
       <button onclick="regenerateWordCloud()" style="margin-left:auto;background:rgba(108,71,255,0.12);border:0.5px solid rgba(139,92,246,0.4);border-radius:99px;padding:5px 12px;color:rgba(139,92,246,0.95);font-size:12px;cursor:pointer;font-family:'Inter',sans-serif;">🔄 Обновить</button>
     </div>
     <div id="cloud-generated-at" style="text-align:center;font-size:10.5px;color:rgba(255,255,255,0.3);padding-bottom:4px;"></div>
+    <div id="cloud-hint" style="padding:0 16px 4px;"></div>
     <div style="flex:1;overflow-y:auto;padding:0 8px 16px;display:flex;flex-direction:column;align-items:center;">
       <canvas id="cloud-canvas" style="max-width:100%;"></canvas>
     </div>
@@ -710,6 +711,7 @@ body{background:#060918;font-family:'Inter',sans-serif;display:flex;justify-cont
       <button class="hist-filter-btn" data-filter="month" onclick="setHistFilter('month')">Месяц</button>
       <button class="hist-filter-btn" id="hist-show-done-btn" onclick="toggleShowDone()" style="margin-left:4px;">👁 Показать выполненные</button>
     </div>
+    <div id="hist-hint" style="padding:0 16px 4px;"></div>
     <div class="hist-list" id="hist-list">
       <div class="hist-empty"><div class="hist-empty-icon">📭</div>Пока нет записей</div>
     </div>
@@ -3408,22 +3410,29 @@ document.getElementById('wishchat-send').addEventListener('click', async () => {
 });
 document.getElementById('wishchat-input').addEventListener('keydown', e => { if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();document.getElementById('wishchat-send').click();} });
 
-// ── ПРОГРЕССИВНЫЕ ПОДСКАЗКИ (показываются один раз) ──
+// ── ПРОГРЕССИВНЫЕ ПОДСКАЗКИ (показываются один раз при выполнении условия) ──
 let hintsShown = new Set();
 async function loadHints() {
   try { const snap = await getDocs(uCol('meta')); const d = snap.docs.find(x=>x.id==='hints_shown'); hintsShown = new Set(d ? (d.data().ids||[]) : []); } catch(e) {}
 }
-function showHintOnce(id, text, elId) {
+// id — уникальный идентификатор подсказки
+// text — текст (с эмодзи)
+// elId — id контейнера куда вставлять
+// condition — optional функция, возвращает true если контекст подходящий
+function showHintOnce(id, text, elId, condition = null) {
   if (hintsShown.has(id)) return;
+  if (condition && typeof condition === 'function' && !condition()) return;  // контекст не подходит
   const el = document.getElementById(elId);
   if (!el) return;
   el.innerHTML = `<div class="note-card" style="border-color:rgba(139,92,246,0.4);background:rgba(108,71,255,0.08);"><div class="note-text">💡 ${text}</div><div class="note-actions"><button class="note-btn note-undone" onclick="dismissHint('${id}')">Понял</button></div></div>`;
 }
 async function dismissHint(id) {
   hintsShown.add(id);
-  document.getElementById('todo-hint') && (document.getElementById('todo-hint').innerHTML = '');
-  document.getElementById('main-hint') && (document.getElementById('main-hint').innerHTML = '');
-  document.getElementById('wishes-hint') && (document.getElementById('wishes-hint').innerHTML = '');
+  // Очищаем все возможные контейнеры подсказок
+  ['todo-hint','main-hint','wishes-hint','hist-hint','graph-hint','cloud-hint'].forEach(hid => {
+    const el = document.getElementById(hid);
+    if (el) el.innerHTML = '';
+  });
   try { await setDoc(uDocRef('meta','hints_shown'), { ids:[...hintsShown] }); } catch(e) {}
 }
 window.dismissHint = dismissHint;
@@ -3875,14 +3884,40 @@ function goTo(screen) {
   document.getElementById('screen-' + screen).classList.add('active');
   const dockBtn = document.getElementById('dock-' + screen);
   if (dockBtn) dockBtn.classList.add('active');
-  if (screen === 'hist') loadNotes();
+  if (screen === 'hist') {
+    loadNotes();
+    // Подсказка после 1-й записи
+    showHintOnce('first_note','✨ Отлично! Это твоя первая запись. Используй поиск сверху, чтобы быстро найти её позже.','hist-hint', () => notes.length >= 1);
+    // Подсказка после 5 записей — про теги
+    showHintOnce('use_tags','🏷 Добавляй теги к записям на главном экране — потом сможешь фильтровать по ним в Истории.','hist-hint', () => notes.length >= 5 && hintsShown.has('first_note'));
+    // Подсказка после 30 записей — про граф
+    showHintOnce('notes_30','📊 Уже 30+ записей! Загляни в 🕸 Граф — увидишь структуру своих мыслей и связи между ними.','hist-hint', () => notes.length >= 30);
+    // Подсказка после 100 записей
+    showHintOnce('notes_100','🏆 100 записей! Не забудь сделать экспорт — бэкап своих данных.','hist-hint', () => notes.length >= 100);
+  }
   if (screen === 'todo') loadNotes();
   if (screen === 'chat') { renderChat(); checkRemindersOnOpen(); }
   if (screen === 'prompt') { renderPromptRules(); loadBalance(); updateAccountWidget(); }
   if (screen === 'tags') renderTagsScreen();
-  if (screen === 'cloud') renderWordCloud();
-  if (screen === 'wishes') { renderWishes(); showHintOnce('wishes_intro','У каждого желания свой отдельный чат с ИИ — обсуди план прямо там.','wishes-hint'); }
-  if (screen === 'todo') showHintOnce('todo_drag','Тащи за ⠿ чтобы поменять порядок — соседи подвинутся сами.','todo-hint');
+  if (screen === 'cloud') {
+    renderWordCloud();
+    // Подсказка при первом визите облака (только если есть 10+ записей)
+    showHintOnce('cloud_intro','☁️ Облако слов показывает что у тебя в фокусе. Чем больше записей — тем информативнее.','cloud-hint', () => notes.length >= 10);
+  }
+  if (screen === 'graph') {
+    // Hint появится через openGraphScreen() после загрузки данных
+  }
+  if (screen === 'wishes') {
+    renderWishes();
+    // Подсказка про chat per wish — только если есть хотя бы 1 желание
+    showHintOnce('wishes_intro','У каждого желания свой отдельный чат с ИИ — 4 режима: Практик, Скептик, Мечтатель, Философ.','wishes-hint', () => wishes.length >= 1);
+    // Подсказка «тапни на карточку» — только при 1+ желании
+    showHintOnce('first_wish','Тапни на карточку желания — откроются детали: mood-image, milestones, AI-наставники.','wishes-hint', () => wishes.length >= 1 && hintsShown.has('wishes_intro'));
+  }
+  if (screen === 'todo') {
+    // Подсказка про перетаскивание — только если есть 2+ задач (иначе тащить нечего)
+    showHintOnce('todo_drag','Тащи за ⠿ чтобы поменять порядок — соседи подвинутся сами.','todo-hint', () => notes.filter(n => n.inTodo && !n.done).length >= 2);
+  }
 }
 window.goTo = goTo;
 
@@ -5573,7 +5608,7 @@ onAuthStateChanged(auth, async (user) => {
     await loadHints(); // важно ДО goTo — иначе подсказка может мигнуть даже если уже скрыта раньше
     goTo('main');
     await initUserData();
-    showHintOnce('main_x','Перечеркни весь экран крест-накрест («Х») — отметит текущую задачу выполненной.','main-hint');
+    showHintOnce('main_x','Перечеркни весь экран крест-накрест («Х») — отметит текущую задачу выполненной.','main-hint', () => notes.filter(n => n.inTodo && !n.done).length >= 1);
     // Daily summary — проверяем, был ли итог за сегодня (генерируется в фоне, не блокируя UI)
     setTimeout(() => checkAndGenerateDailySummary(), 2000);
     // AI-психолог — раз в 7 дней, после daily summary
