@@ -2654,6 +2654,8 @@ async function confirmWishSuggestion() {
     if (moodImagePrompt) {
       setTimeout(() => generateWishMoodImage(docRef.id, moodImagePrompt), 500);
     }
+    // Проверяем, не пора ли предложить регистрацию (создание желания — триггер)
+    setTimeout(checkShowRegisterPrompt, 800);
   } catch(e) {
     alert('Ошибка сохранения: ' + e.message);
   } finally {
@@ -5412,15 +5414,23 @@ function checkShowRegisterPrompt() {
   if (!isAnonymousUser) return;  // только для анонимных
   const notesCount = (notes || []).length;
   const wishesCount = (wishes || []).length;
-  // localStorage флаг чтобы не показывать повторно
+  // localStorage флаг чтобы не показывать повторно на низком пороге
   const dismissed = localStorage.getItem('registerPromptDismissed') === '1';
-  if (dismissed) return;
-  if (notesCount < 10 && wishesCount < 1) return;  // ещё рано
-  // Показываем modal
-  showRegisterPromptModal(notesCount, wishesCount);
+  const dismissedHigh = localStorage.getItem('registerPromptDismissedHigh') === '1';
+
+  // Первый порог: 10 заметок или 1 желание
+  if (!dismissed && (notesCount >= 10 || wishesCount >= 1)) {
+    showRegisterPromptModal(notesCount, wishesCount);
+    return;
+  }
+  // Второй порог (если отклонили первый): 50 заметок или 5 желаний
+  if (dismissed && !dismissedHigh && (notesCount >= 50 || wishesCount >= 5)) {
+    showRegisterPromptModal(notesCount, wishesCount, true);
+    return;
+  }
 }
 
-function showRegisterPromptModal(notesCount, wishesCount) {
+function showRegisterPromptModal(notesCount, wishesCount, isHigh = false) {
   let modal = document.getElementById('register-prompt-modal');
   if (!modal) {
     modal = document.createElement('div');
@@ -5428,19 +5438,21 @@ function showRegisterPromptModal(notesCount, wishesCount) {
     modal.className = 'modal-overlay';
     document.body.appendChild(modal);
   }
+  const title = isHigh ? 'Не потеряйте свои данные!' : 'Сохранить ваши данные?';
+  const emoji = isHigh ? '⚠️' : '💾';
   modal.innerHTML = `
     <div class="modal" style="max-width:420px;text-align:center;">
-      <div style="font-size:48px;margin-bottom:14px;">💾</div>
-      <div class="modal-title" style="font-size:18px;line-height:1.4;">Сохранить ваши данные?</div>
+      <div style="font-size:48px;margin-bottom:14px;">${emoji}</div>
+      <div class="modal-title" style="font-size:18px;line-height:1.4;">${title}</div>
       <div style="font-size:13px;color:rgba(255,255,255,0.6);line-height:1.5;margin:10px 0 18px;font-family:Inter,sans-serif;">
         У вас уже ${notesCount} ${pluralize(notesCount, 'заметка', 'заметки', 'заметок')}${wishesCount > 0 ? ' и ' + wishesCount + ' ' + pluralize(wishesCount, 'желание', 'желания', 'желаний') : ''}.<br>
-        Зарегистрируйтесь, чтобы:<br>
+        ${isHigh ? 'Очистите браузер — потеряете всё. ' : ''}Зарегистрируйтесь, чтобы:<br>
         • получить доступ к данным с любого устройства<br>
         • не потерять их при очистке браузера<br>
         • синхронизировать между телефонами и компьютером
       </div>
       <div class="modal-btns">
-        <button class="modal-cancel" onclick="dismissRegisterPrompt()" style="flex:1;">Позже</button>
+        <button class="modal-cancel" onclick="dismissRegisterPrompt(${isHigh ? 'true' : 'false'})" style="flex:1;">Позже</button>
         <button class="modal-save" onclick="openRegisterFromPrompt()" style="flex:2;">Создать аккаунт</button>
       </div>
       <button onclick="openLoginFromPrompt()" style="margin-top:10px;background:none;border:none;color:rgba(255,255,255,0.4);font-size:12px;cursor:pointer;font-family:Inter,sans-serif;text-decoration:underline;">У меня уже есть аккаунт</button>
@@ -5455,10 +5467,14 @@ function pluralize(n, one, few, many) {
   return many;
 }
 
-function dismissRegisterPrompt() {
+function dismissRegisterPrompt(isHigh = false) {
   const modal = document.getElementById('register-prompt-modal');
   if (modal) modal.classList.remove('open');
-  localStorage.setItem('registerPromptDismissed', '1');
+  if (isHigh) {
+    localStorage.setItem('registerPromptDismissedHigh', '1');
+  } else {
+    localStorage.setItem('registerPromptDismissed', '1');
+  }
 }
 window.dismissRegisterPrompt = dismissRegisterPrompt;
 
@@ -5481,14 +5497,19 @@ function updateAccountWidget() {
   const widget = document.getElementById('account-widget');
   const text = document.getElementById('account-status-text');
   if (!widget || !text) return;
+  // Кнопка logout (скрываем для анонимов)
+  const logoutBtn = document.querySelector('[onclick="logout()"]');
   if (isAnonymousUser) {
     widget.style.display = 'block';
     text.textContent = '💾 Сохранить данные (создать аккаунт)';
+    if (logoutBtn) logoutBtn.style.display = 'none';  // анониму некуда выходить
   } else if (currentUid) {
     widget.style.display = 'block';
     text.textContent = '👤 Аккаунт: ' + (auth.currentUser?.email || 'пользователь');
+    if (logoutBtn) logoutBtn.style.display = 'block';  // показать для залогиненных
   } else {
     widget.style.display = 'none';
+    if (logoutBtn) logoutBtn.style.display = 'none';
   }
 }
 window.updateAccountWidget = updateAccountWidget;
