@@ -2795,8 +2795,17 @@ async function openWishDetail(id) {
         <div style="display:flex;gap:8px;flex-wrap:wrap;">
           <button onclick="closeWishDetail(); setTimeout(() => openWishChat('${w.id}'), 100);" style="flex:1;padding:10px;border-radius:10px;border:none;background:linear-gradient(135deg,rgba(108,71,255,0.5),rgba(139,92,246,0.5));color:#fff;font-size:13px;font-weight:600;cursor:pointer;font-family:Inter,sans-serif;">💬 Обсудить с ИИ</button>
           <button onclick="regenerateWishMoodImage('${w.id}')" style="padding:10px 14px;border-radius:10px;border:0.5px solid rgba(255,255,255,0.15);background:rgba(255,255,255,0.04);color:rgba(255,255,255,0.7);font-size:13px;cursor:pointer;font-family:Inter,sans-serif;" title="Сгенерировать новую картинку">🎨</button>
+          <button onclick="editWishMoodPrompt('${w.id}')" style="padding:10px 14px;border-radius:10px;border:0.5px solid rgba(0,212,255,0.3);background:rgba(0,212,255,0.08);color:rgba(0,212,255,0.8);font-size:13px;cursor:pointer;font-family:Inter,sans-serif;" title="Редактировать промпт">✏️</button>
           <button onclick="if(confirm('Удалить желание?')) { deleteWish('${w.id}'); closeWishDetail(); }" style="padding:10px 14px;border-radius:10px;border:0.5px solid rgba(255,80,80,0.3);background:rgba(255,80,80,0.1);color:rgba(255,100,100,0.8);font-size:13px;cursor:pointer;font-family:Inter,sans-serif;">🗑</button>
         </div>
+
+        <!-- Show current prompt -->
+        ${w.moodImagePrompt ? `
+          <div style="margin-top:14px;padding:10px;background:rgba(0,212,255,0.04);border:0.5px solid rgba(0,212,255,0.15);border-radius:8px;">
+            <div style="font-size:10px;color:rgba(0,212,255,0.6);margin-bottom:4px;text-transform:uppercase;letter-spacing:1px;font-family:Inter,sans-serif;">Текущий промпт для картинки</div>
+            <div style="font-size:11px;color:rgba(255,255,255,0.7);line-height:1.5;font-family:Inter,sans-serif;">${escHtml(w.moodImagePrompt)}</div>
+          </div>
+        ` : ''}
       </div>
     </div>`;
   modal.classList.add('open');
@@ -2808,6 +2817,84 @@ function closeWishDetail() {
   if (modal) modal.classList.remove('open');
 }
 window.closeWishDetail = closeWishDetail;
+
+// Редактирование промпта для картинки — модалка с textarea
+function editWishMoodPrompt(wishId) {
+  const w = wishes.find(x => x.id === wishId);
+  if (!w) return;
+  let modal = document.getElementById('wish-prompt-edit-modal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'wish-prompt-edit-modal';
+    modal.className = 'modal-overlay';
+    document.body.appendChild(modal);
+  }
+  modal.innerHTML = `
+    <div class="modal" style="max-width:440px;">
+      <div class="modal-title">✏️ Промпт для картинки</div>
+      <div style="font-size:11px;color:rgba(255,255,255,0.5);margin-bottom:8px;font-family:Inter,sans-serif;line-height:1.5;">
+        Опиши на английском что должно быть на картинке: локация, объекты, действие, освещение, стиль.<br>
+        <span style="color:rgba(0,212,255,0.7);">Пример:</span> «Bali tropical beach at sunset, palm trees, turquoise ocean, oil painting, golden hour, vibrant colors»
+      </div>
+      <textarea id="prompt-edit-field" style="width:100%;min-height:120px;background:rgba(255,255,255,0.04);border:0.5px solid rgba(108,71,255,0.3);border-radius:8px;padding:10px;color:#fff;font-size:12.5px;font-family:Inter,sans-serif;resize:vertical;outline:none;line-height:1.5;" rows="5">${escHtml(w.moodImagePrompt || '')}</textarea>
+      <div style="display:flex;gap:6px;margin-top:10px;flex-wrap:wrap;">
+        <button onclick="improvePromptWithAI('${wishId}')" style="flex:1;padding:8px;border-radius:8px;border:0.5px solid rgba(0,212,255,0.4);background:rgba(0,212,255,0.1);color:rgba(0,212,255,0.9);font-size:12px;cursor:pointer;font-family:Inter,sans-serif;">✨ Улучшить через AI</button>
+        <button onclick="closeWishPromptEdit()" style="padding:8px 14px;border-radius:8px;border:0.5px solid rgba(255,255,255,0.15);background:rgba(255,255,255,0.04);color:rgba(255,255,255,0.7);font-size:12px;cursor:pointer;font-family:Inter,sans-serif;">Отмена</button>
+      </div>
+      <div class="modal-btns" style="margin-top:12px;">
+        <button class="modal-cancel" onclick="closeWishPromptEdit()">Отмена</button>
+        <button class="modal-save" onclick="saveWishMoodPromptAndRegenerate('${wishId}')">Сохранить и сгенерировать</button>
+      </div>
+    </div>`;
+  modal.classList.add('open');
+}
+window.editWishMoodPrompt = editWishMoodPrompt;
+
+function closeWishPromptEdit() {
+  const modal = document.getElementById('wish-prompt-edit-modal');
+  if (modal) modal.classList.remove('open');
+}
+window.closeWishPromptEdit = closeWishPromptEdit;
+
+async function improvePromptWithAI(wishId) {
+  const w = wishes.find(x => x.id === wishId);
+  if (!w) return;
+  const field = document.getElementById('prompt-edit-field');
+  if (!field) return;
+  field.disabled = true;
+  field.value = '✨ AI улучшает промпт…';
+  try {
+    const better = await callPolzaAI([
+      { role:'system', content: 'Ты генератор промптов для AI image generation. На входе желание пользователя и возможно старый промпт. На выходе — улучшенный английский промпт 15-30 слов, который описывает КОНКРЕТНУЮ сцену. Включай локацию, объекты, действие, освещение, стиль (oil painting). Никаких абстракций типа "dreamy landscape". Только конкретика. Верни только промпт, без пояснений и кавычек.' },
+      { role:'user', content: `Желание: "${w.text}"\n\nСтарый промпт: "${w.moodImagePrompt || ''}"\n\nСделай промпт конкретнее, с реальными визуальными элементами из желания.` }
+    ], { max_tokens: 200, temperature: 0.8 });
+    const cleanPrompt = better.trim().replace(/^["']|["']$/g, '').split('\n')[0].trim();
+    field.value = cleanPrompt;
+  } catch(e) {
+    alert('Ошибка: ' + e.message);
+    field.value = w.moodImagePrompt || '';
+  } finally {
+    field.disabled = false;
+  }
+}
+window.improvePromptWithAI = improvePromptWithAI;
+
+async function saveWishMoodPromptAndRegenerate(wishId) {
+  const newPrompt = document.getElementById('prompt-edit-field').value.trim();
+  if (!newPrompt) { alert('Промпт не может быть пустым'); return; }
+  try {
+    await updateDoc(uDocRef('wishes', wishId), { moodImagePrompt: newPrompt, moodImage: null });
+    await loadWishes();
+    renderWishes();
+    closeWishPromptEdit();
+    closeWishDetail();
+    setTimeout(() => openWishDetail(wishId), 100);
+    generateWishMoodImage(wishId, newPrompt);
+  } catch(e) {
+    alert('Ошибка сохранения: ' + e.message);
+  }
+}
+window.saveWishMoodPromptAndRegenerate = saveWishMoodPromptAndRegenerate;
 
 function wishMessagesCol(wishId) { return collection(db,'users',currentUid,'wishes',wishId,'messages'); }
 
@@ -4289,47 +4376,78 @@ window.generateWishMoodImage = generateWishMoodImage;
 // ── WISH SUGGESTION — AI предлагает icon, category, mood prompt, milestones ──
 async function suggestWishEnhancements(text) {
   const systemPrompt = `Ты — креативный ИИ-ассистент для приложения «Хэзэнштейн».
-Пользователь загадал желание. Твоя задача — обогатить его: подобрать иконку, категорию, визуальный промпт для генерации картинки и первоначальный план (milestones).
+Пользователь загадал желание. Твоя задача — обогатить его: подобрать иконку, категорию, конкретный визуальный промпт для генерации картинки и первоначальный план.
 
 Верни ТОЛЬКО валидный JSON (без markdown), формат:
-{
-  "icon": "1 эмодзи",
-  "category": "language|career|health|travel|creativity|relationships|finance|learning|other",
-  "moodImagePrompt": "детальный английский промпт для генерации картинки",
-  "milestones": ["шаг 1 (короткий, конкретный)", "шаг 2", "шаг 3", "шаг 4"]
-}
+{"icon":"эмодзи","category":"категория","moodImagePrompt":"английский промпт 15-30 слов","milestones":["шаг1","шаг2","шаг3"]}
 
-Правила:
-- icon — один эмодзи, отражающий суть желания
-- category — выбери одну из списка
-- moodImagePrompt — 12-25 слов на английском, ОПИСЫВАЕТ КОНКРЕТНО ЧТО НА КАРТИНКЕ:
-  • Включай конкретные визуальные элементы из желания (места, объекты, активности, атмосфера)
-  • Если в желании есть локация — упомяни её: "Bali tropical beach with palm trees and temples"
-  • Если действие — опиши сцену: "person hiking mountain trail at sunrise"
-  • Если абстрактная цель — визуализируй результат: "graduation ceremony, holding diploma, smiling"
-  • Добавь стиль и настроение: "oil painting, golden hour, vibrant colors, peaceful mood"
-  • Избегай общих слов вроде "dreamy landscape" — будь конкретным
-- milestones — 3-5 конкретных достижимых шагов, каждый 3-7 слов
-- Без воды, без пояснений — только JSON`;
+КРИТИЧЕСКИ ВАЖНО про moodImagePrompt:
+- Это промпт для генерации КАРТИНКИ через Stable Diffusion / DALL-E
+- Опиши КОНКРЕТНО что на картинке, основываясь на тексте желания
+- Включай: локацию + объекты + действие + освещение + стиль
+- Никогда не возвращай общие фразы типа "dreamy landscape" или "calm mood" — это слишком абстрактно
+
+ПРИМЕРЫ:
+Желание "Хочу поехать на Бали":
+{"icon":"🏝️","category":"travel","moodImagePrompt":"Bali tropical beach at sunset, palm trees silhouettes, traditional Balinese temple in background, turquoise ocean waves, oil painting style, golden hour lighting, vibrant warm colors","milestones":["Забронировать билеты на Бали","Найти отель на 2 недели","Собрать документы и страховку","Спланировать маршрут по острову"]}
+
+Желание "Хочу выучить испанский":
+{"icon":"🗣️","category":"language","moodImagePrompt":"Spanish language learning scene, open book with Spanish words, cup of coffee, sunny cafe table with view of Mediterranean, oil painting style, warm morning light, cozy atmosphere","milestones":["Установить Duolingo и заниматься 10 минут в день","Найти носителя языка для практики","Смотреть сериалы на испанском с субтитрами","Пройти B1 уровень за 3 месяца"]}
+
+Желание "Бросить курить":
+{"icon":"🫁","category":"health","moodImagePrompt":"Person standing on mountain peak breathing deeply fresh air, blue sky, healthy glowing lungs visualization, morning sunlight, oil painting style, hopeful and vibrant colors","milestones":["Назначить дату отказа от сигарет","Удалить все пепельницы и зажигалки","Найти замену: жвачка или вода при желании","Держаться 30 дней без срыва"]}
+
+Категории: language|career|health|travel|creativity|relationships|finance|learning|other
+milestones: 3-5 конкретных шага, 3-7 слов каждый.`;
 
   const response = await callPolzaAI([
     { role:'system', content: systemPrompt },
     { role:'user', content: `Желание: "${text}"` }
-  ], { max_tokens: 700, temperature: 0.7 });
+  ], { max_tokens: 800, temperature: 0.75 });
 
-  // Parse JSON from response
+  // Parse JSON from response — пробуем несколько стратегий
+  let parsed = null;
   try {
-    const jsonMatch = response.match(/\{[\s\S]*\}/);
-    if (jsonMatch) return JSON.parse(jsonMatch[0]);
+    // Убираем markdown code block если есть
+    let cleaned = response.trim();
+    if (cleaned.startsWith('```')) {
+      cleaned = cleaned.replace(/^```(json)?\s*/, '').replace(/\s*```$/, '');
+    }
+    const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+    if (jsonMatch) parsed = JSON.parse(jsonMatch[0]);
   } catch(e) {
-    console.warn('[Wish] failed to parse suggestion:', e, response.slice(0, 200));
+    console.warn('[Wish] failed to parse suggestion:', e, response.slice(0, 300));
   }
-  // Fallback — minimal enhancement
+
+  if (parsed && parsed.moodImagePrompt && parsed.moodImagePrompt.length > 20) {
+    return parsed;
+  }
+
+  // Если AI вернул короткий/общий промпт — пробуем перегенерить с уточняющим промптом
+  if (parsed && parsed.moodImagePrompt) {
+    // Слишком общий — попробуем улучшить вторым вызовом
+    try {
+      const betterPrompt = await callPolzaAI([
+        { role:'system', content: 'Ты генератор промптов для AI image generation. На входе желание пользователя. На выходе — английский промпт 15-30 слов, который описывает КОНКРЕТНУЮ сцену из желания. Включай локацию, объекты, действие, освещение, стиль (oil painting). Никаких абстракций типа "dreamy landscape". Только конкретика.' },
+        { role:'user', content: `Желание: "${text}"\n\nВерни только промпт, без пояснений.` }
+      ], { max_tokens: 200, temperature: 0.8 });
+      // Берём только текст без кавычек
+      const cleanPrompt = betterPrompt.trim().replace(/^["']|["']$/g, '').split('\n')[0].trim();
+      if (cleanPrompt.length > 20) {
+        parsed.moodImagePrompt = cleanPrompt;
+        return parsed;
+      }
+    } catch(e) {
+      console.warn('[Wish] second attempt failed:', e);
+    }
+  }
+
+  // Полный fallback — генерируем простой промпт из текста
   return {
-    icon: '⭐',
-    category: 'other',
-    moodImagePrompt: 'dreamy landscape, oil painting, calm mood',
-    milestones: []
+    icon: parsed?.icon || '⭐',
+    category: parsed?.category || 'other',
+    moodImagePrompt: `${text.slice(0, 100)} scene, oil painting style, warm lighting, vibrant colors`,
+    milestones: parsed?.milestones || []
   };
 }
 window.suggestWishEnhancements = suggestWishEnhancements;
