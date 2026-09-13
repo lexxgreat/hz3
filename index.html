@@ -2634,6 +2634,83 @@ async function addChatMessage(role, content, confirmData) {
   renderChat();
 }
 
+// ── DAILY SUMMARY — итог дня в 00:00 (или при открытии приложения позже) ──
+// Логика:
+// 1. LocalStorage хранит lastDailySummaryDate (YYYY-MM-DD)
+// 2. При открытии приложения проверяем: сегодня уже был итог?
+// 3. Если нет — берём все заметки за вчера → AI генерирует summary → добавляем как сообщение от ассистента
+// 4. Помечаем дату в LocalStorage
+// 5. Сообщение помечаем special маркером 📊 Итог дня
+
+function getYesterdayDateString() {
+  const d = new Date();
+  d.setDate(d.getDate() - 1);
+  return d.toISOString().slice(0, 10); // YYYY-MM-DD
+}
+
+function getTodayDateString() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function getNotesForDate(dateStr) {
+  // dateStr: YYYY-MM-DD
+  return notes.filter(n => {
+    if (!n.createdAt) return false;
+    return n.createdAt.slice(0, 10) === dateStr;
+  });
+}
+
+async function checkAndGenerateDailySummary() {
+  if (!currentUid) return;
+  const today = getTodayDateString();
+  const lastSummary = localStorage.getItem('lastDailySummaryDate');
+  if (lastSummary === today) return; // уже сделан за сегодня
+
+  const yesterday = getYesterdayDateString();
+  const yesterdayNotes = getNotesForDate(yesterday);
+  if (yesterdayNotes.length === 0) {
+    // Нет заметок вчера — пропускаем
+    localStorage.setItem('lastDailySummaryDate', today);
+    return;
+  }
+
+  try {
+    const notesText = yesterdayNotes.map((n, i) => {
+      const time = n.createdAt ? new Date(n.createdAt).toLocaleTimeString('ru-RU', {hour:'2-digit', minute:'2-digit'}) : '';
+      return `${i+1}. [${time}]${n.tag ? ' #' + n.tag : ''} ${n.text}`;
+    }).join('\n');
+
+    const systemPrompt = `Ты — персональный ИИ-ассистент «Хэзэнштейн». Пользователь только что открыл приложение.
+Твоя задача — создать краткий и тёплый итог вчерашнего дня на основе его записей.
+
+Правила:
+- Начни с эмодзи 📊 и заголовка «Итог дня (вчера, ${yesterday})»
+- 3-5 ключевых тем/событий дня (без воды, по сути)
+- Эмоциональный фон дня — одна фраза
+- Если есть задачи — отметить выполненные/невыполненные
+- Заверши коротким вопросом-приглашением: «Что сегодня в фокусе?»
+- Объём: 80-150 слов
+- Пиши на «ты», дружелюбно, без пафоса`;
+
+    const userPrompt = `Записи за вчера:\n${notesText}`;
+
+    const summary = await callPolzaAI([
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userPrompt }
+    ], { max_tokens: 600, temperature: 0.7 });
+
+    if (summary) {
+      // Добавляем как сообщение от ассистента в чат
+      await addChatMessage('assistant', summary);
+    }
+    localStorage.setItem('lastDailySummaryDate', today);
+  } catch(e) {
+    console.error('[Daily Summary] error:', e);
+    // Не помечаем как сделанный — попробуем в следующий раз
+  }
+}
+window.checkAndGenerateDailySummary = checkAndGenerateDailySummary;
+
 function showTyping() {
   const el = document.getElementById('chat-messages');
   const div = document.createElement('div');
@@ -2800,6 +2877,31 @@ async function callChatAPI(apiMessages) {
   const data = await res.json();
   return data.choices?.[0]?.message;
 }
+
+// ── Универсальный хелпер для вызова Polza AI (без tools, чистый chat completion) ──
+// Используется для: daily summary, auto-linking, future AI features
+// messages: [{role:'system'|'user'|'assistant', content:'...'}]
+// options: { max_tokens, temperature, model }
+async function callPolzaAI(messages, options = {}) {
+  const body = {
+    model: options.model || CHAT_MODEL,
+    max_tokens: options.max_tokens || 800,
+    messages: messages,
+  };
+  if (options.temperature !== undefined) body.temperature = options.temperature;
+  const res = await fetch(POLZA_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + POLZA_KEY },
+    body: JSON.stringify(body)
+  });
+  if (!res.ok) {
+    const errText = await res.text().catch(() => '');
+    throw new Error(`Polza API error ${res.status}: ${errText.slice(0, 200)}`);
+  }
+  const data = await res.json();
+  return data.choices?.[0]?.message?.content || '';
+}
+window.callPolzaAI = callPolzaAI;
 
 async function sendChatMessage(userText) {
   if (!userText.trim()) return;
@@ -3362,6 +3464,8 @@ onAuthStateChanged(auth, async (user) => {
     goTo('main');
     await initUserData();
     showHintOnce('main_x','Перечеркни весь экран крест-накрест («Х») — отметит текущую задачу выполненной.','main-hint');
+    // Daily summary — проверяем, был ли итог за сегодня (генерируется в фоне, не блокируя UI)
+    setTimeout(() => checkAndGenerateDailySummary(), 2000);
   } else {
     currentUid = null;
     clearLocalUserData();
