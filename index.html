@@ -393,6 +393,7 @@ body{background:#060918;font-family:'Inter',sans-serif;display:flex;justify-cont
 #screen-hist.active ~ .dock,
 #screen-cloud.active ~ .dock,
 #screen-graph.active ~ .dock,
+#screen-calendar.active ~ .dock,
 #screen-wishes.active ~ .dock,
 #screen-wishchat.active ~ .dock,
 #screen-chat.active ~ .dock,
@@ -632,6 +633,27 @@ body{background:#060918;font-family:'Inter',sans-serif;display:flex;justify-cont
     </div>
   </div>
 
+  <!-- ── CALENDAR SCREEN — план на неделю, drag-tap для назначения дат ── -->
+  <div class="screen" id="screen-calendar">
+    <div class="hist-header">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div>
+          <div class="hist-title">📅 Календарь</div>
+          <div class="hist-sub" id="calendar-sub">План на неделю</div>
+        </div>
+        <button onclick="goTo('hist')" style="background:none;border:none;color:rgba(255,255,255,0.4);font-size:22px;cursor:pointer;">←</button>
+      </div>
+    </div>
+    <div style="display:flex;gap:6px;padding:8px 16px;align-items:center;border-bottom:0.5px solid rgba(255,255,255,0.06);">
+      <button onclick="changeCalendarWeek(-1)" style="background:rgba(255,255,255,0.04);border:0.5px solid rgba(255,255,255,0.1);border-radius:8px;padding:5px 10px;color:rgba(255,255,255,0.7);font-size:14px;cursor:pointer;font-family:Inter,sans-serif;">←</button>
+      <button onclick="changeCalendarWeek(0)" id="calendar-today-btn" style="background:rgba(108,71,255,0.15);border:0.5px solid rgba(108,71,255,0.4);border-radius:8px;padding:5px 12px;color:rgba(139,92,246,0.95);font-size:11px;font-weight:600;cursor:pointer;font-family:Inter,sans-serif;">Сегодня</button>
+      <button onclick="changeCalendarWeek(1)" style="background:rgba(255,255,255,0.04);border:0.5px solid rgba(255,255,255,0.1);border-radius:8px;padding:5px 10px;color:rgba(255,255,255,0.7);font-size:14px;cursor:pointer;font-family:Inter,sans-serif;">→</button>
+      <div id="calendar-week-range" style="margin-left:auto;font-size:11px;color:rgba(255,255,255,0.5);font-family:Inter,sans-serif;"></div>
+    </div>
+    <div id="calendar-list" style="flex:1;overflow-y:auto;padding:8px 16px;"></div>
+    <div id="calendar-hint" style="padding:0 16px 4px;"></div>
+  </div>
+
   <!-- ── WISHES SCREEN ── -->
   <div class="screen" id="screen-wishes">
     <div class="hist-header">
@@ -685,6 +707,7 @@ body{background:#060918;font-family:'Inter',sans-serif;display:flex;justify-cont
         <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;">
           <button onclick="goTo('cloud')" style="padding:6px 14px;border-radius:99px;border:0.5px solid rgba(255,255,255,0.15);background:rgba(255,255,255,0.04);color:rgba(255,255,255,0.6);font-size:12px;font-weight:500;cursor:pointer;font-family:'Inter',sans-serif;transition:all 0.2s">☁️ Облако</button>
           <button onclick="goTo('graph')" style="padding:6px 14px;border-radius:99px;border:0.5px solid rgba(0,212,255,0.35);background:rgba(0,212,255,0.1);color:rgba(0,212,255,0.9);font-size:12px;font-weight:500;cursor:pointer;font-family:'Inter',sans-serif;transition:all 0.2s">🕸 Граф</button>
+          <button onclick="goTo('calendar')" style="padding:6px 14px;border-radius:99px;border:0.5px solid rgba(255,200,50,0.35);background:rgba(255,200,50,0.1);color:rgba(255,210,80,0.9);font-size:12px;font-weight:500;cursor:pointer;font-family:'Inter',sans-serif;transition:all 0.2s">📅 Календарь</button>
           <button id="hist-select-toggle" onclick="toggleSelectionMode()" style="padding:6px 14px;border-radius:99px;border:0.5px solid rgba(255,255,255,0.15);background:rgba(255,255,255,0.04);color:rgba(255,255,255,0.6);font-size:12px;font-weight:500;cursor:pointer;font-family:'Inter',sans-serif;transition:all 0.2s">☑ Выделить</button>
           <button onclick="document.getElementById('import-file-input').click()" style="padding:6px 14px;border-radius:99px;border:0.5px solid rgba(0,200,140,0.35);background:rgba(0,180,120,0.1);color:rgba(0,220,150,0.9);font-size:12px;font-weight:500;cursor:pointer;font-family:'Inter',sans-serif;transition:all 0.2s">⬆ Импорт</button>
           <input type="file" id="import-file-input" accept=".json,.txt,.csv" style="display:none;">
@@ -1952,6 +1975,174 @@ function setCloudPeriod(period) {
   renderWordCloud();
 }
 window.setCloudPeriod = setCloudPeriod;
+
+// ── CALENDAR — план на неделю, задачи из Тудушки с scheduledDate ──
+let calendarWeekOffset = 0;  // 0 = текущая неделя, -1 = прошлая, +1 = следующая
+
+function getCalendarWeekStart(offset = 0) {
+  // Понедельник как начало недели
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  const day = d.getDay();  // 0=Sun, 1=Mon, ..., 6=Sat
+  const diff = (day === 0 ? -6 : 1 - day);  // смещение до понедельника
+  d.setDate(d.getDate() + diff + offset * 7);
+  return d;
+}
+
+function formatDateKey(d) {
+  // YYYY-MM-DD
+  return d.toISOString().slice(0, 10);
+}
+
+function formatDateDisplay(d) {
+  return d.toLocaleDateString('ru-RU', { day:'numeric', month:'short', weekday:'short' });
+}
+
+function changeCalendarWeek(direction) {
+  if (direction === 0) {
+    calendarWeekOffset = 0;  // Today
+  } else {
+    calendarWeekOffset += direction;
+  }
+  renderCalendar();
+}
+window.changeCalendarWeek = changeCalendarWeek;
+
+function getCalendarTasks() {
+  // Все задачи из тудушки (inTodo=true) — без учёта done
+  return notes.filter(n => n.inTodo === true);
+}
+
+function renderCalendar() {
+  const list = document.getElementById('calendar-list');
+  if (!list) return;
+  const tasks = getCalendarTasks();
+  const weekStart = getCalendarWeekStart(calendarWeekOffset);
+  // Sub-header
+  const weekEnd = new Date(weekStart);
+  weekEnd.setDate(weekEnd.getDate() + 6);
+  const range = document.getElementById('calendar-week-range');
+  if (range) range.textContent = `${weekStart.toLocaleDateString('ru-RU', {day:'numeric',month:'short'})} — ${weekEnd.toLocaleDateString('ru-RU', {day:'numeric',month:'short'})}`;
+
+  const today = new Date();
+  today.setHours(0,0,0,0);
+  const todayKey = formatDateKey(today);
+
+  let html = '';
+  for (let i = 0; i < 7; i++) {
+    const dayDate = new Date(weekStart);
+    dayDate.setDate(dayDate.getDate() + i);
+    const dayKey = formatDateKey(dayDate);
+    const isToday = dayKey === todayKey;
+    const isPast = dayDate < today && !isToday;
+    const dayTasks = tasks.filter(t => (t.scheduledDate || '').slice(0,10) === dayKey);
+
+    html += `<div style="margin-bottom:14px;">
+      <div style="display:flex;align-items:center;gap:8px;padding:6px 8px;margin-bottom:6px;border-radius:8px;background:${isToday ? 'rgba(108,71,255,0.15)' : 'rgba(255,255,255,0.02)'};border:0.5px solid ${isToday ? 'rgba(108,71,255,0.4)' : 'rgba(255,255,255,0.06)'};">
+        <div style="font-size:14px;font-weight:600;color:${isToday ? 'rgba(139,92,246,0.95)' : (isPast ? 'rgba(255,255,255,0.4)' : 'rgba(255,255,255,0.85)')};font-family:Inter,sans-serif;">${formatDateDisplay(dayDate)}</div>
+        ${isToday ? '<span style="font-size:9px;background:rgba(108,71,255,0.4);padding:1px 6px;border-radius:99px;color:#fff;font-family:Inter,sans-serif;">сегодня</span>' : ''}
+        <span style="margin-left:auto;font-size:10px;color:rgba(255,255,255,0.4);font-family:Inter,sans-serif;">${dayTasks.length}</span>
+      </div>
+      ${dayTasks.length === 0 ? '<div style="font-size:11px;color:rgba(255,255,255,0.25);padding:4px 8px 8px;font-style:italic;">— нет задач —</div>' : ''}
+      ${dayTasks.map(t => renderCalendarTask(t)).join('')}
+    </div>`;
+  }
+
+  // Unscheduled tasks
+  const unsched = tasks.filter(t => !t.scheduledDate);
+  html += `<div style="margin-top:16px;padding-top:12px;border-top:0.5px solid rgba(255,255,255,0.08);">
+    <div style="font-size:11px;color:rgba(255,255,255,0.5);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;font-family:Inter,sans-serif;">Без срока · ${unsched.length}</div>
+    ${unsched.length === 0 ? '<div style="font-size:11px;color:rgba(255,255,255,0.25);padding:4px 8px;font-style:italic;">Все задачи распределены</div>' : ''}
+    ${unsched.map(t => renderCalendarTask(t)).join('')}
+  </div>`;
+
+  list.innerHTML = html;
+
+  // Update sub
+  const sub = document.getElementById('calendar-sub');
+  if (sub) sub.textContent = `${tasks.length} задач · ${tasks.filter(t=>t.scheduledDate).length} распределено`;
+}
+
+function renderCalendarTask(t) {
+  const isDone = t.done === true;
+  const tagBadge = t.tag ? `<span style="font-size:9px;color:rgba(139,92,246,0.6);margin-left:6px;">#${escHtml(t.tag)}</span>` : '';
+  return `<div style="display:flex;align-items:flex-start;gap:8px;padding:6px 8px;margin-bottom:4px;border-radius:8px;background:rgba(255,255,255,0.02);border:0.5px solid rgba(255,255,255,0.04);">
+    <button onclick="toggleDone('${t.id}', ${isDone})" style="flex-shrink:0;width:18px;height:18px;border-radius:50%;border:1.5px solid ${isDone ? 'rgba(0,255,140,0.8)' : 'rgba(255,255,255,0.3)'};background:${isDone ? 'rgba(0,255,140,0.8)' : 'transparent'};color:#fff;font-size:10px;cursor:pointer;display:flex;align-items:center;justify-content:center;font-weight:700;margin-top:1px;">${isDone ? '✓' : ''}</button>
+    <div style="flex:1;min-width:0;">
+      <div style="font-size:12.5px;color:${isDone ? 'rgba(255,255,255,0.4)' : 'rgba(255,255,255,0.9)'};line-height:1.4;text-decoration:${isDone ? 'line-through' : 'none'};word-break:break-word;font-family:Inter,sans-serif;">${escHtml(t.text)}${tagBadge}</div>
+    </div>
+    <button onclick="openScheduleModal('${t.id}')" title="Назначить дату" style="flex-shrink:0;background:rgba(255,200,50,0.1);border:0.5px solid rgba(255,200,50,0.25);color:rgba(255,210,80,0.85);border-radius:6px;padding:3px 6px;font-size:11px;cursor:pointer;font-family:Inter,sans-serif;">📅</button>
+  </div>`;
+}
+
+function openScheduleModal(noteId) {
+  const note = notes.find(n => n.id === noteId);
+  if (!note) return;
+  let modal = document.getElementById('schedule-modal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'schedule-modal';
+    modal.className = 'modal-overlay';
+    document.body.appendChild(modal);
+  }
+  const today = new Date();
+  today.setHours(0,0,0,0);
+  const tomorrow = new Date(today); tomorrow.setDate(tomorrow.getDate() + 1);
+  const dayAfter = new Date(today); dayAfter.setDate(dayAfter.getDate() + 2);
+  const inThreeDays = new Date(today); inThreeDays.setDate(inThreeDays.getDate() + 3);
+  const nextWeek = new Date(today); nextWeek.setDate(nextWeek.getDate() + 7);
+  const current = note.scheduledDate ? note.scheduledDate.slice(0,10) : '';
+
+  modal.innerHTML = `
+    <div class="modal" style="max-width:380px;">
+      <div class="modal-title">📅 Назначить дату</div>
+      <div style="font-size:12.5px;color:rgba(255,255,255,0.7);margin-bottom:12px;line-height:1.4;font-family:Inter,sans-serif;">${escHtml(note.text)}</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:10px;">
+        <button onclick="setScheduleDate('${noteId}', '${formatDateKey(today)}')" style="padding:9px;border-radius:8px;border:0.5px solid rgba(108,71,255,0.4);background:rgba(108,71,255,0.1);color:rgba(139,92,246,0.95);font-size:12px;cursor:pointer;font-family:Inter,sans-serif;">Сегодня</button>
+        <button onclick="setScheduleDate('${noteId}', '${formatDateKey(tomorrow)}')" style="padding:9px;border-radius:8px;border:0.5px solid rgba(108,71,255,0.3);background:rgba(255,255,255,0.04);color:rgba(255,255,255,0.8);font-size:12px;cursor:pointer;font-family:Inter,sans-serif;">Завтра</button>
+        <button onclick="setScheduleDate('${noteId}', '${formatDateKey(dayAfter)}')" style="padding:9px;border-radius:8px;border:0.5px solid rgba(108,71,255,0.3);background:rgba(255,255,255,0.04);color:rgba(255,255,255,0.8);font-size:12px;cursor:pointer;font-family:Inter,sans-serif;">Послезавтра</button>
+        <button onclick="setScheduleDate('${noteId}', '${formatDateKey(inThreeDays)}')" style="padding:9px;border-radius:8px;border:0.5px solid rgba(108,71,255,0.3);background:rgba(255,255,255,0.04);color:rgba(255,255,255,0.8);font-size:12px;cursor:pointer;font-family:Inter,sans-serif;">Через 3 дня</button>
+        <button onclick="setScheduleDate('${noteId}', '${formatDateKey(nextWeek)}')" style="padding:9px;border-radius:8px;border:0.5px solid rgba(108,71,255,0.3);background:rgba(255,255,255,0.04);color:rgba(255,255,255,0.8);font-size:12px;cursor:pointer;font-family:Inter,sans-serif;">Через неделю</button>
+        <button onclick="setScheduleDate('${noteId}', null)" style="padding:9px;border-radius:8px;border:0.5px solid rgba(255,80,80,0.3);background:rgba(255,80,80,0.08);color:rgba(255,100,100,0.85);font-size:12px;cursor:pointer;font-family:Inter,sans-serif;">Снять дату</button>
+      </div>
+      <div style="margin-bottom:10px;">
+        <div style="font-size:10px;color:rgba(255,255,255,0.5);margin-bottom:4px;text-transform:uppercase;letter-spacing:1px;font-family:Inter,sans-serif;">Или выбери дату:</div>
+        <input type="date" id="schedule-date-input" value="${current}" style="width:100%;background:rgba(255,255,255,0.04);border:0.5px solid rgba(108,71,255,0.3);border-radius:8px;padding:8px;color:#fff;font-size:13px;font-family:Inter,sans-serif;outline:none;color-scheme:dark;" />
+      </div>
+      <div class="modal-btns">
+        <button class="modal-cancel" onclick="closeScheduleModal()">Отмена</button>
+        <button class="modal-save" onclick="saveScheduleDate('${noteId}')">Сохранить</button>
+      </div>
+    </div>`;
+  modal.classList.add('open');
+}
+window.openScheduleModal = openScheduleModal;
+
+function closeScheduleModal() {
+  const modal = document.getElementById('schedule-modal');
+  if (modal) modal.classList.remove('open');
+}
+window.closeScheduleModal = closeScheduleModal;
+
+async function setScheduleDate(noteId, dateStr) {
+  // Быстрая кнопка — сразу сохраняем
+  try {
+    await updateDoc(uDocRef('notes', noteId), { scheduledDate: dateStr });
+    await loadNotes();
+    renderCalendar();
+    closeScheduleModal();
+  } catch(e) {
+    alert('Ошибка: ' + e.message);
+  }
+}
+window.setScheduleDate = setScheduleDate;
+
+async function saveScheduleDate(noteId) {
+  const input = document.getElementById('schedule-date-input');
+  const dateStr = input?.value || null;
+  await setScheduleDate(noteId, dateStr);
+}
+window.saveScheduleDate = saveScheduleDate;
 
 // ── LIVING GRAPH — визуальный граф заметок и их AI-связей ──
 // Force-directed layout: узлы отталкиваются, связи притягивают
@@ -3429,7 +3620,7 @@ function showHintOnce(id, text, elId, condition = null) {
 async function dismissHint(id) {
   hintsShown.add(id);
   // Очищаем все возможные контейнеры подсказок
-  ['todo-hint','main-hint','wishes-hint','hist-hint','graph-hint','cloud-hint'].forEach(hid => {
+  ['todo-hint','main-hint','wishes-hint','hist-hint','graph-hint','cloud-hint','calendar-hint'].forEach(hid => {
     const el = document.getElementById(hid);
     if (el) el.innerHTML = '';
   });
@@ -3906,6 +4097,10 @@ function goTo(screen) {
   }
   if (screen === 'graph') {
     // Hint появится через openGraphScreen() после загрузки данных
+  }
+  if (screen === 'calendar') {
+    renderCalendar();
+    showHintOnce('calendar_intro','📅 Тап на 📅 рядом с задачей — назначь дату. Распредели все задачи по дням недели.','calendar-hint', () => notes.filter(n => n.inTodo).length >= 1);
   }
   if (screen === 'wishes') {
     renderWishes();
