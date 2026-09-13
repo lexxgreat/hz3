@@ -5328,8 +5328,9 @@ async function initUserData() {
 onAuthStateChanged(auth, async (user) => {
   const dockEl = document.querySelector('.dock');
   const statusEl = document.querySelector('.status');
-  document.getElementById('screen-splash').classList.remove('active'); // сплэш скрываем в любом случае — статус уже известен
   if (user) {
+    // Скрываем splash только когда есть пользователь
+    document.getElementById('screen-splash').classList.remove('active');
     currentUid = user.uid;
     isAnonymousUser = user.isAnonymous;
     document.getElementById('screen-auth').classList.remove('active');
@@ -5347,22 +5348,34 @@ onAuthStateChanged(auth, async (user) => {
     setTimeout(checkShowRegisterPrompt, 3000);
   } else {
     // Пользователь не залогинен — пробуем авто-войти в anonymous
-    // Это позволит новому пользователю сразу начать пользоваться приложением
+    // Splash ОСТАЁТСЯ видимым пока идёт попытка (избегаем пустого экрана)
     currentUid = null;
     isAnonymousUser = false;
     clearLocalUserData();
     if (dockEl) dockEl.style.display = 'none';
     if (statusEl) statusEl.style.display = 'none';
-    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
-    // НЕ показываем screen-auth — вместо этого авто-входим в anonymous
-    // onAuthStateChanged сработает снова когда anonymous uid будет создан
+    // Оставляем splash активным — будет скрыт когда появится user
+    document.querySelectorAll('.screen').forEach(s => {
+      if (s.id !== 'screen-splash') s.classList.remove('active');
+    });
+    // Пробуем anonymous sign-in
     try {
+      console.log('[Auth] Attempting anonymous sign-in...');
       await signInAnonymously(auth);
       console.log('[Auth] Auto anonymous sign-in successful');
+      // onAuthStateChanged сработает снова с новым anonymous user
     } catch(e) {
-      console.error('[Auth] Anonymous sign-in failed:', e);
-      // Если anonymous не сработал (например, отключён в Firebase console) — показываем auth screen
+      console.error('[Auth] Anonymous sign-in failed:', e.code || e.message);
+      // Если anonymous не сработал — показываем auth screen
+      document.getElementById('screen-splash').classList.remove('active');
       document.getElementById('screen-auth').classList.add('active');
+      document.getElementById('auth-email').value = '';
+      document.getElementById('auth-password').value = '';
+      document.getElementById('auth-password2').value = '';
+      // Показываем понятную ошибку если Anonymous Auth не включён в Firebase
+      if (e.code === 'auth/operation-not-allowed') {
+        setAuthError('Anonymous auth не включён в Firebase Console. Войдите через email.');
+      }
     }
   }
 });
