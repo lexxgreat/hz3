@@ -922,7 +922,7 @@ body{background:#060918;font-family:'Inter',sans-serif;display:flex;justify-cont
 <!-- Firebase -->
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-import { getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, addDoc, getDocs, updateDoc, deleteDoc, doc, orderBy, query, setDoc } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+import { getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, addDoc, getDocs, getDoc, updateDoc, deleteDoc, doc, orderBy, query, setDoc } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, signInAnonymously, linkWithCredential, EmailAuthProvider } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 
 const firebaseConfig = {
@@ -1443,7 +1443,7 @@ function renderNotes(list) {
 }
 
 function escHtml(s) {
-  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
 
 let histFilter = 'all';
@@ -2007,8 +2007,9 @@ function getCalendarWeekStart(offset = 0) {
 }
 
 function formatDateKey(d) {
-  // YYYY-MM-DD
-  return d.toISOString().slice(0, 10);
+  // YYYY-MM-DD в московском времени (UTC+3): раньше был чистый UTC —
+  // до 03:00 ночи по Москве дата уезжала на «вчера» (кнопки Сегодня/Завтра и календарь сбивались)
+  return new Date(d.getTime() + 3 * 60 * 60 * 1000).toISOString().slice(0, 10);
 }
 
 function formatDateDisplay(d) {
@@ -2883,9 +2884,18 @@ async function toggleWishDone(id, cur) {
 window.toggleWishDone = toggleWishDone;
 
 async function deleteWish(id) {
-  if (!confirm('Удалить это желание?')) return;
+  if (!confirm('Удалить это желание? Его шаги в Тудушке тоже будут удалены.')) return;
+  // Удаляем задачи-майлстоуны из тудушки (по noteId и по wishId), чтобы не оставлять сирот
+  const orphanIds = new Set();
+  const w = wishes.find(x => x.id === id);
+  if (w && w.milestones) w.milestones.forEach(m => { if (m.noteId) orphanIds.add(m.noteId); });
+  notes.forEach(n => { if (n.wishId === id) orphanIds.add(n.id); });
+  for (const nid of orphanIds) {
+    try { await deleteDoc(uDocRef('notes', nid)); } catch(e) {}
+  }
   await deleteDoc(uDocRef('wishes', id));
   await loadWishes(); renderWishes();
+  await loadNotes();
 }
 window.deleteWish = deleteWish;
 
@@ -4319,7 +4329,7 @@ async function deleteChatHistory() {
 }
 
 function escHtmlChat(s) {
-  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>');
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;').replace(/\n/g,'<br>');
 }
 
 function renderChat() {
@@ -4380,43 +4390,53 @@ async function addChatMessage(role, content, confirmData) {
 
 // ── DAILY SUMMARY — итог дня в 00:00 (или при открытии приложения позже) ──
 // Логика:
-// 1. LocalStorage хранит lastDailySummaryDate (YYYY-MM-DD)
+// 1. Firestore meta/daily_summary хранит lastDate (YYYY-MM-DD) — общий для всех устройств, чтобы не было дублей
 // 2. При открытии приложения проверяем: сегодня уже был итог?
-// 3. Если нет — берём все заметки за вчера → AI генерирует summary → добавляем как сообщение от ассистента
-// 4. Помечаем дату в LocalStorage
+// 3. Если нет — бронируем день в Firestore ДО генерации, берём заметки за вчера → AI генерирует summary → сообщение в чат
+// 4. При ошибке генерации бронь освобождается — ретрай при следующем открытии
 // 5. Сообщение помечаем special маркером 📊 Итог дня
 
 function getYesterdayDateString() {
   const d = new Date();
   d.setDate(d.getDate() - 1);
-  return d.toISOString().slice(0, 10); // YYYY-MM-DD
+  return formatDateKey(d); // YYYY-MM-DD по Москве
 }
 
 function getTodayDateString() {
-  return new Date().toISOString().slice(0, 10);
+  return formatDateKey(new Date());
 }
 
 function getNotesForDate(dateStr) {
-  // dateStr: YYYY-MM-DD
+  // dateStr: YYYY-MM-DD по московскому времени — createdAt тоже приводим к Москве
   return notes.filter(n => {
     if (!n.createdAt) return false;
-    return n.createdAt.slice(0, 10) === dateStr;
+    return formatDateKey(new Date(n.createdAt)) === dateStr;
   });
 }
 
 async function checkAndGenerateDailySummary() {
   if (!currentUid) return;
   const today = getTodayDateString();
-  const lastSummary = localStorage.getItem('lastDailySummaryDate');
-  if (lastSummary === today) return; // уже сделан за сегодня
+
+  // Флаг «итог за сегодня уже сделан» хранится в Firestore (meta/daily_summary),
+  // а не в localStorage — иначе каждое устройство генерирует свой дублирующий итог.
+  let lastSummary = null;
+  try {
+    const snap = await getDoc(uDocRef('meta', 'daily_summary'));
+    if (snap.exists()) lastSummary = snap.data().lastDate || null;
+  } catch(e) {}
+  if (lastSummary === today) return; // уже сделан за сегодня (на любом устройстве)
 
   const yesterday = getYesterdayDateString();
   const yesterdayNotes = getNotesForDate(yesterday);
   if (yesterdayNotes.length === 0) {
-    // Нет заметок вчера — пропускаем
-    localStorage.setItem('lastDailySummaryDate', today);
+    // Нет заметок вчера — пропускаем, но день помечаем, чтобы не проверять каждый запуск
+    try { await setDoc(uDocRef('meta', 'daily_summary'), { lastDate: today }); } catch(e) {}
     return;
   }
+
+  // Бронируем день ДО генерации: второе устройство увидит lastDate=today и пропустит
+  try { await setDoc(uDocRef('meta', 'daily_summary'), { lastDate: today }); } catch(e) { return; }
 
   try {
     const notesText = yesterdayNotes.map((n, i) => {
@@ -4447,10 +4467,10 @@ async function checkAndGenerateDailySummary() {
       // Добавляем как сообщение от ассистента в чат
       await addChatMessage('assistant', summary);
     }
-    localStorage.setItem('lastDailySummaryDate', today);
   } catch(e) {
     console.error('[Daily Summary] error:', e);
-    // Не помечаем как сделанный — попробуем в следующий раз
+    // Освобождаем бронь — попробуем в следующий раз
+    try { await setDoc(uDocRef('meta', 'daily_summary'), { lastDate: lastSummary }); } catch(_) {}
   }
 }
 window.checkAndGenerateDailySummary = checkAndGenerateDailySummary;
@@ -4464,7 +4484,7 @@ window.checkAndGenerateDailySummary = checkAndGenerateDailySummary;
 async function checkAndGeneratePsychologistInsight() {
   if (!currentUid) return;
   const today = new Date();
-  const todayStr = today.toISOString().slice(0, 10);
+  const todayStr = getTodayDateString(); // по Москве, консистентно с остальными датами
   const lastRun = localStorage.getItem('lastPsychologistDate');
   if (lastRun) {
     // Проверяем, прошло ли 7+ дней
