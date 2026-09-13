@@ -392,6 +392,7 @@ body{background:#060918;font-family:'Inter',sans-serif;display:flex;justify-cont
 #screen-todo.active ~ .dock,
 #screen-hist.active ~ .dock,
 #screen-cloud.active ~ .dock,
+#screen-graph.active ~ .dock,
 #screen-wishes.active ~ .dock,
 #screen-wishchat.active ~ .dock,
 #screen-chat.active ~ .dock,
@@ -608,6 +609,28 @@ body{background:#060918;font-family:'Inter',sans-serif;display:flex;justify-cont
     </div>
   </div>
 
+  <!-- ── GRAPH SCREEN (living graph of notes & AI links) ── -->
+  <div class="screen" id="screen-graph">
+    <div class="hist-header">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div>
+          <div class="hist-title">🕸 Граф мыслей</div>
+          <div class="hist-sub" id="graph-sub">Связи между твоими записями</div>
+        </div>
+        <button onclick="goTo('hist')" style="background:none;border:none;color:rgba(255,255,255,0.4);font-size:22px;cursor:pointer;">←</button>
+      </div>
+    </div>
+    <div style="flex:1;position:relative;overflow:hidden;">
+      <canvas id="graph-canvas" style="position:absolute;inset:0;width:100%;height:100%;touch-action:none;"></canvas>
+      <div id="graph-loading" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,0.4);font-size:13px;font-family:'Inter',sans-serif;">Загрузка графа…</div>
+      <div id="graph-legend" style="position:absolute;bottom:8px;left:8px;background:rgba(0,0,0,0.5);border-radius:8px;padding:6px 10px;font-size:10px;color:rgba(255,255,255,0.6);font-family:'Inter',sans-serif;backdrop-filter:blur(8px);line-height:1.5;pointer-events:none;">
+        <div>• размер = связи</div>
+        <div>• цвет = тег</div>
+        <div>• тап на узел = открыть</div>
+      </div>
+    </div>
+  </div>
+
   <!-- ── WISHES SCREEN ── -->
   <div class="screen" id="screen-wishes">
     <div class="hist-header">
@@ -652,6 +675,7 @@ body{background:#060918;font-family:'Inter',sans-serif;display:flex;justify-cont
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;">
           <button onclick="goTo('cloud')" style="padding:6px 14px;border-radius:99px;border:0.5px solid rgba(255,255,255,0.15);background:rgba(255,255,255,0.04);color:rgba(255,255,255,0.6);font-size:12px;font-weight:500;cursor:pointer;font-family:'Inter',sans-serif;transition:all 0.2s">☁️ Облако</button>
+          <button onclick="goTo('graph')" style="padding:6px 14px;border-radius:99px;border:0.5px solid rgba(0,212,255,0.35);background:rgba(0,212,255,0.1);color:rgba(0,212,255,0.9);font-size:12px;font-weight:500;cursor:pointer;font-family:'Inter',sans-serif;transition:all 0.2s">🕸 Граф</button>
           <button id="hist-select-toggle" onclick="toggleSelectionMode()" style="padding:6px 14px;border-radius:99px;border:0.5px solid rgba(255,255,255,0.15);background:rgba(255,255,255,0.04);color:rgba(255,255,255,0.6);font-size:12px;font-weight:500;cursor:pointer;font-family:'Inter',sans-serif;transition:all 0.2s">☑ Выделить</button>
           <button onclick="document.getElementById('import-file-input').click()" style="padding:6px 14px;border-radius:99px;border:0.5px solid rgba(0,200,140,0.35);background:rgba(0,180,120,0.1);color:rgba(0,220,150,0.9);font-size:12px;font-weight:500;cursor:pointer;font-family:'Inter',sans-serif;transition:all 0.2s">⬆ Импорт</button>
           <input type="file" id="import-file-input" accept=".json,.txt,.csv" style="display:none;">
@@ -1881,6 +1905,337 @@ function setCloudPeriod(period) {
 }
 window.setCloudPeriod = setCloudPeriod;
 
+// ── LIVING GRAPH — визуальный граф заметок и их AI-связей ──
+// Force-directed layout: узлы отталкиваются, связи притягивают
+// Каждый узел — заметка, цвет по тегу, размер по кол-ву связей
+let graphNodes = [];     // [{id, text, tag, x, y, vx, vy, connections}]
+let graphEdges = [];     // [{a, b, score}] — индексы в graphNodes
+let graphCanvas = null, graphCtx = null, graphRafId = null;
+let graphAnimating = false;
+
+// Тёплые цвета для тегов (детерминированно по хешу строки)
+function tagColor(tag) {
+  if (!tag) return 'rgba(108,71,255,0.85)';  // фиолетовый по умолчанию
+  let h = 0;
+  for (let i = 0; i < tag.length; i++) h = (h * 31 + tag.charCodeAt(i)) % 360;
+  return `hsla(${h}, 70%, 65%, 0.85)`;
+}
+
+async function loadGraphData() {
+  // Берём все заметки (но максимум 100 — самые свежие) и все линки
+  const sortedNotes = [...notes].sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+  const visibleNotes = sortedNotes.slice(0, 100);
+
+  // Загружаем все линки пользователя
+  let allLinks = [];
+  try {
+    const q = query(linksCol(), orderBy('score', 'desc'));
+    const snap = await getDocs(q);
+    allLinks = snap.docs.map(d => d.data());
+  } catch(e) {
+    console.warn('[Graph] failed to load links', e);
+  }
+
+  // Считаем количество связей для каждой заметки
+  const connCount = {};
+  for (const l of allLinks) {
+    connCount[l.noteA] = (connCount[l.noteA] || 0) + 1;
+    connCount[l.noteB] = (connCount[l.noteB] || 0) + 1;
+  }
+
+  // Берём только заметки, у которых есть связи — для компактного графа
+  // Если таких <5 — берём все заметки (покажем разрозненные узлы)
+  const connectedNotes = visibleNotes.filter(n => connCount[n.id]);
+  const finalNotes = connectedNotes.length >= 5 ? connectedNotes : visibleNotes.slice(0, 30);
+
+  // Создаём узлы
+  graphNodes = finalNotes.map(n => ({
+    id: n.id,
+    text: n.text,
+    tag: n.tag || null,
+    connections: connCount[n.id] || 0,
+    x: Math.random() * 400,
+    y: Math.random() * 400,
+    vx: 0, vy: 0,
+  }));
+
+  // Создаём индекс id → index
+  const idToIdx = {};
+  graphNodes.forEach((n, i) => { idToIdx[n.id] = i; });
+
+  // Создаём рёбра (только если обе заметки в графе)
+  graphEdges = [];
+  for (const l of allLinks) {
+    const ai = idToIdx[l.noteA];
+    const bi = idToIdx[l.noteB];
+    if (ai !== undefined && bi !== undefined && ai !== bi) {
+      graphEdges.push({ a: ai, b: bi, score: l.score || 0.5 });
+    }
+  }
+
+  // Обновим sub-header
+  const sub = document.getElementById('graph-sub');
+  if (sub) sub.textContent = `${graphNodes.length} записей · ${graphEdges.length} связей`;
+}
+window.loadGraphData = loadGraphData;
+
+function ensureGraphCanvasSized() {
+  if (!graphCanvas) return;
+  const r = graphCanvas.getBoundingClientRect();
+  if (r.width === 0 || r.height === 0) return;
+  if (graphCanvas.width !== Math.round(r.width) || graphCanvas.height !== Math.round(r.height)) {
+    graphCanvas.width = Math.round(r.width);
+    graphCanvas.height = Math.round(r.height);
+  }
+}
+
+function simulateGraphStep() {
+  if (graphNodes.length === 0) return;
+  const w = graphCanvas.width || 400;
+  const h = graphCanvas.height || 600;
+  const cx = w / 2, cy = h / 2;
+
+  // Притяжение к центру (чтобы граф не улетал)
+  for (const n of graphNodes) {
+    n.vx += (cx - n.x) * 0.0008;
+    n.vy += (cy - n.y) * 0.0008;
+  }
+
+  // Отталкивание между всеми парами
+  for (let i = 0; i < graphNodes.length; i++) {
+    for (let j = i + 1; j < graphNodes.length; j++) {
+      const a = graphNodes[i], b = graphNodes[j];
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      let dist = Math.sqrt(dx*dx + dy*dy);
+      if (dist < 1) dist = 1;
+      const force = 1500 / (dist * dist);  // обратно-квадратичное отталкивание
+      const fx = (dx / dist) * force;
+      const fy = (dy / dist) * force;
+      a.vx -= fx;
+      a.vy -= fy;
+      b.vx += fx;
+      b.vy += fy;
+    }
+  }
+
+  // Пружины по рёбрам
+  for (const e of graphEdges) {
+    const a = graphNodes[e.a], b = graphNodes[e.b];
+    if (!a || !b) continue;
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    let dist = Math.sqrt(dx*dx + dy*dy);
+    if (dist < 1) dist = 1;
+    const restLength = 60 + (1 - e.score) * 80;  // слабые связи — длиннее
+    const force = (dist - restLength) * 0.02 * e.score;
+    const fx = (dx / dist) * force;
+    const fy = (dy / dist) * force;
+    a.vx += fx;
+    a.vy += fy;
+    b.vx -= fx;
+    b.vy -= fy;
+  }
+
+  // Применяем скорость с трением, держим в границах
+  for (const n of graphNodes) {
+    n.vx *= 0.85;  // трение
+    n.vy *= 0.85;
+    n.x += n.vx;
+    n.y += n.vy;
+    // Не уходим за границы
+    n.x = Math.max(20, Math.min(w - 20, n.x));
+    n.y = Math.max(20, Math.min(h - 20, n.y));
+  }
+}
+
+function drawGraph() {
+  if (!graphCtx || !graphCanvas) return;
+  ensureGraphCanvasSized();
+  if (graphCanvas.width === 0) return;
+  const w = graphCanvas.width;
+  const h = graphCanvas.height;
+  graphCtx.clearRect(0, 0, w, h);
+
+  // Рисуем рёбра
+  for (const e of graphEdges) {
+    const a = graphNodes[e.a], b = graphNodes[e.b];
+    if (!a || !b) continue;
+    const alpha = 0.15 + e.score * 0.5;
+    graphCtx.strokeStyle = `rgba(108,71,255,${alpha})`;
+    graphCtx.lineWidth = 0.5 + e.score * 2;
+    graphCtx.beginPath();
+    graphCtx.moveTo(a.x, a.y);
+    graphCtx.lineTo(b.x, b.y);
+    graphCtx.stroke();
+  }
+
+  // Рисуем узлы
+  for (const n of graphNodes) {
+    const radius = 4 + Math.min(n.connections * 2, 12);
+    // glow для связанных
+    if (n.connections > 0) {
+      graphCtx.fillStyle = tagColor(n.tag).replace('0.85', '0.2');
+      graphCtx.beginPath();
+      graphCtx.arc(n.x, n.y, radius + 6, 0, Math.PI * 2);
+      graphCtx.fill();
+    }
+    // main node
+    graphCtx.fillStyle = tagColor(n.tag);
+    graphCtx.beginPath();
+    graphCtx.arc(n.x, n.y, radius, 0, Math.PI * 2);
+    graphCtx.fill();
+    // outline
+    graphCtx.strokeStyle = 'rgba(255,255,255,0.3)';
+    graphCtx.lineWidth = 0.5;
+    graphCtx.stroke();
+  }
+}
+
+function graphAnimationLoop() {
+  if (!graphAnimating) return;
+  simulateGraphStep();
+  drawGraph();
+  graphRafId = requestAnimationFrame(graphAnimationLoop);
+}
+
+async function openGraphScreen() {
+  if (!graphCanvas) {
+    graphCanvas = document.getElementById('graph-canvas');
+    graphCtx = graphCanvas ? graphCanvas.getContext('2d') : null;
+  }
+  const loading = document.getElementById('graph-loading');
+  if (loading) loading.style.display = 'flex';
+  // Сначала размер
+  ensureGraphCanvasSized();
+  await loadGraphData();
+  if (loading) loading.style.display = 'none';
+  // Запускаем анимацию
+  graphAnimating = true;
+  if (graphRafId) cancelAnimationFrame(graphRafId);
+  graphRafId = requestAnimationFrame(graphAnimationLoop);
+}
+
+function closeGraphScreen() {
+  graphAnimating = false;
+  if (graphRafId) {
+    cancelAnimationFrame(graphRafId);
+    graphRafId = null;
+  }
+}
+
+// Тап на узел → открыть заметку
+function setupGraphInteraction() {
+  const canvas = document.getElementById('graph-canvas');
+  if (!canvas) return;
+  let dragNode = null;
+
+  function getPos(e) {
+    const r = canvas.getBoundingClientRect();
+    const t = e.touches ? (e.touches[0] || e.changedTouches[0]) : e;
+    return { x: t.clientX - r.left, y: t.clientY - r.top };
+  }
+
+  function findNode(x, y) {
+    for (let i = graphNodes.length - 1; i >= 0; i--) {
+      const n = graphNodes[i];
+      const r = 4 + Math.min(n.connections * 2, 12);
+      const dx = x - n.x, dy = y - n.y;
+      if (dx*dx + dy*dy <= (r + 8) * (r + 8)) return i;
+    }
+    return -1;
+  }
+
+  canvas.addEventListener('touchstart', (e) => {
+    const p = getPos(e);
+    const idx = findNode(p.x, p.y);
+    if (idx >= 0) {
+      dragNode = idx;
+      // Запоминаем время начала — если быстро отпустим без движения = тап
+      dragNodeStartTime = Date.now();
+      dragNodeStartPos = { ...p };
+    }
+  }, { passive: true });
+
+  canvas.addEventListener('touchmove', (e) => {
+    if (dragNode === null || dragNode === undefined) return;
+    const p = getPos(e);
+    const n = graphNodes[dragNode];
+    if (n) {
+      n.x = p.x;
+      n.y = p.y;
+      n.vx = 0;
+      n.vy = 0;
+    }
+  }, { passive: true });
+
+  canvas.addEventListener('touchend', (e) => {
+    if (dragNode === null || dragNode === undefined) return;
+    const p = getPos(e);
+    // Если движение < 5px и время < 300мс = тап
+    const dt = Date.now() - dragNodeStartTime;
+    const moved = Math.hypot(p.x - dragNodeStartPos.x, p.y - dragNodeStartPos.y);
+    if (dt < 300 && moved < 5) {
+      const n = graphNodes[dragNode];
+      if (n) {
+        closeGraphScreen();
+        setTimeout(() => openEdit(n.id), 100);
+      }
+    }
+    dragNode = null;
+  }, { passive: true });
+
+  // Mouse для теста
+  let mouseDown = false, mouseDragNode = null, dragNodeStartTime = 0, dragNodeStartPos = null;
+  canvas.addEventListener('mousedown', (e) => {
+    const p = getPos(e);
+    const idx = findNode(p.x, p.y);
+    if (idx >= 0) {
+      mouseDragNode = idx;
+      mouseDown = true;
+      dragNodeStartTime = Date.now();
+      dragNodeStartPos = { ...p };
+    }
+  });
+  canvas.addEventListener('mousemove', (e) => {
+    if (!mouseDown || mouseDragNode === null) return;
+    const p = getPos(e);
+    const n = graphNodes[mouseDragNode];
+    if (n) { n.x = p.x; n.y = p.y; n.vx = 0; n.vy = 0; }
+  });
+  canvas.addEventListener('mouseup', (e) => {
+    if (!mouseDown || mouseDragNode === null) return;
+    const p = getPos(e);
+    const dt = Date.now() - dragNodeStartTime;
+    const moved = Math.hypot(p.x - dragNodeStartPos.x, p.y - dragNodeStartPos.y);
+    if (dt < 300 && moved < 5) {
+      const n = graphNodes[mouseDragNode];
+      if (n) {
+        closeGraphScreen();
+        setTimeout(() => openEdit(n.id), 100);
+      }
+    }
+    mouseDown = false;
+    mouseDragNode = null;
+  });
+}
+window.setupGraphInteraction = setupGraphInteraction;
+
+// Хук в goTo — при заходе на graph запускаем анимацию, при выходе — стоп
+const origGoTo = window.goTo;
+window.goTo = function(screen) {
+  if (screen !== 'graph' && graphAnimating) {
+    closeGraphScreen();
+  }
+  origGoTo(screen);
+  if (screen === 'graph') {
+    setTimeout(() => openGraphScreen(), 50);
+  }
+};
+
+// Инициализация interaction на старте
+window.addEventListener('load', () => setTimeout(setupGraphInteraction, 500));
+
 // показываем кэш если есть (мгновенно, без пересчёта) — иначе генерируем один раз
 async function renderWordCloud() {
   if (!Object.keys(cloudCache).length) await loadCloudCache();
@@ -2768,6 +3123,77 @@ async function checkAndGenerateDailySummary() {
 }
 window.checkAndGenerateDailySummary = checkAndGenerateDailySummary;
 
+// ── AI-ПСИХОЛОГ (Phase 5) — раз в 7 дней анализирует паттерны и задаёт Socratic-вопросы ──
+// Осторожно:
+// - Срабатывает раз в 7 дней (не чаще)
+// - Не ставит диагнозы, не даёт советы
+// - Только сократические вопросы + мягкое наблюдение паттернов
+// - Пользователь может игнорировать — не давим
+async function checkAndGeneratePsychologistInsight() {
+  if (!currentUid) return;
+  const today = new Date();
+  const todayStr = today.toISOString().slice(0, 10);
+  const lastRun = localStorage.getItem('lastPsychologistDate');
+  if (lastRun) {
+    // Проверяем, прошло ли 7+ дней
+    const last = new Date(lastRun);
+    const daysSince = (today - last) / (1000 * 60 * 60 * 24);
+    if (daysSince < 7) return;  // ещё рано
+  }
+
+  // Берём заметки за последние 7 дней
+  const weekAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
+  const weekAgoStr = weekAgo.toISOString();
+  const recentNotes = notes.filter(n => n.createdAt && n.createdAt >= weekAgoStr);
+  if (recentNotes.length < 3) {
+    // Слишком мало заметок — не анализируем
+    localStorage.setItem('lastPsychologistDate', todayStr);
+    return;
+  }
+
+  try {
+    // Готовим текст заметок
+    const notesText = recentNotes.map((n, i) => {
+      const date = n.createdAt ? new Date(n.createdAt).toLocaleDateString('ru-RU', {day:'numeric', month:'short'}) : '';
+      return `${i+1}. [${date}]${n.tag ? ' #' + n.tag : ''} ${n.text}`;
+    }).join('\n');
+
+    const systemPrompt = `Ты — внимательный и тёплый ИИ-психолог-наблюдатель. Пользователь поделился своими заметками за последнюю неделю.
+Твоя задача — найти НЕОЧЕВИДНЫЕ паттерны и задать СОКРАТИЧЕСКИЕ вопросы.
+
+Жёсткие правила:
+- НЕ ставь диагнозы (никаких «у тебя депрессия/тревожность»)
+- НЕ давай советы (никаких «тебе стоит делать X»)
+- НЕ оценивай (никаких «это плохо/хорошо»)
+- Только мягкие наблюдения и вопросы, провоцирующие рефлексию
+- Формат: 2-3 наблюдения паттернов (что замечено) + 1-2 открытых вопроса
+- Объём: 100-180 слов
+- Начни с эмодзи 💡 и заголовка «Заметки за неделю»
+- Пиши на «ты», без пафоса, дружелюбно
+- Если паттернов нет — лучше честно скажи «ничего явного не вижу, но спрошу: ...»
+
+Хорошие примеры:
+- «Заметила, что 4 из 7 записей про работу — при этом ни одной про отдых. Что бы было, если бы отдых тоже вошёл в фокус?»
+- «В записях за понедельник и пятницу повторяется слово "выгорел". Это совпадение или закономерность?»`;
+
+    const userPrompt = `Мои записи за последние 7 дней (${recentNotes.length} шт.):\n${notesText}`;
+
+    const insight = await callPolzaAI([
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userPrompt }
+    ], { max_tokens: 800, temperature: 0.6 });
+
+    if (insight) {
+      await addChatMessage('assistant', insight);
+    }
+    localStorage.setItem('lastPsychologistDate', todayStr);
+  } catch(e) {
+    console.error('[Psychologist] error:', e);
+    // Не помечаем как сделанный — попробуем в следующий раз
+  }
+}
+window.checkAndGeneratePsychologistInsight = checkAndGeneratePsychologistInsight;
+
 // ── AI AUTO-LINKING — находит похожие заметки через Polza AI ──
 // Для новой заметки: берём candidate notes (по тегу + последние 50) → AI находит 5-7 похожих
 // Сохраняем в Firestore коллекцию links
@@ -3649,6 +4075,8 @@ onAuthStateChanged(auth, async (user) => {
     showHintOnce('main_x','Перечеркни весь экран крест-накрест («Х») — отметит текущую задачу выполненной.','main-hint');
     // Daily summary — проверяем, был ли итог за сегодня (генерируется в фоне, не блокируя UI)
     setTimeout(() => checkAndGenerateDailySummary(), 2000);
+    // AI-психолог — раз в 7 дней, после daily summary
+    setTimeout(() => checkAndGeneratePsychologistInsight(), 5000);
   } else {
     currentUid = null;
     clearLocalUserData();
