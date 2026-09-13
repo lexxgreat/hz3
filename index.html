@@ -1984,61 +1984,77 @@ let xGestureHistory = []; // [{type:'slash'|'backslash', startX, startY, endX, e
 let xCanvas = null, xCtx = null;
 function initXCanvas() {
   xCanvas = document.getElementById('x-gesture-canvas');
-  if (!xCanvas) return;
+  if (!xCanvas) { console.warn('[X-gesture] canvas not found'); return; }
   xCtx = xCanvas.getContext('2d');
-  const resize = () => {
-    const r = xCanvas.getBoundingClientRect();
-    xCanvas.width = r.width * (window.devicePixelRatio || 1);
-    xCanvas.height = r.height * (window.devicePixelRatio || 1);
-    xCtx.scale(window.devicePixelRatio || 1, window.devicePixelRatio || 1);
-  };
-  resize();
-  window.addEventListener('resize', resize);
-  window.addEventListener('orientationchange', () => setTimeout(resize, 200));
+  resizeXCanvas();
+  window.addEventListener('resize', resizeXCanvas);
+  window.addEventListener('orientationchange', () => setTimeout(resizeXCanvas, 200));
+}
+
+function resizeXCanvas() {
+  if (!xCanvas) return;
+  const r = xCanvas.getBoundingClientRect();
+  if (r.width === 0 || r.height === 0) {
+    // Screen-main is hidden — will resize on first gesture
+    return;
+  }
+  xCanvas.width = r.width;
+  xCanvas.height = r.height;
+  console.log('[X-gesture] canvas resized:', r.width, 'x', r.height);
 }
 
 function drawXStrokes() {
   if (!xCtx || !xCanvas) return;
+  // Ensure canvas is sized correctly (in case screen-main was hidden during init)
+  if (xCanvas.width === 0 || xCanvas.height === 0) {
+    resizeXCanvas();
+    if (xCanvas.width === 0) return;
+  }
   const r = xCanvas.getBoundingClientRect();
-  xCtx.clearRect(0, 0, r.width, r.height);
+  xCtx.clearRect(0, 0, xCanvas.width, xCanvas.height);
 
-  // Draw completed strokes from history (with fade based on age)
   const now = Date.now();
-  xGestureHistory = xGestureHistory.filter(s => now - s.time < 1500);  // keep up to 1.5s
+  xGestureHistory = xGestureHistory.filter(s => now - s.time < 1500);
 
   for (const s of xGestureHistory) {
-    const age = (now - s.time) / 1500;  // 0..1
-    const alpha = 1 - age;  // fade out
-    xCtx.strokeStyle = `rgba(108,71,255,${0.6 * alpha})`;
-    xCtx.lineWidth = 4;
+    const age = (now - s.time) / 1500;
+    const alpha = 1 - age;
+    // glow (drawn first, behind)
+    xCtx.strokeStyle = `rgba(0,212,255,${0.35 * alpha})`;
+    xCtx.lineWidth = 14;
     xCtx.lineCap = 'round';
     xCtx.beginPath();
     xCtx.moveTo(s.startX - r.left, s.startY - r.top);
     xCtx.lineTo(s.endX - r.left, s.endY - r.top);
     xCtx.stroke();
-    // glow
-    xCtx.strokeStyle = `rgba(0,212,255,${0.3 * alpha})`;
-    xCtx.lineWidth = 10;
+    // core line
+    xCtx.strokeStyle = `rgba(108,71,255,${0.85 * alpha})`;
+    xCtx.lineWidth = 4;
     xCtx.stroke();
   }
 
-  // Draw current in-progress stroke
   if (xGestureStroke && xGestureStroke.currentX !== undefined) {
-    xCtx.strokeStyle = 'rgba(108,71,255,0.9)';
-    xCtx.lineWidth = 4;
+    // glow
+    xCtx.strokeStyle = 'rgba(0,212,255,0.5)';
+    xCtx.lineWidth = 14;
     xCtx.lineCap = 'round';
     xCtx.beginPath();
     xCtx.moveTo(xGestureStroke.startX - r.left, xGestureStroke.startY - r.top);
     xCtx.lineTo(xGestureStroke.currentX - r.left, xGestureStroke.currentY - r.top);
     xCtx.stroke();
-    // glow
-    xCtx.strokeStyle = 'rgba(0,212,255,0.5)';
-    xCtx.lineWidth = 10;
+    // core
+    xCtx.strokeStyle = 'rgba(108,71,255,1)';
+    xCtx.lineWidth = 4;
     xCtx.stroke();
   }
 }
 
 function xGestureStart(x, y) {
+  console.log('[X-gesture] start at', x, y);
+  // Re-init canvas size in case it was 0x0 (e.g., screen-main was hidden during init)
+  if (xCanvas && (xCanvas.width === 0 || xCanvas.height === 0)) {
+    resizeXCanvas();
+  }
   xGestureStroke = { startX: x, startY: y, time: Date.now(), currentX: x, currentY: y };
   drawXStrokes();
 }
