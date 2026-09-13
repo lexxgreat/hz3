@@ -2222,20 +2222,10 @@ function setupGraphInteraction() {
 }
 window.setupGraphInteraction = setupGraphInteraction;
 
-// Хук в goTo — при заходе на graph запускаем анимацию, при выходе — стоп
-const origGoTo = window.goTo;
-window.goTo = function(screen) {
-  if (screen !== 'graph' && graphAnimating) {
-    closeGraphScreen();
-  }
-  origGoTo(screen);
-  if (screen === 'graph') {
-    setTimeout(() => openGraphScreen(), 50);
-  }
-};
-
 // Инициализация interaction на старте
 window.addEventListener('load', () => setTimeout(setupGraphInteraction, 500));
+
+// Хук в goTo — будет установлен ПОСЛЕ window.goTo = goTo; (внизу файла)
 
 // показываем кэш если есть (мгновенно, без пересчёта) — иначе генерируем один раз
 async function renderWordCloud() {
@@ -2827,6 +2817,22 @@ function goTo(screen) {
   if (screen === 'todo') showHintOnce('todo_drag','Тащи за ⠿ чтобы поменять порядок — соседи подвинутся сами.','todo-hint');
 }
 window.goTo = goTo;
+
+// Хук в goTo — graph screen нуждается в особой инициализации (canvas, animation)
+// Делаем wrapper ПОСЛЕ присвоения оригинального goTo, чтобы он не перезатёрся
+const _originalGoTo = window.goTo;
+window.goTo = function(screen) {
+  // Если уходим с graph — останавливаем анимацию
+  if (screen !== 'graph' && typeof graphAnimating !== 'undefined' && graphAnimating) {
+    if (typeof closeGraphScreen === 'function') closeGraphScreen();
+  }
+  // Вызываем оригинальный goTo
+  _originalGoTo(screen);
+  // Если заходим на graph — запускаем инициализацию
+  if (screen === 'graph' && typeof openGraphScreen === 'function') {
+    setTimeout(() => openGraphScreen(), 50);
+  }
+};
 
 // ── СОБЫТИЯ ──
 document.getElementById('cap-input').addEventListener('input', () => { autoResize(); showClear(); });
