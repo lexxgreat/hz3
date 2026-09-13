@@ -1923,9 +1923,9 @@ function tagColor(tag) {
 }
 
 async function loadGraphData() {
-  // Берём все заметки (но максимум 100 — самые свежие) и все линки
+  // Берём все заметки (увеличили кап до 300 — было 100, пользователь жаловался что не все видны)
   const sortedNotes = [...notes].sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
-  const visibleNotes = sortedNotes.slice(0, 100);
+  const visibleNotes = sortedNotes.slice(0, 300);
 
   // Загружаем все линки пользователя
   let allLinks = [];
@@ -1996,13 +1996,13 @@ function simulateGraphStep() {
   const h = graphCanvas.height || 600;
   const cx = w / 2, cy = h / 2;
 
-  // Притяжение к центру (чтобы граф не улетал)
+  // Притяжение к центру (мягкое, чтобы граф не улетал)
   for (const n of graphNodes) {
-    n.vx += (cx - n.x) * 0.0008;
-    n.vy += (cy - n.y) * 0.0008;
+    n.vx += (cx - n.x) * 0.0005;
+    n.vy += (cy - n.y) * 0.0005;
   }
 
-  // Отталкивание между всеми парами
+  // Отталкивание между всеми парами (с cap, чтобы не было взрывов при близких расстояниях)
   for (let i = 0; i < graphNodes.length; i++) {
     for (let j = i + 1; j < graphNodes.length; j++) {
       const a = graphNodes[i], b = graphNodes[j];
@@ -2010,7 +2010,8 @@ function simulateGraphStep() {
       const dy = b.y - a.y;
       let dist = Math.sqrt(dx*dx + dy*dy);
       if (dist < 1) dist = 1;
-      const force = 1500 / (dist * dist);  // обратно-квадратичное отталкивание
+      // Cap force to prevent jitter — max 30 (was unbounded 1500/dist²)
+      const force = Math.min(30, 800 / (dist * dist));
       const fx = (dx / dist) * force;
       const fy = (dy / dist) * force;
       a.vx -= fx;
@@ -2020,7 +2021,7 @@ function simulateGraphStep() {
     }
   }
 
-  // Пружины по рёбрам
+  // Пружины по рёбрам (мягче)
   for (const e of graphEdges) {
     const a = graphNodes[e.a], b = graphNodes[e.b];
     if (!a || !b) continue;
@@ -2028,8 +2029,8 @@ function simulateGraphStep() {
     const dy = b.y - a.y;
     let dist = Math.sqrt(dx*dx + dy*dy);
     if (dist < 1) dist = 1;
-    const restLength = 60 + (1 - e.score) * 80;  // слабые связи — длиннее
-    const force = (dist - restLength) * 0.02 * e.score;
+    const restLength = 80 + (1 - e.score) * 60;
+    const force = (dist - restLength) * 0.01 * e.score;
     const fx = (dx / dist) * force;
     const fy = (dy / dist) * force;
     a.vx += fx;
@@ -2038,10 +2039,17 @@ function simulateGraphStep() {
     b.vy -= fy;
   }
 
-  // Применяем скорость с трением, держим в границах
+  // Применяем скорость с трением + cap скорости, держим в границах
+  const MAX_SPEED = 5;  // было без cap → jitter
   for (const n of graphNodes) {
-    n.vx *= 0.85;  // трение
-    n.vy *= 0.85;
+    n.vx *= 0.88;  // было 0.85 — больше трения
+    n.vy *= 0.88;
+    // Cap speed
+    const speed = Math.sqrt(n.vx * n.vx + n.vy * n.vy);
+    if (speed > MAX_SPEED) {
+      n.vx = (n.vx / speed) * MAX_SPEED;
+      n.vy = (n.vy / speed) * MAX_SPEED;
+    }
     n.x += n.vx;
     n.y += n.vy;
     // Не уходим за границы
