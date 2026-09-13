@@ -494,7 +494,7 @@ body{background:#060918;font-family:'Inter',sans-serif;display:flex;justify-cont
 
   <!-- ── MAIN SCREEN ── -->
   <div class="screen" id="screen-main">
-    <!-- Canvas overlay for X-gesture visual trail -->
+    <!-- Canvas overlay for X-gesture visual trail (covers entire phone) -->
     <canvas id="x-gesture-canvas" style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:50;"></canvas>
     <div class="main-top" style="padding:10px 24px 8px;">
       <div class="main-greeting" style="font-size:16px;">Привет 👋</div>
@@ -1973,18 +1973,16 @@ function renderFocusCard() {
   el.innerHTML = html;
 }
 
-// ── ЖЕСТ "Х" НА ГЛАВНОМ ЭКРАНЕ — перечеркнул весь экран крест-накресст = отметил текущую задачу выполненной ──
-// Порядок диагоналей не важен: сначала ловим один диагональный штрих, потом второй (в любом порядке,
-// "\" или "/"), проверяем что они пересекаются в одной области экрана и уложились в разумное время.
-// Также рисуем видимую линию-след на canvas overlay, чтобы пользователь видел свой штрих.
-let xGestureStroke = null; // {startX, startY, time, currentX, currentY}
-let xGestureHistory = []; // [{type:'slash'|'backslash', startX, startY, endX, endY, midX, midY, time}]
-
-// Canvas setup for visual trail
+// ── ЖЕСТ "Х" НА ГЛАВНОМ ЭКРАНЕ ──
+// Каждый штрих = массив точек {x, y}. Рисуем плавную линию по всем точкам.
+// Когда пользователь делает 2 диагональных штриха, пересекающихся в одной области = X = задача выполнена.
+let xGestureStrokes = [];        // завершённые штрихи: [{points:[{x,y},...], type, time}]
+let xGestureCurrent = null;       // текущий штрих: {points:[{x,y},...], time}
 let xCanvas = null, xCtx = null;
+
 function initXCanvas() {
   xCanvas = document.getElementById('x-gesture-canvas');
-  if (!xCanvas) { console.warn('[X-gesture] canvas not found'); return; }
+  if (!xCanvas) return;
   xCtx = xCanvas.getContext('2d');
   resizeXCanvas();
   window.addEventListener('resize', resizeXCanvas);
@@ -1994,18 +1992,29 @@ function initXCanvas() {
 function resizeXCanvas() {
   if (!xCanvas) return;
   const r = xCanvas.getBoundingClientRect();
-  if (r.width === 0 || r.height === 0) {
-    // Screen-main is hidden — will resize on first gesture
-    return;
-  }
+  if (r.width === 0 || r.height === 0) return;
   xCanvas.width = r.width;
   xCanvas.height = r.height;
-  console.log('[X-gesture] canvas resized:', r.width, 'x', r.height);
 }
 
-function drawXStrokes() {
+// Рисуем путь по массиву точек (плавная линия)
+function drawPath(points, alpha, color, width) {
+  if (!xCtx || points.length < 2) return;
+  const r = xCanvas.getBoundingClientRect();
+  xCtx.strokeStyle = color.replace('ALPHA', alpha);
+  xCtx.lineWidth = width;
+  xCtx.lineCap = 'round';
+  xCtx.lineJoin = 'round';
+  xCtx.beginPath();
+  xCtx.moveTo(points[0].x - r.left, points[0].y - r.top);
+  for (let i = 1; i < points.length; i++) {
+    xCtx.lineTo(points[i].x - r.left, points[i].y - r.top);
+  }
+  xCtx.stroke();
+}
+
+function drawAllStrokes() {
   if (!xCtx || !xCanvas) return;
-  // Ensure canvas is sized correctly (in case screen-main was hidden during init)
   if (xCanvas.width === 0 || xCanvas.height === 0) {
     resizeXCanvas();
     if (xCanvas.width === 0) return;
@@ -2014,134 +2023,157 @@ function drawXStrokes() {
   xCtx.clearRect(0, 0, xCanvas.width, xCanvas.height);
 
   const now = Date.now();
-  xGestureHistory = xGestureHistory.filter(s => now - s.time < 1500);
+  // Удаляем штрихи старше 1.5 сек
+  xGestureStrokes = xGestureStrokes.filter(s => now - s.time < 1500);
 
-  for (const s of xGestureHistory) {
+  // Завершённые штрихи (с затуханием)
+  for (const s of xGestureStrokes) {
     const age = (now - s.time) / 1500;
-    const alpha = 1 - age;
-    // glow (drawn first, behind)
-    xCtx.strokeStyle = `rgba(0,212,255,${0.35 * alpha})`;
-    xCtx.lineWidth = 14;
-    xCtx.lineCap = 'round';
-    xCtx.beginPath();
-    xCtx.moveTo(s.startX - r.left, s.startY - r.top);
-    xCtx.lineTo(s.endX - r.left, s.endY - r.top);
-    xCtx.stroke();
-    // core line
-    xCtx.strokeStyle = `rgba(108,71,255,${0.85 * alpha})`;
-    xCtx.lineWidth = 4;
-    xCtx.stroke();
+    const alpha = (1 - age).toFixed(3);
+    // glow (сначала, за основным)
+    drawPath(s.points, (0.35 * alpha).toFixed(3), 'rgba(0,212,255,ALPHA)', 14);
+    // основная линия
+    drawPath(s.points, (0.9 * alpha).toFixed(3), 'rgba(108,71,255,ALPHA)', 4);
   }
 
-  if (xGestureStroke && xGestureStroke.currentX !== undefined) {
+  // Текущий штрих (рисуется в реальном времени)
+  if (xGestureCurrent && xGestureCurrent.points.length >= 2) {
     // glow
-    xCtx.strokeStyle = 'rgba(0,212,255,0.5)';
-    xCtx.lineWidth = 14;
-    xCtx.lineCap = 'round';
-    xCtx.beginPath();
-    xCtx.moveTo(xGestureStroke.startX - r.left, xGestureStroke.startY - r.top);
-    xCtx.lineTo(xGestureStroke.currentX - r.left, xGestureStroke.currentY - r.top);
-    xCtx.stroke();
-    // core
-    xCtx.strokeStyle = 'rgba(108,71,255,1)';
-    xCtx.lineWidth = 4;
-    xCtx.stroke();
+    drawPath(xGestureCurrent.points, '0.5', 'rgba(0,212,255,ALPHA)', 14);
+    // основная линия
+    drawPath(xGestureCurrent.points, '1', 'rgba(108,71,255,ALPHA)', 4);
   }
+}
+
+// Запрос анимации (чтобы не дёргать drawAllStrokes слишком часто)
+let xRafId = null;
+function scheduleDraw() {
+  if (xRafId) return;
+  xRafId = requestAnimationFrame(() => {
+    xRafId = null;
+    drawAllStrokes();
+  });
 }
 
 function xGestureStart(x, y) {
-  console.log('[X-gesture] start at', x, y);
-  // Re-init canvas size in case it was 0x0 (e.g., screen-main was hidden during init)
+  // Ленивая инициализация canvas (на случай если screen-main был скрыт при init)
   if (xCanvas && (xCanvas.width === 0 || xCanvas.height === 0)) {
     resizeXCanvas();
   }
-  xGestureStroke = { startX: x, startY: y, time: Date.now(), currentX: x, currentY: y };
-  drawXStrokes();
+  xGestureCurrent = { points: [{x, y}], time: 0 };
+  scheduleDraw();
 }
 
 function xGestureMove(x, y) {
-  if (!xGestureStroke) return;
-  xGestureStroke.currentX = x;
-  xGestureStroke.currentY = y;
-  drawXStrokes();
+  if (!xGestureCurrent) return;
+  const last = xGestureCurrent.points[xGestureCurrent.points.length - 1];
+  // Не добавляем точку если она почти совпадает с предыдущей (для производительности)
+  if (last && Math.abs(last.x - x) < 2 && Math.abs(last.y - y) < 2) return;
+  xGestureCurrent.points.push({x, y});
+  scheduleDraw();
 }
 
 function xGestureEnd(x, y) {
-  if (!xGestureStroke) return;
-  const { startX, startY } = xGestureStroke;
+  if (!xGestureCurrent) return;
+  // Добавим последнюю точку (если её ещё нет)
+  const last = xGestureCurrent.points[xGestureCurrent.points.length - 1];
+  if (last && (Math.abs(last.x - x) > 2 || Math.abs(last.y - y) > 2)) {
+    xGestureCurrent.points.push({x, y});
+  }
+
+  const points = xGestureCurrent.points;
+  const start = points[0];
+  const end = points[points.length - 1];
+  xGestureCurrent.time = Date.now();
 
   const mainEl = document.getElementById('screen-main');
   if (!mainEl || !mainEl.classList.contains('active')) {
-    xGestureStroke = null;
+    xGestureCurrent = null;
+    scheduleDraw();
     return;
   }
 
-  const dx = x - startX;
-  const dy = y - startY;
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
   const dist = Math.sqrt(dx*dx + dy*dy);
   const minSide = Math.min(mainEl.clientWidth, mainEl.clientHeight);
 
   if (dist < minSide * 0.5) {
-    // Too short — clear immediately
-    xGestureStroke = null;
-    drawXStrokes();
+    // Слишком короткий — не считаем частью "Х"
+    xGestureCurrent.time = Date.now();
+    xGestureStrokes.push(xGestureCurrent);
+    xGestureCurrent = null;
+    scheduleDraw();
+    setTimeout(scheduleDraw, 300);
+    setTimeout(scheduleDraw, 600);
+    setTimeout(scheduleDraw, 1000);
+    setTimeout(scheduleDraw, 1500);
     return;
   }
 
   const ratio = Math.abs(dx) / (Math.abs(dy) || 1);
   if (ratio < 0.4 || ratio > 2.5) {
-    // Not diagonal enough — clear
-    xGestureStroke = null;
-    drawXStrokes();
+    // Недостаточно диагонально — сохраняем как обычный штрих
+    xGestureCurrent.time = Date.now();
+    xGestureStrokes.push(xGestureCurrent);
+    xGestureCurrent = null;
+    scheduleDraw();
+    setTimeout(scheduleDraw, 300);
+    setTimeout(scheduleDraw, 600);
+    setTimeout(scheduleDraw, 1000);
+    setTimeout(scheduleDraw, 1500);
     return;
   }
 
   const type = (dx * dy > 0) ? 'backslash' : 'slash';
-  const midX = (startX + x) / 2;
-  const midY = (startY + y) / 2;
+  const midX = (start.x + end.x) / 2;
+  const midY = (start.y + end.y) / 2;
   const now = Date.now();
+  xGestureCurrent.time = now;
+  xGestureCurrent.type = type;
+  xGestureStrokes.push(xGestureCurrent);
+  xGestureCurrent = null;
 
-  // Add to history (so it's drawn as a fading line)
-  xGestureHistory.push({ type, startX, startY, endX: x, endY: y, midX, midY, time: now });
-  xGestureStroke = null;
-
-  // Check for X match
-  xGestureHistory = xGestureHistory.filter(s => now - s.time < 1200);
+  // Проверяем на X
+  xGestureStrokes = xGestureStrokes.filter(s => now - s.time < 1200);
   const crossTolerance = minSide * 0.4;
-  const match = xGestureHistory.find(s =>
-    s.type !== type &&
-    Math.abs(s.midX - midX) < crossTolerance &&
-    Math.abs(s.midY - midY) < crossTolerance
+  const match = xGestureStrokes.find(s =>
+    s.type && s.type !== type &&
+    Math.abs((s.points[0].x + s.points[s.points.length-1].x)/2 - midX) < crossTolerance &&
+    Math.abs((s.points[0].y + s.points[s.points.length-1].y)/2 - midY) < crossTolerance
   );
 
-  drawXStrokes();
-
   if (match) {
-    // Highlight the matched X briefly before clearing
+    // Подсветим X зелёным
     if (xCtx && xCanvas) {
       const r = xCanvas.getBoundingClientRect();
+      xCtx.clearRect(0, 0, xCanvas.width, xCanvas.height);
       xCtx.strokeStyle = 'rgba(0,255,140,1)';
       xCtx.lineWidth = 6;
       xCtx.lineCap = 'round';
-      // Draw both strokes of the X in bright green
+      xCtx.lineJoin = 'round';
       xCtx.beginPath();
-      xCtx.moveTo(match.startX - r.left, match.startY - r.top);
-      xCtx.lineTo(match.endX - r.left, match.endY - r.top);
-      xCtx.moveTo(startX - r.left, startY - r.top);
-      xCtx.lineTo(x - r.left, y - r.top);
+      xCtx.moveTo(match.points[0].x - r.left, match.points[0].y - r.top);
+      for (let i = 1; i < match.points.length; i++) {
+        xCtx.lineTo(match.points[i].x - r.left, match.points[i].y - r.top);
+      }
+      xCtx.moveTo(start.x - r.left, start.y - r.top);
+      for (let i = 1; i < points.length; i++) {
+        xCtx.lineTo(points[i].x - r.left, points[i].y - r.top);
+      }
       xCtx.stroke();
     }
-    xGestureHistory = [];
-    setTimeout(() => completeFocusTaskByGesture(), 100);
-    setTimeout(drawXStrokes, 600);
+    xGestureStrokes = [];
+    setTimeout(() => completeFocusTaskByGesture(), 200);
+    setTimeout(scheduleDraw, 600);
+    return;
   }
 
-  // Schedule redraw to fade out
-  setTimeout(drawXStrokes, 50);
-  setTimeout(drawXStrokes, 300);
-  setTimeout(drawXStrokes, 600);
-  setTimeout(drawXStrokes, 1000);
-  setTimeout(drawXStrokes, 1500);
+  scheduleDraw();
+  setTimeout(scheduleDraw, 300);
+  setTimeout(scheduleDraw, 600);
+  setTimeout(scheduleDraw, 1000);
+  setTimeout(scheduleDraw, 1500);
 }
 
 function completeFocusTaskByGesture() {
