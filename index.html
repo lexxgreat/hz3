@@ -679,6 +679,7 @@ body{background:#060918;font-family:'Inter',sans-serif;display:flex;justify-cont
           <button id="hist-select-toggle" onclick="toggleSelectionMode()" style="padding:6px 14px;border-radius:99px;border:0.5px solid rgba(255,255,255,0.15);background:rgba(255,255,255,0.04);color:rgba(255,255,255,0.6);font-size:12px;font-weight:500;cursor:pointer;font-family:'Inter',sans-serif;transition:all 0.2s">☑ Выделить</button>
           <button onclick="document.getElementById('import-file-input').click()" style="padding:6px 14px;border-radius:99px;border:0.5px solid rgba(0,200,140,0.35);background:rgba(0,180,120,0.1);color:rgba(0,220,150,0.9);font-size:12px;font-weight:500;cursor:pointer;font-family:'Inter',sans-serif;transition:all 0.2s">⬆ Импорт</button>
           <input type="file" id="import-file-input" accept=".json,.txt,.csv" style="display:none;">
+          <button onclick="migrateFindLinks()" id="migrate-btn" style="padding:6px 14px;border-radius:99px;border:0.5px solid rgba(255,180,0,0.35);background:rgba(255,180,0,0.1);color:rgba(255,200,50,0.9);font-size:12px;font-weight:500;cursor:pointer;font-family:'Inter',sans-serif;transition:all 0.2s">🔗 Найти связи</button>
           <button onclick="exportNotes()" style="padding:6px 14px;border-radius:99px;border:0.5px solid rgba(108,71,255,0.4);background:rgba(108,71,255,0.1);color:rgba(139,92,246,0.9);font-size:12px;font-weight:500;cursor:pointer;font-family:'Inter',sans-serif;transition:all 0.2s">⬇ Экспорт</button>
         </div>
       </div>
@@ -3319,6 +3320,105 @@ async function loadLinksForNote(noteId) {
   }
 }
 window.loadLinksForNote = loadLinksForNote;
+
+// ── MIGRATION — найти связи для всех старых заметок (без ломания существующего) ──
+// Для каждой заметки, у которой ещё нет связей, вызываем findAndSaveLinksForNote
+// Rate limit: 2 сек между запросами (Polza AI + чтобы не перегружать)
+// Прогресс показываем в фиксированной плашке сверху
+
+let migrateRunning = false;
+let migrateCancelled = false;
+
+async function migrateFindLinks() {
+  if (migrateRunning) {
+    // Уже запущено — переключаем в режим отмены
+    migrateCancelled = true;
+    return;
+  }
+  if (!currentUid || notes.length === 0) {
+    alert('Нет заметок для обработки');
+    return;
+  }
+
+  // Загружаем все существующие связи (один раз — быстро)
+  let existingLinks = [];
+  try {
+    const snap = await getDocs(query(linksCol()));
+    existingLinks = snap.docs.map(d => d.data());
+  } catch(e) {
+    console.warn('[Migration] failed to load existing links', e);
+  }
+
+  // Множество noteId, у которых уже есть связи
+  const notesWithLinks = new Set();
+  for (const l of existingLinks) {
+    if (l.noteA) notesWithLinks.add(l.noteA);
+    if (l.noteB) notesWithLinks.add(l.noteB);
+  }
+
+  // Заметки без связей — для них запускаем AI
+  const candidates = notes.filter(n => !notesWithLinks.has(n.id));
+  if (candidates.length === 0) {
+    alert('Все заметки уже имеют связи — миграция не нужна.');
+    return;
+  }
+
+  // Защита от перегрузки — максимум 200 заметок за один запуск
+  const MAX_BATCH = 200;
+  const batch = candidates.slice(0, MAX_BATCH);
+  const skipped = candidates.length - batch.length;
+
+  if (!confirm(`Найдено ${candidates.length} заметок без связей. Будет обработано: ${batch.length}${skipped > 0 ? ` (остальные ${skipped} — в следующий раз)` : ''}.\nЭто займёт ~${Math.round(batch.length * 2 / 60)} мин. Запустить?`)) return;
+
+  migrateRunning = true;
+  migrateCancelled = false;
+  const btn = document.getElementById('migrate-btn');
+  if (btn) { btn.textContent = '⏹ Отменить'; btn.style.background = 'rgba(255,80,80,0.15)'; }
+
+  // Создаём плашку прогресса
+  let progressEl = document.getElementById('migration-progress');
+  if (!progressEl) {
+    progressEl = document.createElement('div');
+    progressEl.id = 'migration-progress';
+    progressEl.style.cssText = 'position:fixed;top:calc(8px + env(safe-area-inset-top));left:50%;transform:translateX(-50%);z-index:9998;background:rgba(15,18,40,0.95);border:1px solid rgba(108,71,255,0.5);border-radius:99px;padding:8px 16px;font-size:12px;color:#fff;font-family:Inter,sans-serif;box-shadow:0 4px 20px rgba(108,71,255,0.4);backdrop-filter:blur(10px);';
+    document.body.appendChild(progressEl);
+  }
+  progressEl.style.display = 'block';
+
+  let processed = 0;
+  let successCount = 0;
+  for (const note of batch) {
+    if (migrateCancelled) break;
+
+    processed++;
+    const pct = Math.round((processed / batch.length) * 100);
+    progressEl.textContent = `🔗 Поиск связей: ${processed}/${batch.length} (${pct}%)`;
+
+    try {
+      await findAndSaveLinksForNote(note);
+      successCount++;
+    } catch(e) {
+      console.warn('[Migration] error for note', note.id, e);
+    }
+
+    // Rate limit — 2 секунды между вызовами (кроме последнего)
+    if (processed < batch.length && !migrateCancelled) {
+      await new Promise(r => setTimeout(r, 2000));
+    }
+  }
+
+  // Финал
+  progressEl.style.display = 'none';
+  if (btn) { btn.textContent = '🔗 Найти связи'; btn.style.background = 'rgba(255,180,0,0.1)'; }
+  migrateRunning = false;
+  migrateCancelled = false;
+
+  if (processed > 0) {
+    alert(`Готово! Обработано: ${processed}${migrateCancelled ? ' (прервано)' : ''}.\nСвязи созданы для ${successCount} заметок.`);
+    await loadNotes();  // перезагружаем заметки (вдруг появились связи)
+  }
+}
+window.migrateFindLinks = migrateFindLinks;
 
 function showTyping() {
   const el = document.getElementById('chat-messages');
