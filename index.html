@@ -1993,8 +1993,20 @@ function resizeXCanvas() {
   if (!xCanvas) return;
   const r = xCanvas.getBoundingClientRect();
   if (r.width === 0 || r.height === 0) return;
-  xCanvas.width = r.width;
-  xCanvas.height = r.height;
+  // Only resize if internal size doesn't match CSS size (avoids resetting canvas on every draw)
+  if (xCanvas.width !== Math.round(r.width) || xCanvas.height !== Math.round(r.height)) {
+    xCanvas.width = Math.round(r.width);
+    xCanvas.height = Math.round(r.height);
+  }
+}
+
+function ensureCanvasSized() {
+  if (!xCanvas) return;
+  const r = xCanvas.getBoundingClientRect();
+  if (r.width === 0 || r.height === 0) return;
+  if (xCanvas.width !== Math.round(r.width) || xCanvas.height !== Math.round(r.height)) {
+    resizeXCanvas();
+  }
 }
 
 // Рисуем путь по массиву точек (плавная линия)
@@ -2015,32 +2027,23 @@ function drawPath(points, alpha, color, width) {
 
 function drawAllStrokes() {
   if (!xCtx || !xCanvas) return;
-  if (xCanvas.width === 0 || xCanvas.height === 0) {
-    resizeXCanvas();
-    if (xCanvas.width === 0) return;
-  }
+  ensureCanvasSized();  // Always check size before drawing
+  if (xCanvas.width === 0 || xCanvas.height === 0) return;
   const r = xCanvas.getBoundingClientRect();
   xCtx.clearRect(0, 0, xCanvas.width, xCanvas.height);
 
   const now = Date.now();
-  // Удаляем штрихи старше 1.5 сек
   xGestureStrokes = xGestureStrokes.filter(s => now - s.time < 1500);
 
-  // Завершённые штрихи (с затуханием)
   for (const s of xGestureStrokes) {
     const age = (now - s.time) / 1500;
     const alpha = (1 - age).toFixed(3);
-    // glow (сначала, за основным)
     drawPath(s.points, (0.35 * alpha).toFixed(3), 'rgba(0,212,255,ALPHA)', 14);
-    // основная линия
     drawPath(s.points, (0.9 * alpha).toFixed(3), 'rgba(108,71,255,ALPHA)', 4);
   }
 
-  // Текущий штрих (рисуется в реальном времени)
   if (xGestureCurrent && xGestureCurrent.points.length >= 2) {
-    // glow
     drawPath(xGestureCurrent.points, '0.5', 'rgba(0,212,255,ALPHA)', 14);
-    // основная линия
     drawPath(xGestureCurrent.points, '1', 'rgba(108,71,255,ALPHA)', 4);
   }
 }
@@ -2056,10 +2059,8 @@ function scheduleDraw() {
 }
 
 function xGestureStart(x, y) {
-  // Ленивая инициализация canvas (на случай если screen-main был скрыт при init)
-  if (xCanvas && (xCanvas.width === 0 || xCanvas.height === 0)) {
-    resizeXCanvas();
-  }
+  // Always ensure canvas is sized correctly before drawing
+  ensureCanvasSized();
   xGestureCurrent = { points: [{x, y}], time: 0 };
   scheduleDraw();
 }
