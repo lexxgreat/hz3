@@ -3749,7 +3749,17 @@ async function loadBalance() {
     });
     const data = await res.json();
     if (data.amount !== undefined) {
-      el.textContent = parseFloat(data.amount).toFixed(2) + ' ₽';
+      const total = parseFloat(data.amount).toFixed(2);
+      const available = data.available !== undefined ? parseFloat(data.available).toFixed(2) : total;
+      el.textContent = `${total} ₽ (доступно ${available})`;
+      // Подсветка если мало доступных средств
+      if (data.available !== undefined && parseFloat(data.available) < 5) {
+        el.style.color = 'rgba(255,150,80,0.95)';
+        el.title = 'Меньше 5 ₽ — AI-функции могут не работать';
+      } else {
+        el.style.color = 'rgba(139,92,246,0.95)';
+        el.title = '';
+      }
     } else {
       el.textContent = 'ошибка';
     }
@@ -4439,6 +4449,14 @@ async function callChatAPI(apiMessages) {
     })
   });
   const data = await res.json();
+  // Проверяем Polza-specific ошибки (insufficient balance, rate limit, etc.)
+  if (data.error) {
+    const errCode = data.error.code || 'UNKNOWN';
+    if (errCode === 'INSUFFICIENT_BALANCE') {
+      throw new Error('Недостаточно средств на Polza.ai. Проверьте баланс на polza.ai');
+    }
+    throw new Error('Polza API: ' + (data.error.message || errCode));
+  }
   return data.choices?.[0]?.message;
 }
 
@@ -4460,9 +4478,17 @@ async function callPolzaAI(messages, options = {}) {
   });
   if (!res.ok) {
     const errText = await res.text().catch(() => '');
-    throw new Error(`Polza API error ${res.status}: ${errText.slice(0, 200)}`);
+    throw new Error(`Polza API HTTP ${res.status}: ${errText.slice(0, 200)}`);
   }
   const data = await res.json();
+  // Проверяем Polza-specific ошибки
+  if (data.error) {
+    const errCode = data.error.code || 'UNKNOWN';
+    if (errCode === 'INSUFFICIENT_BALANCE') {
+      throw new Error('Недостаточно средств на Polza.ai. Проверьте баланс на polza.ai');
+    }
+    throw new Error('Polza API: ' + (data.error.message || errCode));
+  }
   return data.choices?.[0]?.message?.content || '';
 }
 window.callPolzaAI = callPolzaAI;
@@ -4629,7 +4655,7 @@ async function sendChatMessage(userText) {
   document.getElementById('chat-subtitle').textContent = 'Думаю...';
   try {
     let message = await callChatAPI(apiMessages);
-    if (!message) { hideTyping(); await addChatMessage('assistant', 'Нет ответа'); return; }
+    if (!message) { hideTyping(); await addChatMessage('assistant', '⚠️ Нет ответа от AI. Проверьте баланс на polza.ai (Возможно, закончились средства).'); return; }
 
     let toolCalls = message.tool_calls || [];
 
