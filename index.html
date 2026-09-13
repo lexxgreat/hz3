@@ -4289,27 +4289,33 @@ window.generateWishMoodImage = generateWishMoodImage;
 // ── WISH SUGGESTION — AI предлагает icon, category, mood prompt, milestones ──
 async function suggestWishEnhancements(text) {
   const systemPrompt = `Ты — креативный ИИ-ассистент для приложения «Хэзэнштейн».
-Пользователь загадал желание. Твоя задача — обогатить его: подобрать иконку, категорию, описание настроения для генерации картинки и первоначальный план (milestones).
+Пользователь загадал желание. Твоя задача — обогатить его: подобрать иконку, категорию, визуальный промпт для генерации картинки и первоначальный план (milestones).
 
 Верни ТОЛЬКО валидный JSON (без markdown), формат:
 {
   "icon": "1 эмодзи",
   "category": "language|career|health|travel|creativity|relationships|finance|learning|other",
-  "moodImagePrompt": "короткий английский промпт для генерации картинки, в стиле 'oil painting' или 'watercolor', с настроением желания",
+  "moodImagePrompt": "детальный английский промпт для генерации картинки",
   "milestones": ["шаг 1 (короткий, конкретный)", "шаг 2", "шаг 3", "шаг 4"]
 }
 
 Правила:
 - icon — один эмодзи, отражающий суть желания
 - category — выбери одну из списка
-- moodImagePrompt — 5-10 слов на английском, опиши визуальное настроение (НЕ текст желания, а абстрактная атмосфера)
+- moodImagePrompt — 12-25 слов на английском, ОПИСЫВАЕТ КОНКРЕТНО ЧТО НА КАРТИНКЕ:
+  • Включай конкретные визуальные элементы из желания (места, объекты, активности, атмосфера)
+  • Если в желании есть локация — упомяни её: "Bali tropical beach with palm trees and temples"
+  • Если действие — опиши сцену: "person hiking mountain trail at sunrise"
+  • Если абстрактная цель — визуализируй результат: "graduation ceremony, holding diploma, smiling"
+  • Добавь стиль и настроение: "oil painting, golden hour, vibrant colors, peaceful mood"
+  • Избегай общих слов вроде "dreamy landscape" — будь конкретным
 - milestones — 3-5 конкретных достижимых шагов, каждый 3-7 слов
 - Без воды, без пояснений — только JSON`;
 
   const response = await callPolzaAI([
     { role:'system', content: systemPrompt },
     { role:'user', content: `Желание: "${text}"` }
-  ], { max_tokens: 600, temperature: 0.7 });
+  ], { max_tokens: 700, temperature: 0.7 });
 
   // Parse JSON from response
   try {
