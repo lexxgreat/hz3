@@ -462,6 +462,30 @@ body{background:#060918;font-family:'Inter',sans-serif;display:flex;justify-cont
 .chat-send-btn{width:34px;height:34px;border-radius:50%;border:none;background:rgba(108,71,255,0.25);cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all 0.2s;flex-shrink:0}
 .chat-send-btn:hover{background:rgba(108,71,255,0.45)}
 .chat-send-btn:active{transform:scale(0.92)}
+
+/* ── CALENDAR: месячная сетка + drag&drop ── */
+.cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:3px}
+.cal-dow{font-size:9px;text-align:center;color:rgba(255,255,255,0.35);padding:2px 0;text-transform:uppercase;letter-spacing:0.5px}
+.cal-cell{min-height:46px;border-radius:8px;background:rgba(255,255,255,0.02);border:0.5px solid rgba(255,255,255,0.05);display:flex;flex-direction:column;align-items:center;padding:4px 2px;gap:3px;cursor:pointer;user-select:none;-webkit-user-select:none;transition:background 0.15s,border-color 0.15s}
+.cal-cell.today{border-color:rgba(108,71,255,0.55)}
+.cal-cell.today .cal-dnum{color:rgba(139,92,246,0.95)}
+.cal-cell.selected{border-color:rgba(139,92,246,0.9);background:rgba(108,71,255,0.14)}
+.cal-cell.past{opacity:0.55}
+.cal-cell.drop-hover{border-color:rgba(0,230,130,0.9)!important;background:rgba(0,230,130,0.1)!important}
+.cal-dnum{font-size:12px;font-weight:600;color:rgba(255,255,255,0.75);line-height:1;font-family:'Inter',sans-serif}
+.cal-dots{display:flex;gap:2px;flex-wrap:wrap;justify-content:center;align-items:center}
+.cal-dot{width:4px;height:4px;border-radius:50%;background:rgba(139,92,246,0.85)}
+.cal-dot.overdue{background:rgba(255,90,90,0.9)}
+.cal-more{font-size:8px;color:rgba(255,255,255,0.45);line-height:1}
+.cal-hours-grid{display:none;grid-template-columns:repeat(8,1fr);gap:4px;padding:6px 8px;margin:0 0 8px;background:rgba(255,255,255,0.02);border:0.5px dashed rgba(255,255,255,0.1);border-radius:10px}
+body.cal-dragging .cal-hours-grid{display:grid}
+.cal-hour-chip{text-align:center;font-size:10.5px;padding:5px 0;border-radius:6px;background:rgba(255,255,255,0.04);border:0.5px solid rgba(255,255,255,0.08);color:rgba(255,255,255,0.65);font-family:'Inter',sans-serif;user-select:none;-webkit-user-select:none}
+.cal-hour-chip.drop-hover{border-color:rgba(0,230,130,0.9)!important;background:rgba(0,230,130,0.15)!important;color:#fff}
+.drag-ghost{position:fixed;z-index:9999;pointer-events:none;transform:translate(-50%,-60%);max-width:250px;padding:8px 12px;border-radius:10px;background:rgba(40,35,80,0.95);border:1px solid rgba(139,92,246,0.7);color:rgba(255,255,255,0.95);font-size:12.5px;font-family:'Inter',sans-serif;box-shadow:0 10px 30px rgba(0,0,0,0.6);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dragging-src{opacity:0.3}
+body.cal-dragging,body.cal-dragging *{touch-action:none!important;user-select:none!important;-webkit-user-select:none!important}
+[data-drop-none].drop-hover{border-color:rgba(0,230,130,0.9)!important;background:rgba(0,230,130,0.07)!important}
+.cal-queue-top{border-left:3px solid rgba(0,230,130,0.7)!important}
 </style>
 </head>
 <body>
@@ -652,10 +676,11 @@ body{background:#060918;font-family:'Inter',sans-serif;display:flex;justify-cont
       </div>
     </div>
     <div style="display:flex;gap:6px;padding:8px 16px;align-items:center;border-bottom:0.5px solid rgba(255,255,255,0.06);">
-      <button onclick="changeCalendarWeek(-1)" style="background:rgba(255,255,255,0.04);border:0.5px solid rgba(255,255,255,0.1);border-radius:8px;padding:5px 10px;color:rgba(255,255,255,0.7);font-size:14px;cursor:pointer;font-family:Inter,sans-serif;">←</button>
-      <button onclick="changeCalendarWeek(0)" id="calendar-today-btn" style="background:rgba(108,71,255,0.15);border:0.5px solid rgba(108,71,255,0.4);border-radius:8px;padding:5px 12px;color:rgba(139,92,246,0.95);font-size:11px;font-weight:600;cursor:pointer;font-family:Inter,sans-serif;">Сегодня</button>
-      <button onclick="changeCalendarWeek(1)" style="background:rgba(255,255,255,0.04);border:0.5px solid rgba(255,255,255,0.1);border-radius:8px;padding:5px 10px;color:rgba(255,255,255,0.7);font-size:14px;cursor:pointer;font-family:Inter,sans-serif;">→</button>
-      <div id="calendar-week-range" style="margin-left:auto;font-size:11px;color:rgba(255,255,255,0.5);font-family:Inter,sans-serif;"></div>
+      <button onclick="changeCalendarMonth(-1)" style="background:rgba(255,255,255,0.04);border:0.5px solid rgba(255,255,255,0.1);border-radius:8px;padding:5px 10px;color:rgba(255,255,255,0.7);font-size:14px;cursor:pointer;font-family:Inter,sans-serif;">←</button>
+      <button onclick="changeCalendarMonth(0)" id="calendar-today-btn" style="background:rgba(108,71,255,0.15);border:0.5px solid rgba(108,71,255,0.4);border-radius:8px;padding:5px 12px;color:rgba(139,92,246,0.95);font-size:11px;font-weight:600;cursor:pointer;font-family:Inter,sans-serif;">Сегодня</button>
+      <button onclick="changeCalendarMonth(1)" style="background:rgba(255,255,255,0.04);border:0.5px solid rgba(255,255,255,0.1);border-radius:8px;padding:5px 10px;color:rgba(255,255,255,0.7);font-size:14px;cursor:pointer;font-family:Inter,sans-serif;">→</button>
+      <div id="calendar-month-title" style="margin-left:auto;font-size:11px;color:rgba(255,255,255,0.55);font-weight:600;text-transform:capitalize;font-family:Inter,sans-serif;"></div>
+      <button onclick="toggleSortMode()" id="calendar-sort-btn" style="background:rgba(108,71,255,0.15);border:0.5px solid rgba(108,71,255,0.4);border-radius:8px;padding:5px 10px;color:rgba(139,92,246,0.95);font-size:11px;font-weight:600;cursor:pointer;font-family:Inter,sans-serif;white-space:nowrap;">🎯 Раскидать</button>
     </div>
     <div id="calendar-list" style="flex:1;overflow-y:auto;padding:8px 16px;"></div>
     <div id="calendar-hint" style="padding:0 16px 4px;"></div>
@@ -1717,6 +1742,7 @@ async function toggleDone(id, currentDone) {
     });
     if (willBeDone) celebrateTaskDone(); // празднуем только при завершении, не при отмене
     await loadNotes();
+    renderCalendar(); // выполненные задачи исчезают из календаря
 
     // Если у заметки есть milestoneLink — синхронизируем с milestone в желании
     const note = notes.find(n => n.id === id);
@@ -1993,18 +2019,13 @@ function setCloudPeriod(period) {
 }
 window.setCloudPeriod = setCloudPeriod;
 
-// ── CALENDAR — план на неделю, задачи из Тудушки с scheduledDate ──
-let calendarWeekOffset = 0;  // 0 = текущая неделя, -1 = прошлая, +1 = следующая
-
-function getCalendarWeekStart(offset = 0) {
-  // Понедельник как начало недели
-  const d = new Date();
-  d.setHours(0, 0, 0, 0);
-  const day = d.getDay();  // 0=Sun, 1=Mon, ..., 6=Sat
-  const diff = (day === 0 ? -6 : 1 - day);  // смещение до понедельника
-  d.setDate(d.getDate() + diff + offset * 7);
-  return d;
-}
+// ── CALENDAR — месячная сетка + режим «Раскидать» (конвейер распределения) + drag&drop ──
+let calendarMonthOffset = 0;     // 0 = текущий месяц
+let calendarSelectedKey = null;  // YYYY-MM-DD выбранный день (по умолчанию — сегодня)
+let calendarSortMode = false;    // режим распределения: очередь снизу, тянешь на дни
+let calendarShowHours = false;   // показывать сетку часов в панели дня
+let calDrag = null;              // состояние перетаскивания
+let calSuppressClick = false;    // подавить клик сразу после драга
 
 function formatDateKey(d) {
   // YYYY-MM-DD в московском времени (UTC+3): раньше был чистый UTC —
@@ -2012,85 +2033,256 @@ function formatDateKey(d) {
   return new Date(d.getTime() + 3 * 60 * 60 * 1000).toISOString().slice(0, 10);
 }
 
-function formatDateDisplay(d) {
-  return d.toLocaleDateString('ru-RU', { day:'numeric', month:'short', weekday:'short' });
+function parseDayKey(key) {
+  if (!key) return null;
+  const [y, m, d] = key.split('-').map(Number);
+  return new Date(y, m - 1, d);
 }
 
-function changeCalendarWeek(direction) {
-  if (direction === 0) {
-    calendarWeekOffset = 0;  // Today
-  } else {
-    calendarWeekOffset += direction;
+function getMonthDate(offset = 0) {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  return new Date(d.getFullYear(), d.getMonth() + offset, 1);
+}
+
+function changeCalendarMonth(direction) {
+  if (direction === 0) calendarMonthOffset = 0;
+  else calendarMonthOffset += direction;
+  renderCalendar();
+}
+window.changeCalendarMonth = changeCalendarMonth;
+
+function selectCalendarDay(key) {
+  calendarSelectedKey = key;
+  renderCalendar();
+}
+window.selectCalendarDay = selectCalendarDay;
+
+function toggleSortMode() {
+  calendarSortMode = !calendarSortMode;
+  const btn = document.getElementById('calendar-sort-btn');
+  if (btn) {
+    btn.textContent = calendarSortMode ? '✓ Готово' : '🎯 Раскидать';
+    btn.style.background = calendarSortMode ? 'rgba(0,220,120,0.15)' : 'rgba(108,71,255,0.15)';
+    btn.style.borderColor = calendarSortMode ? 'rgba(0,220,120,0.4)' : 'rgba(108,71,255,0.4)';
+    btn.style.color = calendarSortMode ? 'rgba(0,230,130,0.95)' : 'rgba(139,92,246,0.95)';
   }
   renderCalendar();
 }
-window.changeCalendarWeek = changeCalendarWeek;
+window.toggleSortMode = toggleSortMode;
 
 function getCalendarTasks() {
-  // Все задачи из тудушки (inTodo=true) — без учёта done
-  return notes.filter(n => n.inTodo === true);
+  // Только то, что можно сделать: в тудушке и ещё не выполнено
+  return notes.filter(n => n.inTodo === true && n.done !== true);
+}
+
+function scheduledOf(t) {
+  return (t.scheduledDate || '').slice(0, 10) || null;
+}
+
+function calTaskCard(t, opts = {}) {
+  const tagBadge = t.tag ? `<span style="font-size:9px;color:rgba(139,92,246,0.6);margin-left:6px;">#${escHtml(t.tag)}</span>` : '';
+  let whenBadge = '';
+  if (opts.showWhen && scheduledOf(t)) {
+    const dstr = scheduledOf(t);
+    const dd = parseDayKey(dstr);
+    const todayKey = formatDateKey(new Date());
+    const overdue = dstr < todayKey;
+    const lbl = dd.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' }) + (t.scheduledTime ? ' · ' + t.scheduledTime.slice(0, 5) : '');
+    whenBadge = `<span style="flex-shrink:0;font-size:9.5px;padding:2px 6px;border-radius:99px;${overdue ? 'background:rgba(255,80,80,0.12);color:rgba(255,110,110,0.9);' : 'background:rgba(108,71,255,0.1);color:rgba(139,92,246,0.85);'}">${overdue ? '⚠ ' : ''}${lbl}</span>`;
+  }
+  return `<div data-drag-note="${t.id}" class="${opts.qTop ? 'cal-queue-top' : ''}" style="display:flex;align-items:flex-start;gap:8px;padding:6px 8px;margin-bottom:4px;border-radius:8px;background:rgba(255,255,255,0.03);border:0.5px solid rgba(255,255,255,0.05);cursor:grab;user-select:none;-webkit-user-select:none;">
+    <button onclick="toggleDone('${t.id}', false)" title="Выполнить" style="flex-shrink:0;width:18px;height:18px;border-radius:50%;border:1.5px solid rgba(255,255,255,0.3);background:transparent;cursor:pointer;display:flex;align-items:center;justify-content:center;margin-top:1px;"></button>
+    <div style="flex:1;min-width:0;">
+      <div style="font-size:12.5px;color:rgba(255,255,255,0.9);line-height:1.4;word-break:break-word;font-family:Inter,sans-serif;">${escHtml(t.text)}${tagBadge}</div>
+    </div>
+    ${whenBadge}
+    <button onclick="openScheduleModal('${t.id}')" title="Дата и время" style="flex-shrink:0;background:rgba(255,200,50,0.1);border:0.5px solid rgba(255,200,50,0.25);color:rgba(255,210,80,0.85);border-radius:6px;padding:3px 6px;font-size:11px;cursor:pointer;font-family:Inter,sans-serif;">📅</button>
+  </div>`;
 }
 
 function renderCalendar() {
   const list = document.getElementById('calendar-list');
   if (!list) return;
   const tasks = getCalendarTasks();
-  const weekStart = getCalendarWeekStart(calendarWeekOffset);
-  // Sub-header
-  const weekEnd = new Date(weekStart);
-  weekEnd.setDate(weekEnd.getDate() + 6);
-  const range = document.getElementById('calendar-week-range');
-  if (range) range.textContent = `${weekStart.toLocaleDateString('ru-RU', {day:'numeric',month:'short'})} — ${weekEnd.toLocaleDateString('ru-RU', {day:'numeric',month:'short'})}`;
+  const monthStart = getMonthDate(calendarMonthOffset);
+  const title = document.getElementById('calendar-month-title');
+  if (title) title.textContent = monthStart.toLocaleDateString('ru-RU', { month: 'long', year: 'numeric' });
+  const todayKey = formatDateKey(new Date());
+  if (!calendarSelectedKey) calendarSelectedKey = todayKey;
 
-  const today = new Date();
-  today.setHours(0,0,0,0);
-  const todayKey = formatDateKey(today);
+  // ── Месячная сетка (Пн–Вс), клетки — цели для драга ──
+  const firstDow = (monthStart.getDay() + 6) % 7; // 0 = Пн
+  const daysInMonth = new Date(monthStart.getFullYear(), monthStart.getMonth() + 1, 0).getDate();
+  let html = '<div class="cal-grid">';
+  html += ['пн','вт','ср','чт','пт','сб','вс'].map(d => `<div class="cal-dow">${d}</div>`).join('');
+  for (let i = 0; i < firstDow; i++) html += '<div></div>';
+  for (let d = 1; d <= daysInMonth; d++) {
+    const dayDate = new Date(monthStart.getFullYear(), monthStart.getMonth(), d);
+    const key = formatDateKey(dayDate);
+    const isToday = key === todayKey;
+    const isSel = key === calendarSelectedKey;
+    const isPast = key < todayKey;
+    const dayTasks = tasks.filter(t => scheduledOf(t) === key);
+    const dots = dayTasks.slice(0, 3).map(t => `<span class="cal-dot${isPast ? ' overdue' : ''}"></span>`).join('');
+    const more = dayTasks.length > 3 ? `<span class="cal-more">+${dayTasks.length - 3}</span>` : '';
+    html += `<div class="cal-cell${isToday ? ' today' : ''}${isSel ? ' selected' : ''}${isPast ? ' past' : ''}" data-drop-date="${key}" onclick="selectCalendarDay('${key}')">
+      <div class="cal-dnum">${d}</div>
+      <div class="cal-dots">${dots}${more}</div>
+    </div>`;
+  }
+  html += '</div>';
 
-  let html = '';
-  for (let i = 0; i < 7; i++) {
-    const dayDate = new Date(weekStart);
-    dayDate.setDate(dayDate.getDate() + i);
-    const dayKey = formatDateKey(dayDate);
-    const isToday = dayKey === todayKey;
-    const isPast = dayDate < today && !isToday;
-    const dayTasks = tasks.filter(t => (t.scheduledDate || '').slice(0,10) === dayKey);
+  // ── Панель выбранного дня (сортировка: с временем сверху, без времени — после) ──
+  const selDate = parseDayKey(calendarSelectedKey);
+  const selTasks = tasks.filter(t => scheduledOf(t) === calendarSelectedKey)
+    .sort((a, b) => (a.scheduledTime || '99:99').localeCompare(b.scheduledTime || '99:99'));
+  const selLbl = selDate ? selDate.toLocaleDateString('ru-RU', { weekday: 'long', day: 'numeric', month: 'long' }) : '';
+  html += `<div style="margin-top:12px;">
+    <div style="display:flex;align-items:center;gap:8px;padding:4px 8px 6px;">
+      <div style="font-size:12.5px;font-weight:600;color:rgba(139,92,246,0.9);text-transform:capitalize;font-family:Inter,sans-serif;">${selLbl}</div>
+      <span style="margin-left:auto;font-size:10px;color:rgba(255,255,255,0.4);">${selTasks.length}</span>
+      <button onclick="toggleCalHours()" style="background:rgba(255,255,255,0.04);border:0.5px solid rgba(255,255,255,0.1);border-radius:6px;padding:2px 8px;color:rgba(255,255,255,0.6);font-size:10.5px;cursor:pointer;font-family:Inter,sans-serif;">⏰ часы</button>
+    </div>
+    ${calHourChipsHtml()}
+    ${selTasks.length === 0 ? '<div style="font-size:11px;color:rgba(255,255,255,0.25);padding:0 8px 4px;font-style:italic;">— ничего не запланировано —</div>' : selTasks.map(t => calTaskCard(t)).join('')}
+  </div>`;
 
-    html += `<div style="margin-bottom:14px;">
-      <div style="display:flex;align-items:center;gap:8px;padding:6px 8px;margin-bottom:6px;border-radius:8px;background:${isToday ? 'rgba(108,71,255,0.15)' : 'rgba(255,255,255,0.02)'};border:0.5px solid ${isToday ? 'rgba(108,71,255,0.4)' : 'rgba(255,255,255,0.06)'};">
-        <div style="font-size:14px;font-weight:600;color:${isToday ? 'rgba(139,92,246,0.95)' : (isPast ? 'rgba(255,255,255,0.4)' : 'rgba(255,255,255,0.85)')};font-family:Inter,sans-serif;">${formatDateDisplay(dayDate)}</div>
-        ${isToday ? '<span style="font-size:9px;background:rgba(108,71,255,0.4);padding:1px 6px;border-radius:99px;color:#fff;font-family:Inter,sans-serif;">сегодня</span>' : ''}
-        <span style="margin-left:auto;font-size:10px;color:rgba(255,255,255,0.4);font-family:Inter,sans-serif;">${dayTasks.length}</span>
-      </div>
-      ${dayTasks.length === 0 ? '<div style="font-size:11px;color:rgba(255,255,255,0.25);padding:4px 8px 8px;font-style:italic;">— нет задач —</div>' : ''}
-      ${dayTasks.map(t => renderCalendarTask(t)).join('')}
+  // ── Низ: в режиме распределения — очередь-конвейер; в обычном — Ближайшие + Без срока ──
+  if (calendarSortMode) {
+    const queue = tasks.filter(t => !scheduledOf(t)).sort((a, b) => (a.todoOrder || 0) - (b.todoOrder || 0));
+    html += `<div data-drop-none="1" style="margin-top:14px;padding:10px 8px 6px;border-top:0.5px solid rgba(255,255,255,0.08);">
+      <div style="font-size:11px;color:rgba(0,230,130,0.75);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;font-family:Inter,sans-serif;">🎯 Очередь на распределение · ${queue.length}</div>
+      ${queue.length === 0 ? '<div style="font-size:12px;color:rgba(0,230,130,0.6);padding:2px 8px 6px;font-style:italic;">✓ Все задачи распределены</div>' : queue.map((t, i) => calTaskCard(t, { qTop: i === 0 })).join('')}
+    </div>`;
+  } else {
+    const scheduled = tasks.filter(t => scheduledOf(t))
+      .sort((a, b) => (scheduledOf(a) + ' ' + (a.scheduledTime || '99:99')).localeCompare(scheduledOf(b) + ' ' + (b.scheduledTime || '99:99')));
+    const unsched = tasks.filter(t => !scheduledOf(t)).sort((a, b) => (a.todoOrder || 0) - (b.todoOrder || 0));
+    html += `<div style="margin-top:14px;padding-top:10px;border-top:0.5px solid rgba(255,255,255,0.08);">
+      <div style="font-size:11px;color:rgba(255,255,255,0.5);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;font-family:Inter,sans-serif;">Ближайшие · ${scheduled.length}</div>
+      ${scheduled.length === 0 ? '<div style="font-size:11px;color:rgba(255,255,255,0.25);padding:0 8px 4px;font-style:italic;">Нет запланированных задач</div>' : scheduled.map(t => calTaskCard(t, { showWhen: true })).join('')}
+    </div>
+    <div data-drop-none="1" style="margin-top:12px;padding:8px;border:0.5px dashed rgba(255,255,255,0.12);border-radius:10px;">
+      <div style="font-size:11px;color:rgba(255,255,255,0.5);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;font-family:Inter,sans-serif;">Без срока · ${unsched.length}</div>
+      ${unsched.length === 0 ? '<div style="font-size:11px;color:rgba(255,255,255,0.25);padding:0 0 4px;font-style:italic;">Все задачи распределены</div>' : unsched.map(t => calTaskCard(t)).join('')}
     </div>`;
   }
 
-  // Unscheduled tasks
-  const unsched = tasks.filter(t => !t.scheduledDate);
-  html += `<div style="margin-top:16px;padding-top:12px;border-top:0.5px solid rgba(255,255,255,0.08);">
-    <div style="font-size:11px;color:rgba(255,255,255,0.5);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;font-family:Inter,sans-serif;">Без срока · ${unsched.length}</div>
-    ${unsched.length === 0 ? '<div style="font-size:11px;color:rgba(255,255,255,0.25);padding:4px 8px;font-style:italic;">Все задачи распределены</div>' : ''}
-    ${unsched.map(t => renderCalendarTask(t)).join('')}
-  </div>`;
-
   list.innerHTML = html;
-
-  // Update sub
   const sub = document.getElementById('calendar-sub');
-  if (sub) sub.textContent = `${tasks.length} задач · ${tasks.filter(t=>t.scheduledDate).length} распределено`;
+  if (sub) sub.textContent = calendarSortMode
+    ? 'Режим распределения: тяни задачу из очереди на день'
+    : `${tasks.length} задач · ${tasks.filter(t => scheduledOf(t)).length} распределено`;
+  bindCalDrag();
 }
 
-function renderCalendarTask(t) {
-  const isDone = t.done === true;
-  const tagBadge = t.tag ? `<span style="font-size:9px;color:rgba(139,92,246,0.6);margin-left:6px;">#${escHtml(t.tag)}</span>` : '';
-  return `<div style="display:flex;align-items:flex-start;gap:8px;padding:6px 8px;margin-bottom:4px;border-radius:8px;background:rgba(255,255,255,0.02);border:0.5px solid rgba(255,255,255,0.04);">
-    <button onclick="toggleDone('${t.id}', ${isDone})" style="flex-shrink:0;width:18px;height:18px;border-radius:50%;border:1.5px solid ${isDone ? 'rgba(0,255,140,0.8)' : 'rgba(255,255,255,0.3)'};background:${isDone ? 'rgba(0,255,140,0.8)' : 'transparent'};color:#fff;font-size:10px;cursor:pointer;display:flex;align-items:center;justify-content:center;font-weight:700;margin-top:1px;">${isDone ? '✓' : ''}</button>
-    <div style="flex:1;min-width:0;">
-      <div style="font-size:12.5px;color:${isDone ? 'rgba(255,255,255,0.4)' : 'rgba(255,255,255,0.9)'};line-height:1.4;text-decoration:${isDone ? 'line-through' : 'none'};word-break:break-word;font-family:Inter,sans-serif;">${escHtml(t.text)}${tagBadge}</div>
-    </div>
-    <button onclick="openScheduleModal('${t.id}')" title="Назначить дату" style="flex-shrink:0;background:rgba(255,200,50,0.1);border:0.5px solid rgba(255,200,50,0.25);color:rgba(255,210,80,0.85);border-radius:6px;padding:3px 6px;font-size:11px;cursor:pointer;font-family:Inter,sans-serif;">📅</button>
-  </div>`;
+function calHourChipsHtml() {
+  // 24 чипа-цели для драга «на час»; видимы при драге или по кнопке ⏰
+  let chips = '';
+  for (let h = 0; h < 24; h++) {
+    const hh = String(h).padStart(2, '0');
+    chips += `<div class="cal-hour-chip" data-drop-hour="${hh}">${hh}</div>`;
+  }
+  return `<div id="cal-hours" class="cal-hours-grid" style="${calendarShowHours ? 'display:grid' : ''}">${chips}</div>`;
+}
+
+function toggleCalHours() {
+  calendarShowHours = !calendarShowHours;
+  renderCalendar();
+}
+window.toggleCalHours = toggleCalHours;
+
+// ── Drag&drop задач (pointer events: и телефон, и мышь) ──
+// Long-press 300мс → карточка поднимается и следует за пальцем;
+// цели: клетка дня (data-drop-date), час (data-drop-hour), «Без срока» (data-drop-none).
+function bindCalDrag() {
+  const list = document.getElementById('calendar-list');
+  if (!list || list.dataset.dragBound) return;
+  list.dataset.dragBound = '1';
+  list.addEventListener('pointerdown', onCalPointerDown);
+  list.addEventListener('contextmenu', (e) => {
+    if (e.target.closest && e.target.closest('[data-drag-note]')) e.preventDefault();
+  });
+  window.addEventListener('pointermove', onCalPointerMove, { passive: false });
+  window.addEventListener('pointerup', onCalPointerUp);
+  window.addEventListener('pointercancel', onCalPointerUp);
+  window.addEventListener('click', (e) => {
+    if (calSuppressClick) { e.stopPropagation(); e.preventDefault(); calSuppressClick = false; }
+  }, true);
+}
+
+function onCalPointerDown(e) {
+  const handle = e.target.closest ? e.target.closest('[data-drag-note]') : null;
+  if (!handle || e.target.closest('button')) return; // тапы по ✓ и 📅 — не драг
+  if (e.button && e.button !== 0) return;
+  calDrag = {
+    noteId: handle.getAttribute('data-drag-note'),
+    srcEl: handle,
+    startX: e.clientX, startY: e.clientY,
+    lastX: e.clientX, lastY: e.clientY,
+    started: false, ghost: null, hoverEl: null,
+    timer: setTimeout(startCalDrag, 300)
+  };
+}
+
+function startCalDrag() {
+  if (!calDrag) return;
+  calDrag.started = true;
+  document.body.classList.add('cal-dragging'); // блокируем скролл на время драга + показываем часы
+  try { if (navigator.vibrate) navigator.vibrate(15); } catch(_) {}
+  const note = notes.find(n => n.id === calDrag.noteId);
+  const ghost = document.createElement('div');
+  ghost.className = 'drag-ghost';
+  ghost.textContent = note ? note.text : '';
+  ghost.style.left = calDrag.lastX + 'px';
+  ghost.style.top = calDrag.lastY + 'px';
+  document.body.appendChild(ghost);
+  calDrag.ghost = ghost;
+  if (calDrag.srcEl) calDrag.srcEl.classList.add('dragging-src');
+}
+
+function onCalPointerMove(e) {
+  if (!calDrag) return;
+  calDrag.lastX = e.clientX; calDrag.lastY = e.clientY;
+  if (!calDrag.started) {
+    // палец поехал до срабатывания long-press — это скролл, отменяем драг
+    if (Math.hypot(e.clientX - calDrag.startX, e.clientY - calDrag.startY) > 12) clearTimeout(calDrag.timer);
+    return;
+  }
+  e.preventDefault();
+  if (calDrag.ghost) { calDrag.ghost.style.left = e.clientX + 'px'; calDrag.ghost.style.top = e.clientY + 'px'; }
+  const el = document.elementFromPoint(e.clientX, e.clientY);
+  const target = el && el.closest ? el.closest('[data-drop-date],[data-drop-hour],[data-drop-none]') : null;
+  if (calDrag.hoverEl && calDrag.hoverEl !== target) calDrag.hoverEl.classList.remove('drop-hover');
+  if (target && target !== calDrag.hoverEl) target.classList.add('drop-hover');
+  calDrag.hoverEl = target;
+}
+
+async function onCalPointerUp(e) {
+  if (!calDrag) return;
+  clearTimeout(calDrag.timer);
+  const d = calDrag;
+  calDrag = null;
+  if (d.started) {
+    calSuppressClick = true;
+    setTimeout(() => { calSuppressClick = false; }, 350);
+    const el = document.elementFromPoint(e.clientX, e.clientY);
+    const target = el && el.closest ? el.closest('[data-drop-date],[data-drop-hour],[data-drop-none]') : null;
+    if (target) {
+      if (target.dataset.dropDate) {
+        await setNoteSchedule(d.noteId, target.dataset.dropDate); // на день — время сохраняется
+      } else if (target.dataset.dropHour) {
+        await setNoteSchedule(d.noteId, calendarSelectedKey, target.dataset.dropHour + ':00'); // на час выбранного дня
+      } else if (target.dataset.dropNone !== undefined) {
+        await setNoteSchedule(d.noteId, null, null); // обратно в очередь/без срока
+      }
+    }
+  }
+  if (d.ghost) d.ghost.remove();
+  if (d.srcEl) d.srcEl.classList.remove('dragging-src');
+  if (d.hoverEl) d.hoverEl.classList.remove('drop-hover');
+  document.body.classList.remove('cal-dragging');
 }
 
 function openScheduleModal(noteId) {
@@ -2110,6 +2302,11 @@ function openScheduleModal(noteId) {
   const inThreeDays = new Date(today); inThreeDays.setDate(inThreeDays.getDate() + 3);
   const nextWeek = new Date(today); nextWeek.setDate(nextWeek.getDate() + 7);
   const current = note.scheduledDate ? note.scheduledDate.slice(0,10) : '';
+  let timeOpts = '<option value="">Без времени</option>';
+  for (let h = 0; h < 24; h++) {
+    const hh = String(h).padStart(2, '0');
+    timeOpts += `<option value="${hh}:00" ${note.scheduledTime === hh + ':00' ? 'selected' : ''}>${hh}:00</option>`;
+  }
 
   modal.innerHTML = `
     <div class="modal" style="max-width:380px;">
@@ -2127,6 +2324,10 @@ function openScheduleModal(noteId) {
         <div style="font-size:10px;color:rgba(255,255,255,0.5);margin-bottom:4px;text-transform:uppercase;letter-spacing:1px;font-family:Inter,sans-serif;">Или выбери дату:</div>
         <input type="date" id="schedule-date-input" value="${current}" style="width:100%;background:rgba(255,255,255,0.04);border:0.5px solid rgba(108,71,255,0.3);border-radius:8px;padding:8px;color:#fff;font-size:13px;font-family:Inter,sans-serif;outline:none;color-scheme:dark;" />
       </div>
+      <div style="margin-bottom:10px;">
+        <div style="font-size:10px;color:rgba(255,255,255,0.5);margin-bottom:4px;text-transform:uppercase;letter-spacing:1px;font-family:Inter,sans-serif;">Время (час):</div>
+        <select id="schedule-time-select" style="width:100%;background:rgba(255,255,255,0.04);border:0.5px solid rgba(108,71,255,0.3);border-radius:8px;padding:8px;color:#fff;font-size:13px;font-family:Inter,sans-serif;outline:none;color-scheme:dark;">${timeOpts}</select>
+      </div>
       <div class="modal-btns">
         <button class="modal-cancel" onclick="closeScheduleModal()">Отмена</button>
         <button class="modal-save" onclick="saveScheduleDate('${noteId}')">Сохранить</button>
@@ -2142,23 +2343,39 @@ function closeScheduleModal() {
 }
 window.closeScheduleModal = closeScheduleModal;
 
-async function setScheduleDate(noteId, dateStr) {
-  // Быстрая кнопка — сразу сохраняем
+async function setNoteSchedule(noteId, dateKey, timeStr) {
+  // Универсальное сохранение: dateKey=null — снять дату и время;
+  // timeStr undefined — оставить прежнее время; null / 'HH:00' — установить
   try {
-    await updateDoc(uDocRef('notes', noteId), { scheduledDate: dateStr });
+    const patch = dateKey ? { scheduledDate: dateKey } : { scheduledDate: null, scheduledTime: null };
+    if (dateKey && timeStr !== undefined) patch.scheduledTime = timeStr;
+    await updateDoc(uDocRef('notes', noteId), patch);
     await loadNotes();
     renderCalendar();
-    closeScheduleModal();
   } catch(e) {
     alert('Ошибка: ' + e.message);
   }
+}
+window.setNoteSchedule = setNoteSchedule;
+
+async function setScheduleDate(noteId, dateStr) {
+  // Быстрая кнопка из модалки — время сохраняем прежнее
+  await setNoteSchedule(noteId, dateStr || null, undefined);
+  closeScheduleModal();
 }
 window.setScheduleDate = setScheduleDate;
 
 async function saveScheduleDate(noteId) {
   const input = document.getElementById('schedule-date-input');
+  const timeSel = document.getElementById('schedule-time-select');
   const dateStr = input?.value || null;
-  await setScheduleDate(noteId, dateStr);
+  const timeVal = timeSel ? timeSel.value : undefined;
+  if (dateStr) {
+    await setNoteSchedule(noteId, dateStr, timeVal === '' ? null : (timeVal || undefined));
+  } else {
+    await setNoteSchedule(noteId, null, null);
+  }
+  closeScheduleModal();
 }
 window.saveScheduleDate = saveScheduleDate;
 
@@ -4127,7 +4344,7 @@ function goTo(screen) {
   }
   if (screen === 'calendar') {
     renderCalendar();
-    showHintOnce('calendar_intro','📅 Тап на 📅 рядом с задачей — назначь дату. Распредели все задачи по дням недели.','calendar-hint', () => notes.filter(n => n.inTodo).length >= 1);
+    showHintOnce('calendar_intro','📅 Тап на день — план дня. 🎯 Раскидать — распределить задачи конвейером. Долгое нажатие на задачу — перетащить на день или час.','calendar-hint', () => notes.filter(n => n.inTodo).length >= 1);
   }
   if (screen === 'wishes') {
     renderWishes();
