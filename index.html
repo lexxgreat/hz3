@@ -2433,6 +2433,7 @@ let graphLeafCount = 0;
 let graphCam = null; // {k, cx, cy, tk, tcx, tcy} — текущие и целевые (плавный лерп)
 const GRAPH_K_MIN = 0.35, GRAPH_K_MAX = 5;
 const graphDeepChat = {};       // wishId → {msgs:[{role, text}]} — фрагменты диалога для глубокого слоя
+let graphInertia = null;        // {x,y} px/кадр — инерция карты после пан-жеста
 
 function ensureGraphCamera() {
   if (graphCam) return;
@@ -2812,6 +2813,12 @@ function drawGraph() {
   const h = graphCanvas.height;
   const ctx = graphCtx;
   ctx.clearRect(0, 0, w, h);
+  // Инерция: после отпускания карта скользит и плавно тормозит (как в картах)
+  if (graphInertia) {
+    graphPanBy(graphInertia.x, graphInertia.y);
+    graphInertia.x *= 0.93; graphInertia.y *= 0.93;
+    if (Math.hypot(graphInertia.x, graphInertia.y) < 0.15) graphInertia = null;
+  }
   graphCameraTick();
   ensureGraphCamera();
   const cam = graphCam;
@@ -3137,12 +3144,15 @@ function setupGraphInteraction() {
   const canvas = document.getElementById('graph-canvas');
   if (!canvas || canvas.dataset.graphInteract) return;
   canvas.dataset.graphInteract = '1';
-  let mode = null;          // null | 'node' | 'pan' | 'pinch'
+  let mode = null;          // null | 'press' | 'node' | 'pan' | 'pinch'
   let dragIdx = null;
   let dragStartTime = 0;
   let dragStartPos = { x: 0, y: 0 };
   let panLast = null;       // {x, y}
-  let pinch = null;         // {d0, mid0:{x,y}, wpt:{x,y}} — wpt = мировая точка под серединой щипка
+  let panLastT = 0;         // время последнего pan-события (для скорости инерции)
+  let panVel = { x: 0, y: 0 }; // px за 16мс — сглаженная скорость пана
+  let pressTimer = null;    // таймер длинного нажатия — драг узла
+  let pinch = null;         // {d0, k0, mid0:{x,y}, wpt:{x,y}} — wpt = мировая точка под серединой щипка
 
   function getPos(e) {
     const r = canvas.getBoundingClientRect();
@@ -3158,15 +3168,21 @@ function setupGraphInteraction() {
     const a = e.touches[0], b = e.touches[1];
     return Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
   }
-  function findNode(wx, wy) {
-    // Сначала хабы (зона больше), потом листья — координаты МИРА
+  function findNodeAtScreen(sx, sy) {
+    // Хит-тест в ЭКРАННЫХ координатах: узел захвачен, только если палец
+    // реально на видимом круге. Мировой тест с запасом при k=5 давал
+    // невидимые зоны захвата 150-170px — карта не панилась.
+    ensureGraphCamera();
+    const k = graphCam.k;
+    const hubScale = k < 1 ? 1 + (1 - k) * 0.3 : 1;
     for (let pass = 0; pass < 2; pass++) {
       for (let i = graphNodes.length - 1; i >= 0; i--) {
         const n = graphNodes[i];
         const isHub = n.kind !== 'note';
         if ((pass === 0) !== isHub) continue;
-        const r = n.r + (isHub ? 14 : 8);
-        const dx = wx - n.x, dy = wy - n.y;
+        const sp = graphW2S(n.x, n.y);
+        const r = Math.max(n.r * hubScale * k, isHub ? 18 : 14) + 6;
+        const dx = sx - sp.x, dy = sy - sp.y;
         if (dx*dx + dy*dy <= r * r) return i;
       }
     }
@@ -3174,25 +3190,38 @@ function setupGraphInteraction() {
   }
 
   canvas.addEventListener('touchstart', (e) => {
+    graphInertia = null;
     if (e.touches.length >= 2) {
       // Щипок: прерываем всё, фиксируем мировую точку под серединой жеста
+      if (pressTimer) { clearTimeout(pressTimer); pressTimer = null; }
       mode = 'pinch';
       dragIdx = null;
+      ensureGraphCamera();
       const mid = getMid(e);
-      pinch = { d0: getDist(e), mid0: { ...mid }, wpt: graphS2W(mid.x, mid.y) };
+      pinch = { d0: getDist(e), k0: graphCam.tk, mid0: { ...mid }, wpt: graphS2W(mid.x, mid.y) };
       return;
     }
     const p = getPos(e);
-    const wpos = graphS2W(p.x, p.y);
-    const idx = findNode(wpos.x, wpos.y);
+    const idx = findNodeAtScreen(p.x, p.y);
+    dragStartTime = Date.now();
+    dragStartPos = { ...p };
     if (idx >= 0) {
-      mode = 'node';
+      // ПРИОРИТЕТ ПАНА: узел не хватаем сразу — ждём длинное нажатие.
+      // Короткий тап откроет карточку, движение пальца превратится в пан.
+      mode = 'press';
       dragIdx = idx;
-      dragStartTime = Date.now();
-      dragStartPos = { ...p };
+      clearTimeout(pressTimer);
+      pressTimer = setTimeout(() => {
+        if (mode === 'press') {
+          mode = 'node';
+          try { if (navigator.vibrate) navigator.vibrate(18); } catch (err) {}
+        }
+      }, 380);
     } else {
       mode = 'pan';
       panLast = { ...p };
+      panLastT = Date.now();
+      panVel = { x: 0, y: 0 };
       // Тап/пан мимо узла — снимаем селекцию
       graphSelectedIdx = null;
       hideGraphPopover();
@@ -3204,7 +3233,26 @@ function setupGraphInteraction() {
       e.preventDefault();
       const d = Math.max(20, getDist(e));
       const mid = getMid(e);
-      graphPinchTo(graphCam.tk * (d / pinch.d0), mid.x, mid.y, pinch.wpt);
+      // Экспоненциальный зум: ПОСТОЯННАЯ скорость (≈×1.4 на 100px разведения пальцев).
+      // Старая линейная формула k0*(d/d0) ускорялась взрывообразно, если пальцы
+      // начинали близко: разведение 60→250px давало ×4.2 за один жест.
+      const nk = (pinch.k0 || 1) * Math.exp((d - pinch.d0) * 0.0034);
+      graphPinchTo(nk, mid.x, mid.y, pinch.wpt);
+      return;
+    }
+    if (mode === 'press') {
+      // Палец поехал раньше таймера — это пан карты, а не драг узла
+      e.preventDefault();
+      const p = getPos(e);
+      if (Math.hypot(p.x - dragStartPos.x, p.y - dragStartPos.y) > 10) {
+        if (pressTimer) { clearTimeout(pressTimer); pressTimer = null; }
+        mode = 'pan';
+        panLast = { ...p };
+        panLastT = Date.now();
+        panVel = { x: 0, y: 0 };
+        graphSelectedIdx = null;
+        hideGraphPopover();
+      }
       return;
     }
     if (mode === 'node' && dragIdx !== null && dragIdx !== undefined) {
@@ -3219,7 +3267,13 @@ function setupGraphInteraction() {
       e.preventDefault();
       const p = getPos(e);
       graphPanBy(p.x - panLast.x, p.y - panLast.y);
+      const now = Date.now();
+      const dt = Math.max(8, now - panLastT);
+      // Скорость для инерции: нормируем к 16мс кадру, сглаживаем
+      panVel.x = 0.7 * (p.x - panLast.x) / dt * 16 + 0.3 * panVel.x;
+      panVel.y = 0.7 * (p.y - panLast.y) / dt * 16 + 0.3 * panVel.y;
       panLast = { ...p };
+      panLastT = now;
     }
   }, { passive: false });
 
@@ -3228,36 +3282,50 @@ function setupGraphInteraction() {
       if (e.touches.length < 2) { mode = null; pinch = null; }
       return;
     }
-    if (mode === 'node' && dragIdx !== null && dragIdx !== undefined) {
+    if (mode === 'press') {
+      if (pressTimer) { clearTimeout(pressTimer); pressTimer = null; }
       const p = getPos(e);
       const dt = Date.now() - dragStartTime;
       const moved = Math.hypot(p.x - dragStartPos.x, p.y - dragStartPos.y);
-      if (dt < 300 && moved < 5) {
+      if (dt < 500 && moved < 10) {
         // Это тап — селекция узла + показ popover
         graphSelectedIdx = dragIdx;
         showGraphPopover(dragIdx);
       }
       dragIdx = null;
+    } else if (mode === 'node') {
+      dragIdx = null;
+    } else if (mode === 'pan' && panVel) {
+      // Отпустили с разгоном — карта скользит по инерции и плавно тормозит
+      if (Math.hypot(panVel.x, panVel.y) > 1.5) graphInertia = { x: panVel.x, y: panVel.y };
     }
     mode = null;
     panLast = null;
   }, { passive: true });
 
-  canvas.addEventListener('touchcancel', () => { mode = null; pinch = null; panLast = null; dragIdx = null; });
+  canvas.addEventListener('touchcancel', () => {
+    if (pressTimer) { clearTimeout(pressTimer); pressTimer = null; }
+    mode = null; pinch = null; panLast = null; dragIdx = null; graphInertia = null;
+  });
 
-  // Колесо мыши — зум к курсору
+  // Долгое нажатие на канвасе не должно вызывать системное меню (Android)
+  canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+
+  // Колесо мыши — зум к курсору (deltaMode=1 — строки, умножаем на 33)
   canvas.addEventListener('wheel', (e) => {
     e.preventDefault();
+    graphInertia = null;
     const p = getPos(e);
-    graphZoomAt(p.x, p.y, Math.exp(-e.deltaY * 0.0016));
+    const dy = e.deltaMode === 1 ? e.deltaY * 33 : e.deltaY;
+    graphZoomAt(p.x, p.y, Math.exp(-dy * 0.0014));
   }, { passive: false });
 
   // Mouse для теста (десктоп): драг узлов, пан пустотой, тап — селекция
   let mouseMode = null, mouseDragIdx = null;
   canvas.addEventListener('mousedown', (e) => {
+    graphInertia = null;
     const p = getPos(e);
-    const wpos = graphS2W(p.x, p.y);
-    const idx = findNode(wpos.x, wpos.y);
+    const idx = findNodeAtScreen(p.x, p.y);
     dragStartTime = Date.now();
     dragStartPos = { ...p };
     if (idx >= 0) { mouseMode = 'node'; mouseDragIdx = idx; }
@@ -5163,7 +5231,7 @@ function goTo(screen) {
   }
   if (screen === 'graph') {
     // Разовая подсказка: объясняем язык карты и ИИ-связи
-    showHintOnce('graph_intro','🌌 Это облако твоих мыслей. Сведи два пальца — и карта раскроется: желания, под ними задачи, ещё глубже — шаги и диалоги с ИИ. Тапни запись — расскажу, почему ИИ связал её с другими.', 'graph-hint', () => notes.length >= 1);
+    showHintOnce('graph_intro2','🌌 Это облако твоих мыслей. Сведи два пальца — раскроются желания → задачи → шаги и диалоги. Веди пальцем — карта поедет за ним. Тапни запись — расскажу, почему ИИ связал её с другими. Удерживай узел — и сможешь передвинуть.', 'graph-hint', () => notes.length >= 1);
   }
   if (screen === 'calendar') {
     renderCalendar();
