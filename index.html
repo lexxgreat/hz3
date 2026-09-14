@@ -1361,10 +1361,18 @@ function setMicState(on) {
 }
 
 // ── UI ──
-function setStatus(txt) {
+let statusTimer = null;
+// txt + hideMs → сообщение само погаснет через hideMs (без него висит, пока не заменят)
+function setStatus(txt, hideMs) {
   const el = document.getElementById('cap-status');
+  if (statusTimer) { clearTimeout(statusTimer); statusTimer = null; }
   el.textContent = txt;
   el.style.opacity = txt ? '1' : '0';
+  if (txt && hideMs) statusTimer = setTimeout(() => {
+    el.textContent = '';
+    el.style.opacity = '0';
+    statusTimer = null;
+  }, hideMs);
 }
 
 function autoResize() {
@@ -1420,7 +1428,7 @@ async function saveNote(text, type) {
     // Проверяем, не пора ли предложить регистрацию
     setTimeout(checkShowRegisterPrompt, 500);
   } catch(e) {
-    setStatus('Ошибка: ' + e.message);
+    setStatus('Ошибка: ' + e.message, 4000);
   }
 }
 
@@ -5040,14 +5048,14 @@ async function skipTodoTask(id) {
   const queue = getTodoQueue();
   if (!queue.some(n => n.id === id)) return;
   if (queue.length < 2) {
-    setStatus('Это единственная задача в очереди — листать некуда 🙂');
+    setStatus('Это единственная задача в очереди — листать некуда 🙂', 2600);
     return;
   }
   const maxOrder = queue.reduce((m, n) => Math.max(m, n.todoOrder || 0), 0);
   try {
     await updateDoc(uDocRef('notes', id), { todoOrder: maxOrder + 1 });
     await loadNotes(); // перерисует карточку фокуса — наверх встанет следующая
-    setStatus('↪ Задача ушла в конец очереди');
+    setStatus('↪ Задача ушла в конец очереди', 2600);
   } catch(e) { console.warn('[focus] skip failed', e); alert('Ошибка: ' + e.message); }
 }
 window.skipTodoTask = skipTodoTask;
