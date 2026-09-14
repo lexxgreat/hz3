@@ -474,6 +474,10 @@ body{background:#060918;font-family:'Inter',sans-serif;display:flex;justify-cont
 .cal-cell.drop-hover{border-color:rgba(0,230,130,0.9)!important;background:rgba(0,230,130,0.1)!important}
 .cal-dnum{font-size:12px;font-weight:600;color:rgba(255,255,255,0.75);line-height:1;font-family:'Inter',sans-serif}
 .cal-dots{display:flex;gap:2px;flex-wrap:wrap;justify-content:center;align-items:center}
+/* ── PWA install banner (появляется над dock, ниже модалок) ── */
+#install-banner{position:fixed;left:14px;right:14px;bottom:calc(74px + env(safe-area-inset-bottom));z-index:10;transform:translateY(150%) scale(.95);opacity:0;transition:transform .45s cubic-bezier(.22,1.15,.36,1),opacity .35s;pointer-events:none}
+#install-banner.show{transform:translateY(0) scale(1);opacity:1;pointer-events:auto}
+@media (min-width:500px){#install-banner{display:none}}
 .cal-dot{width:4px;height:4px;border-radius:50%;background:rgba(139,92,246,0.85)}
 .cal-dot.overdue{background:rgba(255,90,90,0.9)}
 .cal-more{font-size:8px;color:rgba(255,255,255,0.45);line-height:1}
@@ -874,6 +878,7 @@ body.cal-dragging,body.cal-dragging *{touch-action:none!important;user-select:no
       <button onclick="loadBalance()" style="background:none;border:none;color:rgba(255,255,255,0.35);font-size:14px;cursor:pointer;padding:4px;">↻</button>
     </div>
     <div style="padding:8px 16px 0;">
+      <button id="pwa-install-btn" onclick="installFromSettings()" style="width:100%;background:rgba(108,71,255,0.1);border:0.5px solid rgba(108,71,255,0.35);border-radius:12px;padding:9px;color:rgba(160,130,255,0.95);font-size:12.5px;font-weight:500;cursor:pointer;font-family:'Inter',sans-serif;margin-bottom:8px;">📲 Установить приложение</button>
       <button onclick="migrateOldData()" style="width:100%;background:rgba(0,180,120,0.1);border:0.5px solid rgba(0,200,140,0.3);border-radius:12px;padding:9px;color:rgba(0,220,150,0.9);font-size:12.5px;font-weight:500;cursor:pointer;font-family:'Inter',sans-serif;margin-bottom:8px;">📥 Импортировать старые данные (один раз)</button>
       <button onclick="logout()" style="width:100%;background:rgba(255,80,80,0.08);border:0.5px solid rgba(255,80,80,0.25);border-radius:12px;padding:9px;color:rgba(255,110,110,0.85);font-size:12.5px;font-weight:500;cursor:pointer;font-family:'Inter',sans-serif;">Выйти из аккаунта</button>
     </div>
@@ -1390,6 +1395,7 @@ async function saveNote(text, type) {
     document.querySelectorAll('.qtag').forEach(b => { b.style.borderColor=''; b.style.background=''; });
     flashSaved();
     await loadNotes();
+    maybeShowInstallBanner(); // PWA: предложить установку после первой записи (один раз)
     // AI auto-linking — для только что созданной заметки (в фоне, не блокируя UI)
     const newNote = notes.find(n => n.id === docRef.id);
     if (newNote) {
@@ -4332,7 +4338,7 @@ function goTo(screen) {
   }
   if (screen === 'todo') loadNotes();
   if (screen === 'chat') { renderChat(); checkRemindersOnOpen(); }
-  if (screen === 'prompt') { renderPromptRules(); loadBalance(); updateAccountWidget(); }
+  if (screen === 'prompt') { renderPromptRules(); loadBalance(); updateAccountWidget(); updatePwaInstallBtn(); }
   if (screen === 'tags') renderTagsScreen();
   if (screen === 'cloud') {
     renderWordCloud();
@@ -6128,22 +6134,120 @@ onAuthStateChanged(auth, async (user) => {
 })();
 </script>
 
-<!-- Note: Custom install button removed — let Chrome show the native install prompt.
-     Chrome shows a mini-infobar at the top of the page when PWA criteria are met.
-     Do NOT call e.preventDefault() on 'beforeinstallprompt' — that suppresses the native UI. -->
-
+<!-- PWA install flow: перехватываем системное событие установки и показываем
+     свою напоминалку после первой заметки. Кнопка «Установить» запускает
+     нативный диалог Chrome (deferredPrompt.prompt()).
+     На iOS (нет beforeinstallprompt) показываем инструкцию «Поделиться → На экран „Домой"». -->
 <script>
 (function() {
-  // Detect if app is already running in standalone (installed) mode — useful for analytics/debug
+  var deferredPrompt = null;
+  var FLAG = 'hz_install_prompt_done'; // localStorage: баннер уже показывали/закрыли
+
   function isStandalone() {
     return window.matchMedia('(display-mode: standalone)').matches ||
+           window.matchMedia('(display-mode: minimal-ui)').matches ||
            window.navigator.standalone === true;
   }
-  if (isStandalone()) {
-    console.log('[PWA] Running in installed mode');
-  } else {
-    console.log('[PWA] Running in browser — Chrome will show install prompt when ready');
+  function isIOS() {
+    return /iphone|ipad|ipod/i.test(navigator.userAgent) ||
+           (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
   }
+
+  window.addEventListener('beforeinstallprompt', function(e) {
+    e.preventDefault(); // отключаем нативный mini-infobar — покажем свою карточку
+    deferredPrompt = e;
+    console.log('[PWA] beforeinstallprompt captured — ready to install on demand');
+  });
+
+  window.addEventListener('appinstalled', function() {
+    deferredPrompt = null;
+    try { localStorage.setItem(FLAG, '1'); } catch(_) {}
+    hideInstallBanner();
+    console.log('[PWA] app installed');
+  });
+
+  function done() { try { localStorage.setItem(FLAG, '1'); } catch(_) {} }
+  function shown() { try { return localStorage.getItem(FLAG) === '1'; } catch(_) { return false; } }
+
+  // Показ баннера: вызывается из saveNote после первой записи (и никогда раньше)
+  window.maybeShowInstallBanner = function() {
+    if (shown() || isStandalone()) return;
+    var b = ensureBanner();
+    // небольшая задержка: дать flashSaved отыграть, не перебивать
+    setTimeout(function() { b.classList.add('show'); }, 600);
+  };
+
+  function ensureBanner() {
+    var b = document.getElementById('install-banner');
+    if (b) return b;
+    b = document.createElement('div');
+    b.id = 'install-banner';
+    b.innerHTML =
+      '<div style="display:flex;align-items:center;gap:12px;padding:13px 14px;background:rgba(24,20,52,0.97);border:1px solid rgba(139,92,246,0.45);border-radius:16px;box-shadow:0 12px 40px rgba(0,0,0,0.55);">' +
+        '<div style="flex-shrink:0;width:44px;height:44px;border-radius:11px;background:url(icon-any-192.png) center/cover;border:0.5px solid rgba(255,255,255,0.18);"></div>' +
+        '<div style="flex:1;min-width:0;">' +
+          '<div style="font-size:13px;font-weight:600;color:#fff;font-family:\'Inter\',sans-serif;">Установи Хэзэнштейн</div>' +
+          '<div id="install-banner-sub" style="font-size:11.5px;color:rgba(255,255,255,0.55);line-height:1.45;font-family:\'Inter\',sans-serif;">На рабочий стол — будет открываться как приложение</div>' +
+        '</div>' +
+        '<button id="install-banner-btn" onclick="installBannerAction()" style="flex-shrink:0;padding:8px 12px;border-radius:10px;border:0.5px solid rgba(139,92,246,0.6);background:rgba(108,71,255,0.25);color:#fff;font-size:12px;font-weight:600;cursor:pointer;font-family:\'Inter\',sans-serif;">⬇ Установить</button>' +
+        '<button onclick="hideInstallBanner()" style="flex-shrink:0;background:none;border:none;color:rgba(255,255,255,0.35);font-size:15px;cursor:pointer;padding:4px;">✕</button>' +
+      '</div>';
+    document.body.appendChild(b);
+    return b;
+  }
+
+  // Клик по «⬇ Установить»: системный диалог, либо инструкция (iOS / без события)
+  window.installBannerAction = async function() {
+    if (deferredPrompt) {
+      deferredPrompt.prompt();
+      try {
+        var choice = await deferredPrompt.userChoice;
+        if (choice && choice.outcome === 'accepted') done();
+      } catch(_) {}
+      deferredPrompt = null;
+      hideInstallBanner();
+      return;
+    }
+    var sub = document.getElementById('install-banner-sub');
+    var btn = document.getElementById('install-banner-btn');
+    if (sub && btn) {
+      btn.style.display = 'none';
+      if (isIOS()) {
+        sub.innerHTML = 'iPhone: нажми <b>Поделиться</b> (⬆) в Safari → <b>«На экран „Домой"»</b>';
+      } else {
+        sub.innerHTML = 'Android: меню (⋮) в Chrome → <b>«Установить приложение»</b>';
+      }
+    }
+  };
+
+  window.hideInstallBanner = function() {
+    done(); // закрыли — больше не показываем (кнопка остаётся в настройках)
+    var b = document.getElementById('install-banner');
+    if (b) b.classList.remove('show');
+  };
+
+  // Кнопка в настройках (экран AI): скрыта, если приложение уже установлено
+  window.updatePwaInstallBtn = function() {
+    var btn = document.getElementById('pwa-install-btn');
+    if (btn) btn.style.display = isStandalone() ? 'none' : 'block';
+  };
+
+  window.installFromSettings = async function() {
+    if (deferredPrompt) {
+      deferredPrompt.prompt();
+      try { await deferredPrompt.userChoice; } catch(_) {}
+      deferredPrompt = null;
+      return;
+    }
+    if (isStandalone()) return;
+    if (isIOS()) {
+      alert('iPhone: открой сайт в Safari → кнопка «Поделиться» (⬆) → «На экран „Домой"».');
+    } else {
+      alert('Android: меню Chrome (⋮) → «Установить приложение» (или «Добавить на главный экран»).');
+    }
+  };
+
+  if (isStandalone()) console.log('[PWA] Running in installed mode');
 })();
 </script>
 </body>
