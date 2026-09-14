@@ -648,24 +648,25 @@ body.cal-dragging,body.cal-dragging *{touch-action:none!important;user-select:no
     </div>
   </div>
 
-  <!-- ── GRAPH SCREEN (living graph of notes & AI links) ── -->
+  <!-- ── GRAPH SCREEN (облако сфер: сферы + желания + облако записей) ── -->
   <div class="screen" id="screen-graph">
     <div class="hist-header">
       <div style="display:flex;justify-content:space-between;align-items:center">
         <div>
-          <div class="hist-title">🕸 Граф мыслей</div>
-          <div class="hist-sub" id="graph-sub">Связи между твоими записями</div>
+          <div class="hist-title">🌌 Облако мыслей</div>
+          <div class="hist-sub" id="graph-sub">Сферы · желания · записи</div>
         </div>
         <button onclick="goTo('hist')" style="background:none;border:none;color:rgba(255,255,255,0.4);font-size:22px;cursor:pointer;">←</button>
       </div>
     </div>
     <div style="flex:1;position:relative;overflow:hidden;">
+      <div id="graph-hint" style="position:absolute;top:6px;left:8px;right:8px;z-index:20;"></div>
       <canvas id="graph-canvas" style="position:absolute;inset:0;width:100%;height:100%;touch-action:none;"></canvas>
-      <div id="graph-loading" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,0.4);font-size:13px;font-family:'Inter',sans-serif;">Загрузка графа…</div>
+      <div id="graph-loading" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;padding:0 30px;color:rgba(255,255,255,0.4);font-size:13px;font-family:'Inter',sans-serif;">Загрузка графа…</div>
       <div id="graph-legend" style="position:absolute;bottom:8px;left:8px;background:rgba(0,0,0,0.5);border-radius:8px;padding:6px 10px;font-size:10px;color:rgba(255,255,255,0.6);font-family:'Inter',sans-serif;backdrop-filter:blur(8px);line-height:1.5;pointer-events:none;">
-        <div>• размер = связи</div>
-        <div>• цвет = тег</div>
-        <div>• тап на узел = открыть</div>
+        <div>⬤ цветной узел — сфера жизни, ◉ золотое — желание</div>
+        <div>● точки — записи вокруг своей сферы</div>
+        <div>🔗 линии — связь по смыслу (строит ИИ) · тапни запись — покажу почему</div>
       </div>
     </div>
   </div>
@@ -744,7 +745,7 @@ body.cal-dragging,body.cal-dragging *{touch-action:none!important;user-select:no
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;">
           <button onclick="goTo('cloud')" style="padding:6px 14px;border-radius:99px;border:0.5px solid rgba(255,255,255,0.15);background:rgba(255,255,255,0.04);color:rgba(255,255,255,0.6);font-size:12px;font-weight:500;cursor:pointer;font-family:'Inter',sans-serif;transition:all 0.2s">☁️ Облако</button>
-          <button onclick="goTo('graph')" style="padding:6px 14px;border-radius:99px;border:0.5px solid rgba(0,212,255,0.35);background:rgba(0,212,255,0.1);color:rgba(0,212,255,0.9);font-size:12px;font-weight:500;cursor:pointer;font-family:'Inter',sans-serif;transition:all 0.2s">🕸 Граф</button>
+          <button onclick="goTo('graph')" style="padding:6px 14px;border-radius:99px;border:0.5px solid rgba(0,212,255,0.35);background:rgba(0,212,255,0.1);color:rgba(0,212,255,0.9);font-size:12px;font-weight:500;cursor:pointer;font-family:'Inter',sans-serif;transition:all 0.2s">🌌 Граф</button>
           <button onclick="goTo('calendar')" style="padding:6px 14px;border-radius:99px;border:0.5px solid rgba(255,200,50,0.35);background:rgba(255,200,50,0.1);color:rgba(255,210,80,0.9);font-size:12px;font-weight:500;cursor:pointer;font-family:'Inter',sans-serif;transition:all 0.2s">📅 Календарь</button>
           <button id="hist-select-toggle" onclick="toggleSelectionMode()" style="padding:6px 14px;border-radius:99px;border:0.5px solid rgba(255,255,255,0.15);background:rgba(255,255,255,0.04);color:rgba(255,255,255,0.6);font-size:12px;font-weight:500;cursor:pointer;font-family:'Inter',sans-serif;transition:all 0.2s">☑ Выделить</button>
           <button onclick="document.getElementById('import-file-input').click()" style="padding:6px 14px;border-radius:99px;border:0.5px solid rgba(0,200,140,0.35);background:rgba(0,180,120,0.1);color:rgba(0,220,150,0.9);font-size:12px;font-weight:500;cursor:pointer;font-family:'Inter',sans-serif;transition:all 0.2s">⬆ Импорт</button>
@@ -2401,29 +2402,41 @@ async function saveScheduleDate(noteId) {
 }
 window.saveScheduleDate = saveScheduleDate;
 
-// ── LIVING GRAPH — визуальный граф заметок и их AI-связей ──
-// Force-directed layout: узлы отталкиваются, связи притягивают
-// Каждый узел — заметка, цвет по тегу, размер по кол-ву связей
-let graphNodes = [];     // [{id, text, tag, x, y, vx, vy, connections}]
-let graphEdges = [];     // [{a, b, score}] — индексы в graphNodes
+// ── ОБЛАКО СФЕР — карта мыслей с обобщающими словами ──
+// Уровень 1 (хабы): сферы жизни (теги) и желания — крупные узлы с иконкой и названием,
+//   расставлены по кругу и мягко якорятся — карта читаемая, но живая.
+// Уровень 2 (листья): записи — маленькие точки-облако вокруг своей сферы/желания.
+// Связи: линия к сфере = принадлежность; линии ИИ между записями — только сильные (score ≥ 0.6),
+//   тап по записи показывает объяснение ИИ («почему связаны»).
+let graphNodes = [];     // [{id, kind:'sphere'|'wish'|'note', label, icon, tag, text, wishId, hub, homeX, homeY, homeDist, r, color, state, count, x, y, vx, vy, connections}]
+let graphEdges = [];     // [{a, b, type:'member'|'ai', score}] — индексы в graphNodes
+let graphAiByNote = {};  // noteId → [{other, reason, score}] — все ИИ-связи для объяснений по тапу
 let graphCanvas = null, graphCtx = null, graphRafId = null;
 let graphAnimating = false;
 let graphSelectedIdx = null;  // выбранный узел (тап-селекция) — для подсветки связей
+let graphLeafCount = 0;
 
-// Тёплые цвета для тегов (детерминированно по хешу строки)
-function tagColor(tag) {
-  if (!tag) return 'rgba(108,71,255,0.85)';  // фиолетовый по умолчанию
-  let h = 0;
-  for (let i = 0; i < tag.length; i++) h = (h * 31 + tag.charCodeAt(i)) % 360;
-  return `hsla(${h}, 70%, 65%, 0.85)`;
+const GRAPH_SPHERE_COLORS = ['#8B5CF6','#22D3EE','#34D399','#F59E0B','#F472B6','#60A5FA','#FBBF24','#F87171','#A78BFA','#2DD4BF','#E879F9','#4ADE80'];
+const GRAPH_WISH_COLOR = '#FFD166';   // золото — цвет целей
+const GRAPH_NOHUB_COLOR = '#9CA3AF';  // серые записи без тега живут у центра
+
+function graphSphereColor(i) { return GRAPH_SPHERE_COLORS[i % GRAPH_SPHERE_COLORS.length]; }
+// hex → rgba строка
+function graphHexA(hex, alpha) {
+  const h = hex.replace('#','');
+  const r = parseInt(h.substring(0,2),16), g = parseInt(h.substring(2,4),16), b = parseInt(h.substring(4,6),16);
+  return `rgba(${r},${g},${b},${alpha})`;
 }
 
 async function loadGraphData() {
-  // Берём все заметки (увеличили кап до 300 — было 100, пользователь жаловался что не все видны)
+  // Подстраховка: сферы/желания должны были загрузиться на старте, но если нет — дозагрузим
+  if (!tags.length) { try { await loadTags(); } catch(e) {} }
+  if (!wishes.length) { try { await loadWishes(); } catch(e) {} }
+
   const sortedNotes = [...notes].sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
   const visibleNotes = sortedNotes.slice(0, 300);
 
-  // Загружаем все линки пользователя
+  // Все ИИ-линки пользователя (сильные рисуем, все — для объяснений по тапу)
   let allLinks = [];
   try {
     const q = query(linksCol(), orderBy('score', 'desc'));
@@ -2433,46 +2446,119 @@ async function loadGraphData() {
     console.warn('[Graph] failed to load links', e);
   }
 
-  // Считаем количество связей для каждой заметки
+  // ── Хабы уровня 1: сферы (теги) ──
+  graphNodes = [];
+  const sphereIdxByLabel = {};
+  tags.forEach((t, i) => {
+    const label = (t.label || '').trim();
+    if (!label) return;
+    sphereIdxByLabel[label.toLowerCase()] = graphNodes.length;
+    graphNodes.push({ id: 'tag:' + t.id, kind: 'sphere', label, icon: t.icon || '🏷️', color: graphSphereColor(i), r: 20, count: 0, x: 0, y: 0, vx: 0, vy: 0 });
+  });
+  // ── Хабы уровня 1: желания (золотые узлы-цели) ──
+  const wishIdxById = {}, wishIdxByKey = {};
+  wishes.forEach(w => {
+    const key = normalizeWishKey(w.shortTag || '');
+    wishIdxById[w.id] = graphNodes.length;
+    if (key) wishIdxByKey[key] = graphNodes.length;
+    graphNodes.push({ id: 'wish:' + w.id, kind: 'wish', wishId: w.id, label: (w.shortTag || (w.text || '').slice(0, 16)).toLowerCase(), icon: w.icon || '🌠', color: GRAPH_WISH_COLOR, r: 16, state: w.state || 'dream', count: 0, x: 0, y: 0, vx: 0, vy: 0 });
+  });
+
+  // ── Листья: записи ──
   const connCount = {};
   for (const l of allLinks) {
     connCount[l.noteA] = (connCount[l.noteA] || 0) + 1;
     connCount[l.noteB] = (connCount[l.noteB] || 0) + 1;
   }
+  for (const n of visibleNotes) {
+    let hub = null, color = GRAPH_NOHUB_COLOR;
+    const tagKey = (n.tag || '').trim().toLowerCase();
+    if (n.wishId && wishIdxById[n.wishId] !== undefined) {
+      hub = wishIdxById[n.wishId]; color = GRAPH_WISH_COLOR;
+    } else if (tagKey && sphereIdxByLabel[tagKey] !== undefined) {
+      hub = sphereIdxByLabel[tagKey]; color = graphNodes[hub].color;
+    } else if (tagKey && wishIdxByKey[normalizeWishKey(tagKey)] !== undefined) {
+      hub = wishIdxByKey[normalizeWishKey(tagKey)]; color = GRAPH_WISH_COLOR;
+    }
+    if (hub !== null) graphNodes[hub].count++;
+    graphNodes.push({ id: n.id, kind: 'note', text: n.text, tag: n.tag || null, wishId: n.wishId || null, done: !!n.done, hub, color, createdAt: n.createdAt || null,
+      r: 3.5 + Math.min((connCount[n.id] || 0) * 0.9, 4.5),
+      x: 0, y: 0, vx: 0, vy: 0, connections: connCount[n.id] || 0 });
+  }
+  graphLeafCount = graphNodes.filter(n => n.kind === 'note').length;
 
-  // Берём только заметки, у которых есть связи — для компактного графа
-  // Если таких <5 — берём все заметки (покажем разрозненные узлы)
-  const connectedNotes = visibleNotes.filter(n => connCount[n.id]);
-  const finalNotes = connectedNotes.length >= 5 ? connectedNotes : visibleNotes.slice(0, 30);
+  // ── Домашки: хабы по кругу (желания чуть дальше наружу), листья стартуют у своего хаба ──
+  const w0 = (graphCanvas && graphCanvas.width) || 400;
+  const h0 = (graphCanvas && graphCanvas.height) || 600;
+  const cx = w0 / 2, cy = h0 / 2;
+  const hubIdxs = graphNodes.map((n, i) => n.kind !== 'note' ? i : -1).filter(i => i >= 0);
+  const R = Math.max(90, Math.min(w0, h0) * 0.33);
+  hubIdxs.forEach((hi, k) => {
+    const ang = -Math.PI / 2 + k * 2 * Math.PI / hubIdxs.length;
+    const rr = graphNodes[hi].kind === 'wish' ? R * 1.18 : R;
+    const n = graphNodes[hi];
+    n.homeX = cx + Math.cos(ang) * rr;
+    n.homeY = cy + Math.sin(ang) * rr;
+    n.x = n.homeX + (Math.random() - 0.5) * 24;
+    n.y = n.homeY + (Math.random() - 0.5) * 24;
+  });
+  let noHubK = 0;
+  graphNodes.forEach((n, i) => {
+    if (n.kind !== 'note') { n.homeDist = 0; return; }
+    const hub = (n.hub !== null && n.hub !== undefined) ? graphNodes[n.hub] : null;
+    const ang = Math.random() * 2 * Math.PI;
+    if (hub) {
+      const dist = 45 + Math.random() * 55;
+      n.x = hub.x + Math.cos(ang) * dist;
+      n.y = hub.y + Math.sin(ang) * dist;
+      n.homeDist = 38 + (i % 7) * 8 + Math.random() * 20; // персональная орбита
+    } else {
+      const dist = 18 + (noHubK++ % 10) * 13;
+      n.x = cx + Math.cos(ang) * dist;
+      n.y = cy + Math.sin(ang) * dist;
+      n.homeDist = 0;
+    }
+  });
 
-  // Создаём узлы
-  graphNodes = finalNotes.map(n => ({
-    id: n.id,
-    text: n.text,
-    tag: n.tag || null,
-    connections: connCount[n.id] || 0,
-    x: Math.random() * 400,
-    y: Math.random() * 400,
-    vx: 0, vy: 0,
-  }));
-
-  // Создаём индекс id → index
-  const idToIdx = {};
-  graphNodes.forEach((n, i) => { idToIdx[n.id] = i; });
-
-  // Создаём рёбра (только если обе заметки в графе)
+  // ── Рёбра принадлежности (лист → его хаб) ──
   graphEdges = [];
-  for (const l of allLinks) {
-    const ai = idToIdx[l.noteA];
-    const bi = idToIdx[l.noteB];
-    if (ai !== undefined && bi !== undefined && ai !== bi) {
-      graphEdges.push({ a: ai, b: bi, score: l.score || 0.5 });
+  for (let i = 0; i < graphNodes.length; i++) {
+    const n = graphNodes[i];
+    if (n.kind === 'note' && n.hub !== null && n.hub !== undefined) {
+      graphEdges.push({ a: i, b: n.hub, type: 'member', score: 0.5 });
     }
   }
 
-  // Обновим sub-header
+  // ── Рёбра ИИ: рисуем только сильные (score ≥ 0.6), все сохраняем для объяснений ──
+  graphAiByNote = {};
+  const idToIdx = {};
+  graphNodes.forEach((n, i) => { if (n.kind === 'note') idToIdx[n.id] = i; });
+  const AI_DRAW_THRESHOLD = 0.6, AI_DRAW_CAP = 90;
+  let drawnAi = 0;
+  for (const l of allLinks) {
+    const ai = idToIdx[l.noteA], bi = idToIdx[l.noteB];
+    if (ai === undefined || bi === undefined || ai === bi) continue;
+    const score = l.score || 0.5;
+    const reason = l.reason || 'связаны по смыслу';
+    (graphAiByNote[l.noteA] = graphAiByNote[l.noteA] || []).push({ other: l.noteB, reason, score });
+    (graphAiByNote[l.noteB] = graphAiByNote[l.noteB] || []).push({ other: l.noteA, reason, score });
+    if (score >= AI_DRAW_THRESHOLD && drawnAi < AI_DRAW_CAP) {
+      graphEdges.push({ a: ai, b: bi, type: 'ai', score });
+      drawnAi++;
+    }
+  }
+  for (const id in graphAiByNote) graphAiByNote[id].sort((a, b) => b.score - a.score);
+
+  // ── Шапка: статистика ──
   const sub = document.getElementById('graph-sub');
-  if (sub) sub.textContent = `${graphNodes.length} записей · ${graphEdges.length} связей`;
+  if (sub) {
+    const parts = [];
+    if (tags.length) parts.push(tags.length + ' сфер');
+    if (wishes.length) parts.push(wishes.length + ' желаний');
+    parts.push(graphLeafCount + ' записей');
+    parts.push(drawnAi + ' связей ИИ');
+    sub.textContent = parts.join(' · ');
+  }
 }
 window.loadGraphData = loadGraphData;
 
@@ -2488,17 +2574,19 @@ function ensureGraphCanvasSized() {
 
 function simulateGraphStep() {
   if (graphNodes.length === 0) return;
-  const w = graphCanvas.width || 400;
-  const h = graphCanvas.height || 600;
+  const w = (graphCanvas && graphCanvas.width) || 400;
+  const h = (graphCanvas && graphCanvas.height) || 600;
   const cx = w / 2, cy = h / 2;
 
-  // Притяжение к центру (мягкое, чтобы граф не улетал)
+  // Хабы (сферы/желания): мягкий якорь к своей точке на круге — стоят на месте, но дышат
   for (const n of graphNodes) {
-    n.vx += (cx - n.x) * 0.0005;
-    n.vy += (cy - n.y) * 0.0005;
+    if (n.kind === 'note') continue;
+    n.vx += (n.homeX - n.x) * 0.02;
+    n.vy += (n.homeY - n.y) * 0.02;
   }
 
-  // Отталкивание между всеми парами (с cap, чтобы не было взрывов при близких расстояниях)
+  // Отталкивание между всеми парами; внутри одной сферы — сильнее (облако объёмнее),
+  // между разными сферами — слабее (кластеры не слипаются)
   for (let i = 0; i < graphNodes.length; i++) {
     for (let j = i + 1; j < graphNodes.length; j++) {
       const a = graphNodes[i], b = graphNodes[j];
@@ -2506,8 +2594,13 @@ function simulateGraphStep() {
       const dy = b.y - a.y;
       let dist = Math.sqrt(dx*dx + dy*dy);
       if (dist < 1) dist = 1;
-      // Cap force to prevent jitter — max 30 (was unbounded 1500/dist²)
-      const force = Math.min(30, 800 / (dist * dist));
+      let force = Math.min(20, 500 / (dist * dist));
+      if (a.kind === 'note' && b.kind === 'note') {
+        const sameHub = a.hub !== null && a.hub === b.hub;
+        force *= sameHub ? 2.2 : 0.55;
+      } else {
+        force *= 1.6; // хабы и лист-хаб — расталкиваем заметнее
+      }
       const fx = (dx / dist) * force;
       const fy = (dy / dist) * force;
       a.vx -= fx;
@@ -2517,7 +2610,8 @@ function simulateGraphStep() {
     }
   }
 
-  // Пружины по рёбрам (мягче)
+  // Пружины: принадлежность держит лист на персональной орбите хаба,
+  // ИИ-связи слабо подтягивают связанные записи друг к другу
   for (const e of graphEdges) {
     const a = graphNodes[e.a], b = graphNodes[e.b];
     if (!a || !b) continue;
@@ -2525,8 +2619,15 @@ function simulateGraphStep() {
     const dy = b.y - a.y;
     let dist = Math.sqrt(dx*dx + dy*dy);
     if (dist < 1) dist = 1;
-    const restLength = 80 + (1 - e.score) * 60;
-    const force = (dist - restLength) * 0.01 * e.score;
+    let restLength, k;
+    if (e.type === 'member') {
+      restLength = (a.kind === 'note' ? a.homeDist : b.homeDist) || 60;
+      k = 0.02;
+    } else {
+      restLength = 110 + (1 - e.score) * 60;
+      k = 0.004;
+    }
+    const force = (dist - restLength) * k;
     const fx = (dx / dist) * force;
     const fy = (dy / dist) * force;
     a.vx += fx;
@@ -2535,48 +2636,27 @@ function simulateGraphStep() {
     b.vy -= fy;
   }
 
-  // Слабое притяжение между заметками с одинаковым тегом — формирует кластеры по сферам
-  // Пропускаем пары уже связанные (для них работает пружина)
-  for (let i = 0; i < graphNodes.length; i++) {
-    for (let j = i + 1; j < graphNodes.length; j++) {
-      const a = graphNodes[i], b = graphNodes[j];
-      if (!a.tag || !b.tag || a.tag !== b.tag) continue;
-      // Проверяем, есть ли уже ребро между ними
-      const hasEdge = graphEdges.some(e =>
-        (e.a === i && e.b === j) || (e.a === j && e.b === i)
-      );
-      if (hasEdge) continue;
-      const dx = b.x - a.x;
-      const dy = b.y - a.y;
-      let dist = Math.sqrt(dx*dx + dy*dy);
-      if (dist < 1) dist = 1;
-      // Слабое притяжение — целевая дистанция 150px
-      const restLength = 150;
-      const force = (dist - restLength) * 0.0008;
-      if (Math.abs(force) < 0.01) continue;
-      const fx = (dx / dist) * force;
-      const fy = (dy / dist) * force;
-      a.vx += fx;
-      a.vy += fy;
-      b.vx -= fx;
-      b.vy -= fy;
+  // Записи без тега — мягко собираются у центра карты
+  for (const n of graphNodes) {
+    if (n.kind === 'note' && (n.hub === null || n.hub === undefined)) {
+      n.vx += (cx - n.x) * 0.003;
+      n.vy += (cy - n.y) * 0.003;
     }
   }
 
   // Применяем скорость с трением + cap скорости, держим в границах
-  const MAX_SPEED = 5;  // было без cap → jitter
+  const MAX_SPEED = 5;
   for (const n of graphNodes) {
-    n.vx *= 0.88;  // было 0.85 — больше трения
-    n.vy *= 0.88;
-    // Cap speed
+    n.vx *= 0.86;
+    n.vy *= 0.86;
     const speed = Math.sqrt(n.vx * n.vx + n.vy * n.vy);
-    if (speed > MAX_SPEED) {
-      n.vx = (n.vx / speed) * MAX_SPEED;
-      n.vy = (n.vy / speed) * MAX_SPEED;
+    const cap = n.kind === 'note' ? 3.2 : 2.2;
+    if (speed > cap) {
+      n.vx = (n.vx / speed) * cap;
+      n.vy = (n.vy / speed) * cap;
     }
     n.x += n.vx;
     n.y += n.vy;
-    // Не уходим за границы
     n.x = Math.max(20, Math.min(w - 20, n.x));
     n.y = Math.max(20, Math.min(h - 20, n.y));
   }
@@ -2588,75 +2668,159 @@ function drawGraph() {
   if (graphCanvas.width === 0) return;
   const w = graphCanvas.width;
   const h = graphCanvas.height;
-  graphCtx.clearRect(0, 0, w, h);
+  const ctx = graphCtx;
+  ctx.clearRect(0, 0, w, h);
+  const now = performance.now() / 1000;
+  const selIdx = graphSelectedIdx;
+  const sel = selIdx !== null ? graphNodes[selIdx] : null;
 
-  // Draw edges (highlight connected if a node is selected)
+  // Соседи выбранного узла (любые рёбра) — считаем один раз за кадр, не на каждый узел
+  let neighborSet = null;
+  if (selIdx !== null) {
+    neighborSet = new Set([selIdx]);
+    for (const e of graphEdges) {
+      if (e.a === selIdx) neighborSet.add(e.b);
+      else if (e.b === selIdx) neighborSet.add(e.a);
+    }
+  }
+  const isNeighbor = (i) => neighborSet !== null && neighborSet.has(i);
+
+  // ── Рёбра: сначала принадлежность (базовый слой), потом ИИ ──
   for (const e of graphEdges) {
+    if (e.type !== 'member') continue;
     const a = graphNodes[e.a], b = graphNodes[e.b];
     if (!a || !b) continue;
-    const isConnectedToSelected = graphSelectedIdx !== null &&
-      (e.a === graphSelectedIdx || e.b === graphSelectedIdx);
-    const alpha = isConnectedToSelected ? 0.9 : (0.15 + e.score * 0.4);
-    const color = isConnectedToSelected ? 'rgba(0,255,140,ALPHA)'.replace('ALPHA', alpha) : `rgba(108,71,255,${alpha})`;
-    graphCtx.strokeStyle = color;
-    graphCtx.lineWidth = isConnectedToSelected ? 2 + e.score * 2 : 0.5 + e.score * 1.5;
-    graphCtx.beginPath();
-    graphCtx.moveTo(a.x, a.y);
-    graphCtx.lineTo(b.x, b.y);
-    graphCtx.stroke();
+    const hubSel = sel && sel.kind !== 'note' && (e.a === selIdx || e.b === selIdx);
+    const leafSel = selIdx !== null && (e.a === selIdx || e.b === selIdx);
+    const hi = hubSel || leafSel;
+    const alpha = hi ? 0.7 : (sel ? 0.04 : 0.12);
+    ctx.strokeStyle = graphHexA(b.color, alpha);
+    ctx.lineWidth = hi ? 1.4 : 0.5;
+    ctx.beginPath();
+    ctx.moveTo(a.x, a.y);
+    ctx.lineTo(b.x, b.y);
+    ctx.stroke();
+  }
+  // ИИ-линии — только сильные (заданы в loadGraphData), пунктир
+  for (const e of graphEdges) {
+    if (e.type !== 'ai') continue;
+    const a = graphNodes[e.a], b = graphNodes[e.b];
+    if (!a || !b) continue;
+    const hi = selIdx !== null && (e.a === selIdx || e.b === selIdx);
+    const alpha = hi ? 0.95 : (sel ? 0.05 : 0.16 + e.score * 0.22);
+    ctx.strokeStyle = hi ? `rgba(0,255,140,${alpha})` : graphHexA('#8B7CF6', alpha);
+    ctx.lineWidth = hi ? 2 : 0.7 + e.score;
+    ctx.setLineDash(hi ? [] : [3, 4]);
+    ctx.beginPath();
+    ctx.moveTo(a.x, a.y);
+    ctx.lineTo(b.x, b.y);
+    ctx.stroke();
+    ctx.setLineDash([]);
   }
 
-  // Draw nodes
+  // ── Узлы ──
+  ctx.textAlign = 'center';
+  // Листья — точки (рисуем до хабов, чтобы хабы и подписи всегда сверху)
   for (let i = 0; i < graphNodes.length; i++) {
     const n = graphNodes[i];
-    const isSelected = i === graphSelectedIdx;
-    const isConnectedToSelected = graphSelectedIdx !== null && graphEdges.some(e =>
-      (e.a === graphSelectedIdx && e.b === i) || (e.b === graphSelectedIdx && e.a === i)
-    );
-    const baseRadius = 4 + Math.min(n.connections * 1.5, 10);
-    const radius = isSelected ? baseRadius + 4 : (isConnectedToSelected ? baseRadius + 2 : baseRadius);
-
-    // glow for connected/selected
-    if (n.connections > 0 || isSelected) {
-      const glowAlpha = isSelected ? 0.4 : (isConnectedToSelected ? 0.25 : 0.15);
-      graphCtx.fillStyle = tagColor(n.tag).replace('0.85', glowAlpha);
-      graphCtx.beginPath();
-      graphCtx.arc(n.x, n.y, radius + 8, 0, Math.PI * 2);
-      graphCtx.fill();
+    if (n.kind !== 'note') continue;
+    const isSel = i === selIdx;
+    const neighbor = isNeighbor(i);
+    const dimmed = sel && !neighbor;
+    const alpha = n.done ? 0.3 : (dimmed ? 0.18 : 0.95);
+    if (isSel || (neighbor && !n.done)) {
+      ctx.fillStyle = graphHexA(n.color, isSel ? 0.35 : 0.22);
+      ctx.beginPath();
+      ctx.arc(n.x, n.y, n.r + 7, 0, Math.PI * 2);
+      ctx.fill();
     }
-    // main node
-    graphCtx.fillStyle = isSelected ? '#00FF8C' : tagColor(n.tag);
-    graphCtx.beginPath();
-    graphCtx.arc(n.x, n.y, radius, 0, Math.PI * 2);
-    graphCtx.fill();
-    // outline
-    graphCtx.strokeStyle = isSelected ? 'rgba(255,255,255,0.8)' : 'rgba(255,255,255,0.3)';
-    graphCtx.lineWidth = isSelected ? 1.5 : 0.5;
-    graphCtx.stroke();
+    ctx.fillStyle = isSel ? '#00FF8C' : graphHexA(n.color, alpha);
+    ctx.beginPath();
+    ctx.arc(n.x, n.y, isSel ? n.r + 2 : n.r, 0, Math.PI * 2);
+    ctx.fill();
+    if (isSel) {
+      ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    }
   }
-
-  // Draw labels: for selected node always, for high-connection nodes (>=3) or all if graph is small
-  const showAllLabels = graphNodes.length <= 30;
-  graphCtx.font = '11px Inter, sans-serif';
-  graphCtx.textAlign = 'center';
-  graphCtx.textBaseline = 'top';
+  // Хабы — сферы и желания
   for (let i = 0; i < graphNodes.length; i++) {
     const n = graphNodes[i];
-    const isSelected = i === graphSelectedIdx;
-    const shouldShowLabel = isSelected || n.connections >= 3 || (showAllLabels && n.connections > 0);
-    if (!shouldShowLabel) continue;
-    const label = n.text.length > 30 ? n.text.slice(0, 28) + '…' : n.text;
-    const baseRadius = 4 + Math.min(n.connections * 1.5, 10);
-    const labelY = n.y + baseRadius + 4;
-    // bg for readability
-    const metrics = graphCtx.measureText(label);
-    const labelW = metrics.width + 8;
-    const labelH = 14;
-    graphCtx.fillStyle = isSelected ? 'rgba(0,255,140,0.2)' : 'rgba(0,0,0,0.6)';
-    graphCtx.fillRect(n.x - labelW/2, labelY, labelW, labelH);
-    // text
-    graphCtx.fillStyle = isSelected ? '#fff' : 'rgba(255,255,255,0.85)';
-    graphCtx.fillText(label, n.x, labelY + 1);
+    if (n.kind === 'note') continue;
+    const isSel = i === selIdx;
+    const neighbor = isNeighbor(i);
+    const dimmed = sel && !neighbor;
+    const isWish = n.kind === 'wish';
+    const baseR = n.r + (isSel ? 4 : 0);
+    const nodeAlpha = dimmed ? 0.25 : 1;
+
+    // glow
+    const glowA = isSel ? 0.4 : (neighbor ? 0.28 : (dimmed ? 0.05 : 0.16));
+    ctx.fillStyle = graphHexA(n.color, glowA);
+    ctx.beginPath();
+    ctx.arc(n.x, n.y, baseR + 12, 0, Math.PI * 2);
+    ctx.fill();
+
+    // тело узла
+    ctx.fillStyle = graphHexA(n.color, nodeAlpha * 0.22);
+    ctx.beginPath();
+    ctx.arc(n.x, n.y, baseR, 0, Math.PI * 2);
+    ctx.fill();
+    // кольцо (у желаний — пульсирующее двойное)
+    ctx.strokeStyle = graphHexA(n.color, nodeAlpha * (isWish ? 0.95 : 0.8));
+    ctx.lineWidth = isSel ? 2.5 : (isWish ? 2 : 1.5);
+    ctx.beginPath();
+    ctx.arc(n.x, n.y, baseR, 0, Math.PI * 2);
+    ctx.stroke();
+    if (isWish && !dimmed) {
+      const pulse = Math.sin(now * 2.2 + i) * 1.6;
+      ctx.strokeStyle = graphHexA(n.color, 0.3);
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(n.x, n.y, baseR + 5 + pulse, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    // иконка
+    ctx.font = `${Math.round(baseR)}px serif`;
+    ctx.textBaseline = 'middle';
+    ctx.globalAlpha = nodeAlpha;
+    ctx.fillText(n.icon, n.x, n.y + 1);
+    ctx.globalAlpha = 1;
+
+    // подпись хаба — всегда
+    const label = n.label.length > 16 ? n.label.slice(0, 15) + '…' : n.label;
+    ctx.font = isSel ? 'bold 13px Inter, sans-serif' : 'bold 12px Inter, sans-serif';
+    ctx.textBaseline = 'top';
+    const metrics = ctx.measureText(label);
+    const labelW = metrics.width + 10;
+    const labelH = 17;
+    const labelY = n.y + baseR + 5;
+    ctx.fillStyle = `rgba(0,0,0,${dimmed ? 0.4 : 0.65})`;
+    ctx.fillRect(n.x - labelW / 2, labelY, labelW, labelH);
+    ctx.fillStyle = graphHexA(n.color, dimmed ? 0.4 : 1);
+    ctx.fillText(label, n.x, labelY + 2);
+  }
+
+  // ── Подписи листьев: только выбранные (или когда записей совсем мало) ──
+  const showAllLeafLabels = graphLeafCount <= 15;
+  ctx.font = '10.5px Inter, sans-serif';
+  ctx.textBaseline = 'top';
+  for (let i = 0; i < graphNodes.length; i++) {
+    const n = graphNodes[i];
+    if (n.kind !== 'note') continue;
+    const isSel = i === selIdx;
+    if (!isSel && !(showAllLeafLabels && !n.done)) continue;
+    const dimmed = sel && !isNeighbor(i);
+    if (dimmed && !isSel) continue;
+    const label = n.text.length > 26 ? n.text.slice(0, 25) + '…' : n.text;
+    const metrics = ctx.measureText(label);
+    const labelW = metrics.width + 6;
+    const labelY = n.y + n.r + 3;
+    ctx.fillStyle = 'rgba(0,0,0,0.6)';
+    ctx.fillRect(n.x - labelW / 2, labelY, labelW, 14);
+    ctx.fillStyle = isSel ? '#00FF8C' : 'rgba(255,255,255,0.8)';
+    ctx.fillText(label, n.x, labelY + 1);
   }
 }
 
@@ -2674,10 +2838,22 @@ async function openGraphScreen() {
   }
   const loading = document.getElementById('graph-loading');
   if (loading) loading.style.display = 'flex';
-  // Сначала размер
+  // Ждём кадр, если canvas ещё не отрисован (иначе домашние позиции хабов посчитаются по фолбэку 400×600)
   ensureGraphCanvasSized();
+  if (!graphCanvas || graphCanvas.width === 0) {
+    await new Promise(r => requestAnimationFrame(r));
+    ensureGraphCanvasSized();
+  }
   await loadGraphData();
-  if (loading) loading.style.display = 'none';
+  if (loading) {
+    loading.style.display = 'none';
+    if (graphLeafCount === 0) {
+      loading.innerHTML = '🌌 Тут появится карта твоих мыслей — сферы, желания и записи.<br>Сделай первую запись и возвращайся.';
+      loading.style.display = 'flex';
+    } else {
+      loading.innerHTML = 'Загрузка графа…';
+    }
+  }
   // Запускаем анимацию
   graphAnimating = true;
   if (graphRafId) cancelAnimationFrame(graphRafId);
@@ -2692,11 +2868,13 @@ function closeGraphScreen() {
   }
 }
 
-// Тап на узел → открыть заметку
+// Тап/драг узлов: хабы ловятся крупной зоной, записи — поменьше
 function setupGraphInteraction() {
   const canvas = document.getElementById('graph-canvas');
   if (!canvas) return;
   let dragNode = null;
+  let dragNodeStartTime = 0;
+  let dragNodeStartPos = { x: 0, y: 0 };
 
   function getPos(e) {
     const r = canvas.getBoundingClientRect();
@@ -2705,11 +2883,16 @@ function setupGraphInteraction() {
   }
 
   function findNode(x, y) {
-    for (let i = graphNodes.length - 1; i >= 0; i--) {
-      const n = graphNodes[i];
-      const r = 4 + Math.min(n.connections * 2, 12);
-      const dx = x - n.x, dy = y - n.y;
-      if (dx*dx + dy*dy <= (r + 8) * (r + 8)) return i;
+    // Сначала хабы (зона больше), потом листья
+    for (let pass = 0; pass < 2; pass++) {
+      for (let i = graphNodes.length - 1; i >= 0; i--) {
+        const n = graphNodes[i];
+        const isHub = n.kind !== 'note';
+        if ((pass === 0) !== isHub) continue;
+        const r = n.r + (isHub ? 14 : 8);
+        const dx = x - n.x, dy = y - n.y;
+        if (dx*dx + dy*dy <= r * r) return i;
+      }
     }
     return -1;
   }
@@ -2788,7 +2971,7 @@ function setupGraphInteraction() {
   });
 }
 
-// Popover с информацией об узле — появляется при тапе на узел
+// Popover с информацией об узле — разный для записей, желаний и сфер
 function showGraphPopover(idx) {
   const n = graphNodes[idx];
   if (!n) return;
@@ -2802,18 +2985,75 @@ function showGraphPopover(idx) {
     if (container) container.appendChild(popover);
     else document.body.appendChild(popover);
   }
-  const date = n.createdAt ? new Date(n.createdAt).toLocaleDateString('ru-RU', {day:'numeric',month:'short',year:'numeric'}) : '';
-  popover.innerHTML = `
-    <div style="font-size:13px;color:rgba(255,255,255,0.95);line-height:1.4;word-break:break-word;margin-bottom:8px;">${escapeHtml(n.text)}</div>
-    <div style="display:flex;gap:10px;font-size:10.5px;color:rgba(255,255,255,0.5);margin-bottom:10px;">
-      <span>🔗 ${n.connections} связей</span>
-      ${n.tag ? `<span>🏷 #${escapeHtml(n.tag)}</span>` : ''}
-    </div>
-    <div style="display:flex;gap:8px;">
-      <button onclick="openFromGraph(${idx})" style="flex:1;padding:8px;border-radius:8px;border:none;background:rgba(108,71,255,0.7);color:#fff;font-size:12px;font-weight:600;cursor:pointer;font-family:Inter,sans-serif;">📖 Открыть заметку</button>
-      <button onclick="closeGraphSelection()" style="padding:8px 12px;border-radius:8px;border:0.5px solid rgba(255,255,255,0.2);background:transparent;color:rgba(255,255,255,0.6);font-size:12px;cursor:pointer;font-family:Inter,sans-serif;">✕</button>
-    </div>
-  `;
+
+  let html = '';
+  if (n.kind === 'note') {
+    // Запись: текст + объяснение ИИ-связей + открытие
+    const rel = (graphAiByNote[n.id] || []).slice(0, 3);
+    const relHtml = rel.map(r => {
+      const on = notes.find(x => x.id === r.other);
+      const t = on ? on.text : '';
+      return `<div style="display:flex;gap:6px;font-size:11px;color:rgba(255,255,255,0.75);line-height:1.45;margin-bottom:5px;"><span style="flex-shrink:0;">🔗</span><span>${escapeHtml(r.reason)}${t ? ` — <span style="color:rgba(255,255,255,0.5);">«${escapeHtml(t.length > 42 ? t.slice(0, 41) + '…' : t)}»</span>` : ''}</span></div>`;
+    }).join('');
+    const date = n.createdAt ? new Date(n.createdAt).toLocaleDateString('ru-RU', {day:'numeric',month:'short'}) : '';
+    html = `
+      <div style="font-size:13px;color:rgba(255,255,255,0.95);line-height:1.4;word-break:break-word;margin-bottom:8px;">${escapeHtml(n.text)}</div>
+      <div style="display:flex;gap:10px;font-size:10.5px;color:rgba(255,255,255,0.5);margin-bottom:8px;flex-wrap:wrap;">
+        ${n.tag ? `<span>🏷 #${escapeHtml(n.tag)}</span>` : ''}
+        <span>🔗 связей: ${n.connections}</span>
+        ${date ? `<span>📅 ${date}</span>` : ''}
+      </div>
+      ${relHtml ? `<div style="border-top:0.5px solid rgba(255,255,255,0.1);padding-top:8px;margin-bottom:10px;"><div style="font-size:10px;color:rgba(139,124,246,0.9);margin-bottom:5px;text-transform:uppercase;letter-spacing:0.5px;">Почему ИИ связал с другими</div>${relHtml}</div>` : ''}
+      <div style="display:flex;gap:8px;">
+        <button onclick="openFromGraph(${idx})" style="flex:1;padding:8px;border-radius:8px;border:none;background:rgba(108,71,255,0.7);color:#fff;font-size:12px;font-weight:600;cursor:pointer;font-family:Inter,sans-serif;">📖 Открыть заметку</button>
+        <button onclick="closeGraphSelection()" style="padding:8px 12px;border-radius:8px;border:0.5px solid rgba(255,255,255,0.2);background:transparent;color:rgba(255,255,255,0.6);font-size:12px;cursor:pointer;font-family:Inter,sans-serif;">✕</button>
+      </div>
+    `;
+  } else if (n.kind === 'wish') {
+    // Желание: статус, прогресс, задачи
+    const w = wishes.find(x => x.id === n.wishId);
+    if (!w) { hideGraphPopover(); return; }
+    const state = WISH_STATES[w.state] || WISH_STATES.dream;
+    const totalMs = (w.milestones || []).length;
+    const doneMs = (w.milestones || []).filter(m => m.done).length;
+    const openTasks = notes.filter(x => x.wishId === w.id && !x.done).length;
+    html = `
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
+        <span style="font-size:24px;">${w.icon || '🌠'}</span>
+        <div>
+          <div style="font-size:14px;font-weight:600;color:#FFD166;">${escapeHtml(w.shortTag || w.text.slice(0, 20))}</div>
+          <div style="font-size:11px;color:rgba(255,255,255,0.5);">${state.icon} ${state.label} · шаги ${doneMs}/${totalMs}</div>
+        </div>
+      </div>
+      <div style="font-size:12px;color:rgba(255,255,255,0.85);line-height:1.4;word-break:break-word;margin-bottom:10px;">${escapeHtml(w.text)}</div>
+      <div style="font-size:11px;color:rgba(255,255,255,0.55);margin-bottom:10px;">Открытых задач: <b style="color:#FFD166;">${openTasks}</b>${n.count ? ` · записей связано: ${n.count}` : ''}</div>
+      <div style="display:flex;gap:8px;">
+        <button onclick="openWishFromGraph(${idx})" style="flex:1;padding:8px;border-radius:8px;border:none;background:rgba(255,209,102,0.85);color:#1a1a2e;font-size:12px;font-weight:700;cursor:pointer;font-family:Inter,sans-serif;">⭐ Открыть желание</button>
+        <button onclick="closeGraphSelection()" style="padding:8px 12px;border-radius:8px;border:0.5px solid rgba(255,255,255,0.2);background:transparent;color:rgba(255,255,255,0.6);font-size:12px;cursor:pointer;font-family:Inter,sans-serif;">✕</button>
+      </div>
+    `;
+  } else {
+    // Сфера: сколько записей + последние
+    const leafs = graphNodes
+      .map((x, i) => ({ x, i }))
+      .filter(o => o.x.kind === 'note' && o.x.hub === idx)
+      .slice(0, 3);
+    const lastHtml = leafs.map(o => `<div style="font-size:11px;color:rgba(255,255,255,0.6);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">• ${escapeHtml(o.x.text.slice(0, 40))}</div>`).join('');
+    html = `
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
+        <span style="font-size:24px;">${n.icon}</span>
+        <div>
+          <div style="font-size:14px;font-weight:600;color:${n.color};">${escapeHtml(n.label)}</div>
+          <div style="font-size:11px;color:rgba(255,255,255,0.5);">сфера жизни · записей: ${n.count}</div>
+        </div>
+      </div>
+      ${lastHtml ? `<div style="border-top:0.5px solid rgba(255,255,255,0.1);padding-top:8px;margin-bottom:10px;"><div style="font-size:10px;color:rgba(255,255,255,0.4);margin-bottom:4px;text-transform:uppercase;letter-spacing:0.5px;">Последние записи</div>${lastHtml}</div>` : ''}
+      <div style="display:flex;gap:8px;">
+        <button onclick="closeGraphSelection()" style="flex:1;padding:8px;border-radius:8px;border:0.5px solid rgba(255,255,255,0.2);background:rgba(255,255,255,0.05);color:rgba(255,255,255,0.7);font-size:12px;cursor:pointer;font-family:Inter,sans-serif;">Понятно</button>
+      </div>
+    `;
+  }
+  popover.innerHTML = html;
   popover.style.display = 'block';
 }
 
@@ -2835,6 +3075,20 @@ function openFromGraph(idx) {
   closeGraphScreen();
   setTimeout(() => openEdit(n.id), 100);
 }
+
+// Тап по желанию в графе → карточка желания (модалка поверх экрана желаний)
+function openWishFromGraph(idx) {
+  const n = graphNodes[idx];
+  if (!n || n.kind !== 'wish' || !n.wishId) return;
+  hideGraphPopover();
+  graphSelectedIdx = null;
+  closeGraphScreen();
+  setTimeout(() => {
+    goTo('wishes');
+    setTimeout(() => openWishDetail(n.wishId), 150);
+  }, 100);
+}
+window.openWishFromGraph = openWishFromGraph;
 
 function escapeHtml(text) {
   const div = document.createElement('div');
@@ -4456,7 +4710,7 @@ function goTo(screen) {
     // Подсказка после 5 записей — про теги
     showHintOnce('use_tags','🏷 Добавляй теги к записям на главном экране — потом сможешь фильтровать по ним в Истории.','hist-hint', () => notes.length >= 5 && hintsShown.has('first_note'));
     // Подсказка после 30 записей — про граф
-    showHintOnce('notes_30','📊 Уже 30+ записей! Загляни в 🕸 Граф — увидишь структуру своих мыслей и связи между ними.','hist-hint', () => notes.length >= 30);
+    showHintOnce('notes_30','📊 Уже 30+ записей! Загляни в 🌌 Граф — увидишь свои сферы жизни, желания и связи между записями.','hist-hint', () => notes.length >= 30);
     // Подсказка после 100 записей
     showHintOnce('notes_100','🏆 100 записей! Не забудь сделать экспорт — бэкап своих данных.','hist-hint', () => notes.length >= 100);
   }
@@ -4470,7 +4724,8 @@ function goTo(screen) {
     showHintOnce('cloud_intro','☁️ Облако слов показывает что у тебя в фокусе. Чем больше записей — тем информативнее.','cloud-hint', () => notes.length >= 10);
   }
   if (screen === 'graph') {
-    // Hint появится через openGraphScreen() после загрузки данных
+    // Разовая подсказка: объясняем язык карты и ИИ-связи
+    showHintOnce('graph_intro','🌌 Это облако твоих мыслей: сферы жизни и желания — крупные узлы, записи крутятся вокруг них. Тапни любую запись — покажу, почему ИИ связал её с другими.', 'graph-hint', () => notes.length >= 1);
   }
   if (screen === 'calendar') {
     renderCalendar();
