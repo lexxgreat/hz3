@@ -490,6 +490,8 @@ body.cal-dragging .cal-hours-grid{display:grid}
 body.cal-dragging,body.cal-dragging *{touch-action:none!important;user-select:none!important;-webkit-user-select:none!important}
 [data-drop-none].drop-hover{border-color:rgba(0,230,130,0.9)!important;background:rgba(0,230,130,0.07)!important}
 .cal-queue-top{border-left:3px solid rgba(0,230,130,0.7)!important}
+#calendar-list.cal-compact .cal-cell{min-height:38px;padding:3px 2px}
+#calendar-list.cal-compact .cal-dnum{font-size:10.5px}
 </style>
 </head>
 <body>
@@ -879,7 +881,6 @@ body.cal-dragging,body.cal-dragging *{touch-action:none!important;user-select:no
     </div>
     <div style="padding:8px 16px 0;">
       <button id="pwa-install-btn" onclick="installFromSettings()" style="width:100%;background:rgba(108,71,255,0.1);border:0.5px solid rgba(108,71,255,0.35);border-radius:12px;padding:9px;color:rgba(160,130,255,0.95);font-size:12.5px;font-weight:500;cursor:pointer;font-family:'Inter',sans-serif;margin-bottom:8px;">📲 Установить приложение</button>
-      <button onclick="migrateOldData()" style="width:100%;background:rgba(0,180,120,0.1);border:0.5px solid rgba(0,200,140,0.3);border-radius:12px;padding:9px;color:rgba(0,220,150,0.9);font-size:12.5px;font-weight:500;cursor:pointer;font-family:'Inter',sans-serif;margin-bottom:8px;">📥 Импортировать старые данные (один раз)</button>
       <button onclick="logout()" style="width:100%;background:rgba(255,80,80,0.08);border:0.5px solid rgba(255,80,80,0.25);border-radius:12px;padding:9px;color:rgba(255,110,110,0.85);font-size:12.5px;font-weight:500;cursor:pointer;font-family:'Inter',sans-serif;">Выйти из аккаунта</button>
     </div>
     <div class="hist-list" id="prompt-list" style="padding:16px;overflow-y:auto;flex:1;"></div>
@@ -2139,20 +2140,22 @@ function renderCalendar() {
   }
   html += '</div>';
 
-  // ── Панель выбранного дня (сортировка: с временем сверху, без времени — после) ──
-  const selDate = parseDayKey(calendarSelectedKey);
-  const selTasks = tasks.filter(t => scheduledOf(t) === calendarSelectedKey)
-    .sort((a, b) => (a.scheduledTime || '99:99').localeCompare(b.scheduledTime || '99:99'));
-  const selLbl = selDate ? selDate.toLocaleDateString('ru-RU', { weekday: 'long', day: 'numeric', month: 'long' }) : '';
-  html += `<div style="margin-top:12px;">
-    <div style="display:flex;align-items:center;gap:8px;padding:4px 8px 6px;">
-      <div style="font-size:12.5px;font-weight:600;color:rgba(139,92,246,0.9);text-transform:capitalize;font-family:Inter,sans-serif;">${selLbl}</div>
-      <span style="margin-left:auto;font-size:10px;color:rgba(255,255,255,0.4);">${selTasks.length}</span>
-      <button onclick="toggleCalHours()" style="background:rgba(255,255,255,0.04);border:0.5px solid rgba(255,255,255,0.1);border-radius:6px;padding:2px 8px;color:rgba(255,255,255,0.6);font-size:10.5px;cursor:pointer;font-family:Inter,sans-serif;">⏰ часы</button>
-    </div>
-    ${calHourChipsHtml()}
-    ${selTasks.length === 0 ? '<div style="font-size:11px;color:rgba(255,255,255,0.25);padding:0 8px 4px;font-style:italic;">— ничего не запланировано —</div>' : selTasks.map(t => calTaskCard(t)).join('')}
-  </div>`;
+  // ── Панель выбранного дня (с часами) — только в обычном режиме; в «Раскидать» — чистый календарь ──
+  if (!calendarSortMode) {
+    const selDate = parseDayKey(calendarSelectedKey);
+    const selTasks = tasks.filter(t => scheduledOf(t) === calendarSelectedKey)
+      .sort((a, b) => (a.scheduledTime || '99:99').localeCompare(b.scheduledTime || '99:99'));
+    const selLbl = selDate ? selDate.toLocaleDateString('ru-RU', { weekday: 'long', day: 'numeric', month: 'long' }) : '';
+    html += `<div style="margin-top:12px;">
+      <div style="display:flex;align-items:center;gap:8px;padding:4px 8px 6px;">
+        <div style="font-size:12.5px;font-weight:600;color:rgba(139,92,246,0.9);text-transform:capitalize;font-family:Inter,sans-serif;">${selLbl}</div>
+        <span style="margin-left:auto;font-size:10px;color:rgba(255,255,255,0.4);">${selTasks.length}</span>
+        <button onclick="toggleCalHours()" style="background:rgba(255,255,255,0.04);border:0.5px solid rgba(255,255,255,0.1);border-radius:6px;padding:2px 8px;color:rgba(255,255,255,0.6);font-size:10.5px;cursor:pointer;font-family:Inter,sans-serif;">⏰ часы</button>
+      </div>
+      ${calHourChipsHtml()}
+      ${selTasks.length === 0 ? '<div style="font-size:11px;color:rgba(255,255,255,0.25);padding:0 8px 4px;font-style:italic;">— ничего не запланировано —</div>' : selTasks.map(t => calTaskCard(t)).join('')}
+    </div>`;
+  }
 
   // ── Низ: в режиме распределения — очередь-конвейер; в обычном — Ближайшие + Без срока ──
   if (calendarSortMode) {
@@ -2175,6 +2178,7 @@ function renderCalendar() {
     </div>`;
   }
 
+  list.classList.toggle('cal-compact', calendarSortMode); // компактные клетки — календарь целиком + очередь видны без скролла
   list.innerHTML = html;
   const sub = document.getElementById('calendar-sub');
   if (sub) sub.textContent = calendarSortMode
@@ -5870,28 +5874,6 @@ document.getElementById('auth-submit-btn').addEventListener('click', async () =>
   }
 });
 
-// ── ОДНОРАЗОВЫЙ ПЕРЕНОС старых данных (из общих коллекций верхнего уровня в users/{uid}/...) ──
-async function migrateOldData() {
-  if (!currentUid) return;
-  if (!confirm('Импортировать старые данные (заметки, чат, теги, промпт) в этот аккаунт? Делай это только один раз.')) return;
-  const oldCollections = ['notes', 'chat', 'promptRules', 'tags'];
-  let total = 0;
-  try {
-    for (const name of oldCollections) {
-      const oldSnap = await getDocs(collection(db, name)); // старый путь верхнего уровня
-      for (const d of oldSnap.docs) {
-        await setDoc(doc(db, 'users', currentUid, name, d.id), d.data());
-        total++;
-      }
-    }
-    alert('Готово! Импортировано записей: ' + total);
-    await initUserData();
-  } catch(e) {
-    alert('Ошибка импорта: ' + e.message + '\n\nПроверь, что правила Firestore временно разрешают чтение старых коллекций (notes, chat, promptRules, tags) для авторизованных пользователей.');
-  }
-}
-window.migrateOldData = migrateOldData;
-
 async function logout() {
   // Устанавливаем флаг — НЕ делать auto-anonymous при следующем null
   // После logout пользователь должен увидеть auth screen, а не новый anonymous
@@ -6162,6 +6144,10 @@ onAuthStateChanged(auth, async (user) => {
   window.addEventListener('beforeinstallprompt', function(e) {
     e.preventDefault(); // отключаем нативный mini-infobar — покажем свою карточку
     deferredPrompt = e;
+    // Если баннер уже на экране — сразу обновляем статус: системный диалог теперь доступен
+    var sub = document.getElementById('install-banner-sub');
+    var btn = document.getElementById('install-banner-btn');
+    if (sub && btn && btn.style.display !== 'none') sub.textContent = 'Установка в один тап — откроется вопрос системы';
     console.log('[PWA] beforeinstallprompt captured — ready to install on demand');
   });
 
@@ -6193,7 +6179,7 @@ onAuthStateChanged(auth, async (user) => {
         '<div style="flex-shrink:0;width:44px;height:44px;border-radius:11px;background:url(icon-any-192.png) center/cover;border:0.5px solid rgba(255,255,255,0.18);"></div>' +
         '<div style="flex:1;min-width:0;">' +
           '<div style="font-size:13px;font-weight:600;color:#fff;font-family:\'Inter\',sans-serif;">Установи Хэзэнштейн</div>' +
-          '<div id="install-banner-sub" style="font-size:11.5px;color:rgba(255,255,255,0.55);line-height:1.45;font-family:\'Inter\',sans-serif;">На рабочий стол — будет открываться как приложение</div>' +
+          '<div id="install-banner-sub" style="font-size:11.5px;color:rgba(255,255,255,0.55);line-height:1.45;font-family:\'Inter\',sans-serif;">' + (deferredPrompt ? 'Установка в один тап — откроется вопрос системы' : 'Установка недоступна в этом браузере — покажу шаги') + '</div>' +
         '</div>' +
         '<button id="install-banner-btn" onclick="installBannerAction()" style="flex-shrink:0;padding:8px 12px;border-radius:10px;border:0.5px solid rgba(139,92,246,0.6);background:rgba(108,71,255,0.25);color:#fff;font-size:12px;font-weight:600;cursor:pointer;font-family:\'Inter\',sans-serif;">⬇ Установить</button>' +
         '<button onclick="hideInstallBanner()" style="flex-shrink:0;background:none;border:none;color:rgba(255,255,255,0.35);font-size:15px;cursor:pointer;padding:4px;">✕</button>' +
