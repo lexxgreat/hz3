@@ -674,9 +674,9 @@ body.cal-dragging,body.cal-dragging *{touch-action:none!important;user-select:no
       <canvas id="graph-canvas" style="position:absolute;inset:0;width:100%;height:100%;touch-action:none;"></canvas>
       <div id="graph-loading" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;padding:0 30px;color:rgba(255,255,255,0.4);font-size:13px;font-family:'Inter',sans-serif;">Загрузка графа…</div>
       <div id="graph-zoom-controls" style="position:absolute;bottom:14px;right:10px;display:flex;flex-direction:column;gap:6px;z-index:20;">
-        <button onclick="graphZoomStep(1.35)" title="Ближе" style="width:34px;height:34px;border-radius:10px;border:0.5px solid rgba(108,71,255,0.4);background:rgba(20,18,34,0.75);color:rgba(255,255,255,0.85);font-size:17px;cursor:pointer;backdrop-filter:blur(8px);font-family:Inter,sans-serif;line-height:1;">＋</button>
-        <button onclick="graphZoomStep(1/1.35)" title="Дальше" style="width:34px;height:34px;border-radius:10px;border:0.5px solid rgba(108,71,255,0.4);background:rgba(20,18,34,0.75);color:rgba(255,255,255,0.85);font-size:17px;cursor:pointer;backdrop-filter:blur(8px);font-family:Inter,sans-serif;line-height:1;">－</button>
-        <button onclick="graphZoomReset()" title="Вся карта" style="width:34px;height:34px;border-radius:10px;border:0.5px solid rgba(108,71,255,0.4);background:rgba(20,18,34,0.75);color:rgba(255,255,255,0.85);font-size:13px;cursor:pointer;backdrop-filter:blur(8px);font-family:Inter,sans-serif;line-height:1;">⤢</button>
+        <button onclick="graphZoomStep(1.35)" title="Ближе" style="width:34px;height:34px;border-radius:10px;border:none;background:rgba(20,18,34,0.6);color:rgba(255,255,255,0.85);font-size:17px;cursor:pointer;backdrop-filter:blur(8px);font-family:Inter,sans-serif;line-height:1;">＋</button>
+        <button onclick="graphZoomStep(1/1.35)" title="Дальше" style="width:34px;height:34px;border-radius:10px;border:none;background:rgba(20,18,34,0.6);color:rgba(255,255,255,0.85);font-size:17px;cursor:pointer;backdrop-filter:blur(8px);font-family:Inter,sans-serif;line-height:1;">－</button>
+        <button onclick="graphZoomReset()" title="Вся карта" style="width:34px;height:34px;border-radius:10px;border:none;background:rgba(20,18,34,0.6);color:rgba(255,255,255,0.85);font-size:13px;cursor:pointer;backdrop-filter:blur(8px);font-family:Inter,sans-serif;line-height:1;">⤢</button>
       </div>
     </div>
   </div>
@@ -3147,20 +3147,22 @@ function closeGraphScreen() {
   }
 }
 
-// Тап/драг узлов, пан карты, щипок-зум: хабы ловятся крупной зоной, записи — поменьше
+// Пан карты, щипок-зум, тап по узлу: хабы ловятся крупной зоной, записи — поменьше
 function setupGraphInteraction() {
   const canvas = document.getElementById('graph-canvas');
   if (!canvas || canvas.dataset.graphInteract) return;
   canvas.dataset.graphInteract = '1';
-  let mode = null;          // null | 'press' | 'node' | 'pan' | 'pinch'
-  let dragIdx = null;
-  let dragStartTime = 0;
-  let dragStartPos = { x: 0, y: 0 };
+  // ДРАГ УЗЛОВ УДАЛЁН: физика сама раскладывает узлы, а попытки «потащить
+  // экран» при глубоком зуме хватали узлы и ломали навигацию.
+  // Один палец / мышь = ВСЕГДА пан карты. Тап по узлу — карточка. Щипок — зум.
+  let mode = null;          // null | 'down' | 'pan' | 'pinch'
+  let tapIdx = null;        // узел под пальцем на старте — кандидат на тап
+  let downTime = 0;
+  let downPos = { x: 0, y: 0 };
   let panLast = null;       // {x, y}
   let panLastT = 0;         // время последнего pan-события (для скорости инерции)
   let panVel = { x: 0, y: 0 }; // px за 16мс — сглаженная скорость пана
-  let pressTimer = null;    // таймер длинного нажатия — драг узла
-  let pinch = null;         // {d0, k0, mid0:{x,y}, wpt:{x,y}} — wpt = мировая точка под серединой щипка
+  let pinch = null;         // {d0, k0, wpt:{x,y}} — wpt = мировая точка под серединой щипка
 
   function getPos(e) {
     const r = canvas.getBoundingClientRect();
@@ -3201,36 +3203,21 @@ function setupGraphInteraction() {
     graphInertia = null;
     if (e.touches.length >= 2) {
       // Щипок: прерываем всё, фиксируем мировую точку под серединой жеста
-      if (pressTimer) { clearTimeout(pressTimer); pressTimer = null; }
       mode = 'pinch';
-      dragIdx = null;
+      tapIdx = null;
       ensureGraphCamera();
       const mid = getMid(e);
-      pinch = { d0: getDist(e), k0: graphCam.tk, mid0: { ...mid }, wpt: graphS2W(mid.x, mid.y) };
+      pinch = { d0: getDist(e), k0: graphCam.tk, wpt: graphS2W(mid.x, mid.y) };
       return;
     }
     const p = getPos(e);
+    downTime = Date.now();
+    downPos = { ...p };
     const idx = findNodeAtScreen(p.x, p.y);
-    dragStartTime = Date.now();
-    dragStartPos = { ...p };
-    if (idx >= 0) {
-      // ПРИОРИТЕТ ПАНА: узел не хватаем сразу — ждём длинное нажатие.
-      // Короткий тап откроет карточку, движение пальца превратится в пан.
-      mode = 'press';
-      dragIdx = idx;
-      clearTimeout(pressTimer);
-      pressTimer = setTimeout(() => {
-        if (mode === 'press') {
-          mode = 'node';
-          try { if (navigator.vibrate) navigator.vibrate(18); } catch (err) {}
-        }
-      }, 380);
-    } else {
-      mode = 'pan';
-      panLast = { ...p };
-      panLastT = Date.now();
-      panVel = { x: 0, y: 0 };
-      // Тап/пан мимо узла — снимаем селекцию
+    tapIdx = idx >= 0 ? idx : null;
+    mode = 'down'; // тап или пан — решится на move/end
+    if (idx < 0) {
+      // Палец мимо узла — снимаем селекцию
       graphSelectedIdx = null;
       hideGraphPopover();
     }
@@ -3241,34 +3228,21 @@ function setupGraphInteraction() {
       e.preventDefault();
       const d = Math.max(20, getDist(e));
       const mid = getMid(e);
-      // Экспоненциальный зум: ПОСТОЯННАЯ скорость (≈×1.4 на 100px разведения пальцев).
-      // Старая линейная формула k0*(d/d0) ускорялась взрывообразно, если пальцы
-      // начинали близко: разведение 60→250px давало ×4.2 за один жест.
-      const nk = (pinch.k0 || 1) * Math.exp((d - pinch.d0) * 0.0034);
+      // Экспоненциальный зум: ПОСТОЯННАЯ скорость (≈×1.25 на 100px разведения пальцев).
+      const nk = (pinch.k0 || 1) * Math.exp((d - pinch.d0) * 0.0022);
       graphPinchTo(nk, mid.x, mid.y, pinch.wpt);
       return;
     }
-    if (mode === 'press') {
-      // Палец поехал раньше таймера — это пан карты, а не драг узла
+    if (mode === 'down') {
+      // Палец поехал — это пан карты, из любого места и даже с узла
       e.preventDefault();
       const p = getPos(e);
-      if (Math.hypot(p.x - dragStartPos.x, p.y - dragStartPos.y) > 10) {
-        if (pressTimer) { clearTimeout(pressTimer); pressTimer = null; }
+      if (Math.hypot(p.x - downPos.x, p.y - downPos.y) > 8) {
         mode = 'pan';
-        panLast = { ...p };
+        panLast = { ...downPos };
         panLastT = Date.now();
         panVel = { x: 0, y: 0 };
-        graphSelectedIdx = null;
-        hideGraphPopover();
       }
-      return;
-    }
-    if (mode === 'node' && dragIdx !== null && dragIdx !== undefined) {
-      e.preventDefault();
-      const p = getPos(e);
-      const wpos = graphS2W(p.x, p.y);
-      const n = graphNodes[dragIdx];
-      if (n) { n.x = wpos.x; n.y = wpos.y; n.vx = 0; n.vy = 0; }
       return;
     }
     if (mode === 'pan' && panLast) {
@@ -3290,30 +3264,26 @@ function setupGraphInteraction() {
       if (e.touches.length < 2) { mode = null; pinch = null; }
       return;
     }
-    if (mode === 'press') {
-      if (pressTimer) { clearTimeout(pressTimer); pressTimer = null; }
+    if (mode === 'down') {
       const p = getPos(e);
-      const dt = Date.now() - dragStartTime;
-      const moved = Math.hypot(p.x - dragStartPos.x, p.y - dragStartPos.y);
-      if (dt < 500 && moved < 10) {
+      const dt = Date.now() - downTime;
+      const moved = Math.hypot(p.x - downPos.x, p.y - downPos.y);
+      if (dt < 450 && moved < 10 && tapIdx !== null) {
         // Это тап — селекция узла + показ popover
-        graphSelectedIdx = dragIdx;
-        showGraphPopover(dragIdx);
+        graphSelectedIdx = tapIdx;
+        showGraphPopover(tapIdx);
       }
-      dragIdx = null;
-    } else if (mode === 'node') {
-      dragIdx = null;
     } else if (mode === 'pan' && panVel) {
       // Отпустили с разгоном — карта скользит по инерции и плавно тормозит
       if (Math.hypot(panVel.x, panVel.y) > 1.5) graphInertia = { x: panVel.x, y: panVel.y };
     }
     mode = null;
     panLast = null;
+    tapIdx = null;
   }, { passive: true });
 
   canvas.addEventListener('touchcancel', () => {
-    if (pressTimer) { clearTimeout(pressTimer); pressTimer = null; }
-    mode = null; pinch = null; panLast = null; dragIdx = null; graphInertia = null;
+    mode = null; pinch = null; panLast = null; tapIdx = null; graphInertia = null;
   });
 
   // Долгое нажатие на канвасе не должно вызывать системное меню (Android)
@@ -3325,49 +3295,55 @@ function setupGraphInteraction() {
     graphInertia = null;
     const p = getPos(e);
     const dy = e.deltaMode === 1 ? e.deltaY * 33 : e.deltaY;
-    graphZoomAt(p.x, p.y, Math.exp(-dy * 0.0014));
+    graphZoomAt(p.x, p.y, Math.exp(-dy * 0.0011));
   }, { passive: false });
 
-  // Mouse для теста (десктоп): драг узлов, пан пустотой, тап — селекция
-  let mouseMode = null, mouseDragIdx = null;
+  // Мышь (десктоп): зажал и ведёшь — пан, короткий клик по узлу — карточка
   canvas.addEventListener('mousedown', (e) => {
     graphInertia = null;
     const p = getPos(e);
+    downTime = Date.now();
+    downPos = { ...p };
     const idx = findNodeAtScreen(p.x, p.y);
-    dragStartTime = Date.now();
-    dragStartPos = { ...p };
-    if (idx >= 0) { mouseMode = 'node'; mouseDragIdx = idx; }
-    else {
-      mouseMode = 'pan';
-      panLast = { ...p };
-      graphSelectedIdx = null;
-      hideGraphPopover();
-    }
+    tapIdx = idx >= 0 ? idx : null;
+    mode = 'down';
+    if (idx < 0) { graphSelectedIdx = null; hideGraphPopover(); }
   });
   canvas.addEventListener('mousemove', (e) => {
-    if (!mouseMode) return;
+    if (mode !== 'down' && mode !== 'pan') return;
     const p = getPos(e);
-    if (mouseMode === 'node' && mouseDragIdx !== null) {
-      const wpos = graphS2W(p.x, p.y);
-      const n = graphNodes[mouseDragIdx];
-      if (n) { n.x = wpos.x; n.y = wpos.y; n.vx = 0; n.vy = 0; }
-    } else if (mouseMode === 'pan' && panLast) {
+    if (mode === 'down' && Math.hypot(p.x - downPos.x, p.y - downPos.y) > 8) {
+      mode = 'pan';
+      panLast = { ...downPos };
+      panLastT = Date.now();
+      panVel = { x: 0, y: 0 };
+    }
+    if (mode === 'pan' && panLast) {
       graphPanBy(p.x - panLast.x, p.y - panLast.y);
+      const now = Date.now();
+      const dt = Math.max(8, now - panLastT);
+      panVel.x = 0.7 * (p.x - panLast.x) / dt * 16 + 0.3 * panVel.x;
+      panVel.y = 0.7 * (p.y - panLast.y) / dt * 16 + 0.3 * panVel.y;
       panLast = { ...p };
+      panLastT = now;
     }
   });
   canvas.addEventListener('mouseup', (e) => {
-    if (!mouseMode) return;
+    if (mode !== 'down' && mode !== 'pan') return;
     const p = getPos(e);
-    const dt = Date.now() - dragStartTime;
-    const moved = Math.hypot(p.x - dragStartPos.x, p.y - dragStartPos.y);
-    if (mouseMode === 'node' && mouseDragIdx !== null && dt < 300 && moved < 5) {
-      graphSelectedIdx = mouseDragIdx;
-      showGraphPopover(mouseDragIdx);
+    if (mode === 'down') {
+      const dt = Date.now() - downTime;
+      const moved = Math.hypot(p.x - downPos.x, p.y - downPos.y);
+      if (dt < 450 && moved < 10 && tapIdx !== null) {
+        graphSelectedIdx = tapIdx;
+        showGraphPopover(tapIdx);
+      }
+    } else if (Math.hypot(panVel.x, panVel.y) > 1.5) {
+      graphInertia = { x: panVel.x, y: panVel.y };
     }
-    mouseMode = null;
-    mouseDragIdx = null;
+    mode = null;
     panLast = null;
+    tapIdx = null;
   });
 }
 
@@ -3379,7 +3355,7 @@ function showGraphPopover(idx) {
   if (!popover) {
     popover = document.createElement('div');
     popover.id = 'graph-popover';
-    popover.style.cssText = 'position:absolute;left:50%;bottom:calc(8px + env(safe-area-inset-bottom));transform:translateX(-50%);z-index:9999;max-width:90%;width:340px;background:rgba(15,18,40,0.97);border:1px solid rgba(108,71,255,0.5);border-radius:14px;padding:14px 16px;box-shadow:0 8px 32px rgba(0,0,0,0.6),0 0 24px rgba(108,71,255,0.25);font-family:Inter,sans-serif;backdrop-filter:blur(12px);';
+    popover.style.cssText = 'position:absolute;left:50%;bottom:calc(8px + env(safe-area-inset-bottom));transform:translateX(-50%);z-index:9999;max-width:90%;width:340px;background:rgba(15,18,40,0.97);border:0.5px solid rgba(108,71,255,0.25);border-radius:14px;padding:14px 16px;box-shadow:0 8px 32px rgba(0,0,0,0.6),0 0 24px rgba(108,71,255,0.25);font-family:Inter,sans-serif;backdrop-filter:blur(12px);';
     // Находим контейнер (graph screen's relative div)
     const container = document.querySelector('#screen-graph > div:nth-child(2)');
     if (container) container.appendChild(popover);
@@ -4630,6 +4606,14 @@ function showHintOnce(id, text, elId, condition = null) {
   const el = document.getElementById(elId);
   if (!el) return;
   el.innerHTML = `<div class="note-card" style="border-color:rgba(139,92,246,0.4);background:rgba(108,71,255,0.08);"><div class="note-text">💡 ${text}</div><div class="note-actions"><button class="note-btn note-undone" onclick="dismissHint('${id}')">Понял</button></div></div>`;
+  // Подсказка не висит вечно: через 7с гасим сами и запоминаем флаг
+  setTimeout(() => {
+    if (hintsShown.has(id)) return;
+    const cur = document.getElementById(elId);
+    if (cur) cur.innerHTML = '';
+    hintsShown.add(id);
+    try { setDoc(uDocRef('meta','hints_shown'), { ids:[...hintsShown] }).catch(() => {}); } catch(e) {}
+  }, 7000);
 }
 async function dismissHint(id) {
   hintsShown.add(id);
@@ -5236,10 +5220,6 @@ function goTo(screen) {
     renderWordCloud();
     // Подсказка при первом визите облака (только если есть 10+ записей)
     showHintOnce('cloud_intro','☁️ Облако слов показывает что у тебя в фокусе. Чем больше записей — тем информативнее.','cloud-hint', () => notes.length >= 10);
-  }
-  if (screen === 'graph') {
-    // Разовая подсказка: объясняем язык карты и ИИ-связи
-    showHintOnce('graph_intro2','🌌 Это облако твоих мыслей. Сведи два пальца — раскроются желания → задачи → шаги и диалоги. Веди пальцем — карта поедет за ним. Тапни запись — расскажу, почему ИИ связал её с другими. Удерживай узел — и сможешь передвинуть.', 'graph-hint', () => notes.length >= 1);
   }
   if (screen === 'calendar') {
     renderCalendar();
@@ -7130,6 +7110,14 @@ onAuthStateChanged(auth, async (user) => {
 (function() {
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', function() {
+      // Автообновление: когда новый SW активировался (skipWaiting) — перезагружаем
+      // страницу, чтобы свежая версия работала сразу, а не после следующего открытия
+      var hadController = !!navigator.serviceWorker.controller;
+      navigator.serviceWorker.addEventListener('controllerchange', function() {
+        if (!hadController || window.__swReloaded) return;
+        window.__swReloaded = true;
+        location.reload();
+      });
       navigator.serviceWorker.register('./sw.js', { scope: './' })
         .then(function(reg) {
           console.log('[PWA] Service Worker registered with scope:', reg.scope);
