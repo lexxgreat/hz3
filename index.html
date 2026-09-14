@@ -102,6 +102,15 @@ body{background:#060918;font-family:'Inter',sans-serif;display:flex;justify-cont
   background:linear-gradient(135deg, rgba(108,71,255,0.14), rgba(0,212,255,0.08));
   border:1px solid rgba(108,71,255,0.35);flex-shrink:0;
   display:flex;align-items:center;gap:10px;
+  position:relative;overflow:hidden;touch-action:pan-y;
+}
+.focus-card[data-id]{cursor:pointer;}
+.focus-swiping{will-change:transform;box-shadow:0 6px 24px rgba(108,71,255,0.25);z-index:5;}
+.focus-swipe-hint{
+  position:absolute;right:14px;top:50%;transform:translateY(-50%);
+  font-size:11px;font-weight:700;letter-spacing:0.3px;
+  color:rgba(0,230,120,0.95);opacity:0;pointer-events:none;white-space:nowrap;
+  text-shadow:0 0 12px rgba(0,0,0,0.5);
 }
 .focus-text{flex:1;font-size:12.5px;color:rgba(255,255,255,0.9);line-height:1.3;font-weight:500;
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
@@ -541,6 +550,7 @@ body.cal-dragging,body.cal-dragging *{touch-action:none!important;user-select:no
     </div>
 
     <div id="focus-card-wrap"></div>
+    <div id="focus-hint" style="padding:0 16px;"></div>
     <div id="main-hint" style="padding:0 16px;"></div>
 
     <!-- Capture row -->
@@ -4234,7 +4244,7 @@ function showHintOnce(id, text, elId, condition = null) {
 async function dismissHint(id) {
   hintsShown.add(id);
   // Очищаем все возможные контейнеры подсказок
-  ['todo-hint','main-hint','wishes-hint','hist-hint','graph-hint','cloud-hint','calendar-hint'].forEach(hid => {
+  ['todo-hint','main-hint','focus-hint','wishes-hint','hist-hint','graph-hint','cloud-hint','calendar-hint'].forEach(hid => {
     const el = document.getElementById(hid);
     if (el) el.innerHTML = '';
   });
@@ -4256,11 +4266,12 @@ function renderFocusCard() {
     const top = queue[0];
     const restCount = queue.length - 1;
     html += `
-      <div class="focus-card">
+      <div class="focus-card" data-id="${top.id}">
         <span style="font-size:15px;flex-shrink:0;">🎯</span>
         <span class="focus-text">${escHtml(top.text)}</span>
         ${restCount > 0 ? `<span class="focus-next-hint">+${restCount}</span>` : ''}
         <button class="focus-done-btn" onclick="toggleDone('${top.id}', false)">✓</button>
+        <div class="focus-swipe-hint">Следующая →</div>
       </div>`;
   }
 
@@ -4639,6 +4650,119 @@ async function reorderTodo(id, newIndex) {
     }
     await loadNotes();
   } catch(e) { alert('Ошибка сортировки: ' + e.message); }
+}
+
+// ── КАРТОЧКА ФОКУСА НА ГЛАВНОЙ: тап → открыть задачу, свайп вправо → в конец очереди ──
+// Скип = todoOrder в самый конец очереди, наверх встаёт следующая задача.
+async function skipTodoTask(id) {
+  const queue = getTodoQueue();
+  if (!queue.some(n => n.id === id)) return;
+  if (queue.length < 2) {
+    setStatus('Это единственная задача в очереди — листать некуда 🙂');
+    return;
+  }
+  const maxOrder = queue.reduce((m, n) => Math.max(m, n.todoOrder || 0), 0);
+  try {
+    await updateDoc(uDocRef('notes', id), { todoOrder: maxOrder + 1 });
+    await loadNotes(); // перерисует карточку фокуса — наверх встанет следующая
+    setStatus('↪ Задача ушла в конец очереди');
+  } catch(e) { console.warn('[focus] skip failed', e); alert('Ошибка: ' + e.message); }
+}
+window.skipTodoTask = skipTodoTask;
+
+// Жесты на карточке фокуса: слушатели вешаем один раз на статичный контейнер
+// #focus-card-wrap (содержимое перерисовывается) — переживает любые re-render.
+let focusGestureState = null; // {id, el, hint, startX, startY, dx, mode: null|'swipe', moved}
+let focusLastTouch = 0;
+
+function initFocusCardGestures() {
+  const wrap = document.getElementById('focus-card-wrap');
+  if (!wrap || wrap.dataset.gestInit) return;
+  wrap.dataset.gestInit = '1';
+
+  const SWIPE_THRESHOLD = 90; // px вправо — скип
+  const TAP_SLOP = 10;        // меньше движения — считаем тапом
+
+  wrap.addEventListener('touchstart', (e) => {
+    focusLastTouch = Date.now();
+    const card = e.target.closest('.focus-card[data-id]');
+    if (!card) return;
+    if (e.target.closest('button')) return; // ✓-кнопка — своя логика
+    const t = e.touches[0];
+    focusGestureState = {
+      id: card.dataset.id, el: card, hint: card.querySelector('.focus-swipe-hint'),
+      startX: t.clientX, startY: t.clientY, dx: 0, mode: null, moved: false
+    };
+  }, { passive: true });
+
+  wrap.addEventListener('touchmove', (e) => {
+    const st = focusGestureState;
+    if (!st) return;
+    const t = e.touches[0];
+    st.dx = t.clientX - st.startX;
+    const dy = t.clientY - st.startY;
+    if (!st.mode) {
+      if (Math.abs(st.dx) < TAP_SLOP && Math.abs(dy) < TAP_SLOP) return;
+      // только горизонтальный жест вправо — наш; остальное (скролл, свайп влево) отпускаем
+      if (st.dx > 0 && Math.abs(st.dx) > Math.abs(dy) * 1.25) {
+        st.mode = 'swipe';
+        st.el.classList.add('focus-swiping');
+      } else {
+        st.moved = true; // это был скролл — тапом не считаем
+        focusGestureState = null;
+        return;
+      }
+    }
+    e.preventDefault(); // во время свайпа не скроллим страницу
+    const over = Math.max(0, st.dx);
+    st.el.style.transition = 'none';
+    st.el.style.transform = `translateX(${over}px) rotate(${Math.min(6, over * 0.02)}deg)`;
+    if (st.hint) st.hint.style.opacity = Math.min(1, over / SWIPE_THRESHOLD);
+  }, { passive: false });
+
+  function endGesture(e) {
+    const st = focusGestureState;
+    focusGestureState = null;
+    if (!st) return;
+    if (st.mode === 'swipe') {
+      if (st.dx >= SWIPE_THRESHOLD) {
+        // вылет вправо + перенос в конец очереди
+        st.el.style.transition = 'transform 0.28s ease-in, opacity 0.28s ease-in';
+        st.el.style.transform = 'translateX(430px) rotate(7deg)';
+        st.el.style.opacity = '0';
+        if (st.hint) st.hint.style.opacity = 0;
+        setTimeout(() => skipTodoTask(st.id), 130); // даём анимации вылета разыграться
+      } else {
+        // недосвайп — пружина назад
+        st.el.style.transition = 'transform 0.28s cubic-bezier(0.2, 0.9, 0.3, 1.15)';
+        st.el.style.transform = '';
+        if (st.hint) st.hint.style.opacity = 0;
+        setTimeout(() => { st.el.classList.remove('focus-swiping'); st.el.style.transition = ''; }, 300);
+      }
+    } else if (!st.moved) {
+      // тап — открыть задачу
+      if (e && e.cancelable) e.preventDefault(); // гасим синтетический click
+      openEdit(st.id);
+    }
+  }
+  wrap.addEventListener('touchend', endGesture, { passive: false });
+  wrap.addEventListener('touchcancel', () => {
+    const st = focusGestureState;
+    focusGestureState = null;
+    if (st && st.el) {
+      st.el.classList.remove('focus-swiping');
+      st.el.style.transition = ''; st.el.style.transform = '';
+      if (st.hint) st.hint.style.opacity = 0;
+    }
+  });
+
+  // фолбэк для мыши (десктоп-тест): обычный клик открывает задачу
+  wrap.addEventListener('click', (e) => {
+    if (Date.now() - focusLastTouch < 600) return; // после тача клик уже обработан
+    const card = e.target.closest('.focus-card[data-id]');
+    if (!card || e.target.closest('button')) return;
+    openEdit(card.dataset.id);
+  });
 }
 
 // бейдж запланированной даты/времени (общий для тудушки и истории) — синхронизация с календарём
@@ -6300,6 +6424,7 @@ mainScreenEl.addEventListener('mouseup', (e) => { if (xMouseDown) { xMouseDown =
 mainScreenEl.addEventListener('mouseleave', (e) => { if (xMouseDown) { xMouseDown = false; xGestureEnd(e.pageX, e.pageY); } });
 
 initTodoDrag();
+initFocusCardGestures();
 
 // ── АВТОРИЗАЦИЯ ──
 let authMode = 'login'; // 'login' | 'register'
@@ -6554,7 +6679,10 @@ onAuthStateChanged(auth, async (user) => {
     await initUserData();
     // Подсказки грузим в фоне: showHintOnce вызываем только после загрузки hintsShown,
     // иначе уже скрытые ранее подсказки могли бы мелькнуть повторно. UI при этом не блокируется.
-    loadHints().then(() => showHintOnce('main_x','Перечеркни весь экран крест-накрест («Х») — отметит текущую задачу выполненной.','main-hint', () => notes.filter(n => n.inTodo && !n.done).length >= 1));
+    loadHints().then(() => {
+      showHintOnce('main_x','Перечеркни весь экран крест-накрест («Х») — отметит текущую задачу выполненной.','main-hint', () => notes.filter(n => n.inTodo && !n.done).length >= 1);
+      showHintOnce('focus_gestures','🎯 Тапни на карточку задачи — откроется целиком. Смахни вправо — отложится в конец очереди.','focus-hint', () => notes.filter(n => n.inTodo && !n.done).length >= 1 && hintsShown.has('main_x'));
+    });
     // Daily summary — проверяем, был ли итог за сегодня (генерируется в фоне, не блокируя UI)
     setTimeout(() => checkAndGenerateDailySummary(), 2000);
     // AI-психолог — раз в 7 дней, после daily summary
