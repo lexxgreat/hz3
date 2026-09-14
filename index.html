@@ -798,42 +798,6 @@ body.cal-dragging,body.cal-dragging *{touch-action:none!important;user-select:no
       </div>
       <div id="bulk-tag-picker" style="display:none;flex-wrap:wrap;gap:6px;margin-top:8px;"></div>
     </div>
-
-    <!-- Edit modal -->
-    <div class="modal-overlay" id="modal">
-      <div class="modal">
-        <div class="modal-title">Редактировать запись</div>
-        <textarea class="modal-textarea" id="modal-text"></textarea>
-        <div id="modal-tag-picker" style="display:flex;flex-wrap:wrap;gap:6px;margin:10px 0;"></div>
-        <!-- AI-связи — появляются после openEdit, когда links загрузятся -->
-        <div id="modal-links-section" style="display:none;margin-top:14px;padding-top:14px;border-top:0.5px solid rgba(255,255,255,0.08);">
-          <div style="font-size:11px;color:rgba(255,255,255,0.5);margin-bottom:8px;letter-spacing:0.5px;text-transform:uppercase;font-weight:600;">🔗 Похожие записи</div>
-          <div id="modal-links-list" style="display:flex;flex-direction:column;gap:6px;max-height:200px;overflow-y:auto;"></div>
-        </div>
-        <div class="modal-btns">
-          <button class="modal-cancel" onclick="closeModal()">Отмена</button>
-          <button class="modal-save" onclick="saveEdit()">Сохранить</button>
-        </div>
-      </div>
-    </div>
-
-    <!-- Import preview modal — shows what will be imported, allows deselect -->
-    <div class="modal-overlay" id="import-modal">
-      <div class="modal" style="max-width:480px;max-height:80vh;display:flex;flex-direction:column;">
-        <div class="modal-title">Импорт записей</div>
-        <div id="import-summary" style="font-size:12px;color:rgba(255,255,255,0.6);margin-bottom:10px;"></div>
-        <div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap;">
-          <button id="import-select-all" onclick="importToggleAll(true)" style="padding:5px 12px;border-radius:99px;border:0.5px solid rgba(108,71,255,0.4);background:rgba(108,71,255,0.1);color:rgba(139,92,246,0.9);font-size:11px;cursor:pointer;font-family:'Inter',sans-serif;">☑ Все</button>
-          <button id="import-deselect-all" onclick="importToggleAll(false)" style="padding:5px 12px;border-radius:99px;border:0.5px solid rgba(255,255,255,0.15);background:rgba(255,255,255,0.04);color:rgba(255,255,255,0.6);font-size:11px;cursor:pointer;font-family:'Inter',sans-serif;">☐ Ни одной</button>
-          <span id="import-count" style="margin-left:auto;font-size:11px;color:rgba(255,255,255,0.5);align-self:center;"></span>
-        </div>
-        <div id="import-list" style="flex:1;overflow-y:auto;padding:4px 8px;background:rgba(255,255,255,0.02);border-radius:8px;"></div>
-        <div class="modal-btns" style="margin-top:12px;">
-          <button class="modal-cancel" onclick="closeImportModal()">Отмена</button>
-          <button class="modal-save" id="import-confirm-btn" onclick="confirmImport()">Импортировать</button>
-        </div>
-      </div>
-    </div>
   </div>
 
   <!-- ── CHAT SCREEN ── -->
@@ -936,6 +900,44 @@ body.cal-dragging,body.cal-dragging *{touch-action:none!important;user-select:no
   </div>
 
   <!-- DOCK -->
+  <!-- ── Edit modal (НА ВЕРХНЕМ УРОВНЕ #phone — раньше был внутри #screen-hist, из-за
+       чего position:absolute модалки пряталась под display:none неактивного экрана:
+       тап по задаче на главной «не открывал» её. Теперь открывается с любого экрана) ── -->
+  <div class="modal-overlay" id="modal">
+    <div class="modal">
+      <div class="modal-title">Редактировать запись</div>
+      <textarea class="modal-textarea" id="modal-text"></textarea>
+      <div id="modal-tag-picker" style="display:flex;flex-wrap:wrap;gap:6px;margin:10px 0;"></div>
+      <!-- AI-связи — появляются после openEdit, когда links загрузятся -->
+      <div id="modal-links-section" style="display:none;margin-top:14px;padding-top:14px;border-top:0.5px solid rgba(255,255,255,0.08);">
+        <div style="font-size:11px;color:rgba(255,255,255,0.5);margin-bottom:8px;letter-spacing:0.5px;text-transform:uppercase;font-weight:600;">🔗 Похожие записи</div>
+        <div id="modal-links-list" style="display:flex;flex-direction:column;gap:6px;max-height:200px;overflow-y:auto;"></div>
+      </div>
+      <div class="modal-btns">
+        <button class="modal-cancel" onclick="closeModal()">Отмена</button>
+        <button class="modal-save" onclick="saveEdit()">Сохранить</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Import preview modal — shows what will be imported, allows deselect -->
+  <div class="modal-overlay" id="import-modal">
+    <div class="modal" style="max-width:480px;max-height:80vh;display:flex;flex-direction:column;">
+      <div class="modal-title">Импорт записей</div>
+      <div id="import-summary" style="font-size:12px;color:rgba(255,255,255,0.6);margin-bottom:10px;"></div>
+      <div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap;">
+        <button id="import-select-all" onclick="importToggleAll(true)" style="padding:5px 12px;border-radius:99px;border:0.5px solid rgba(108,71,255,0.4);background:rgba(108,71,255,0.1);color:rgba(139,92,246,0.9);font-size:11px;cursor:pointer;font-family:'Inter',sans-serif;">☑ Все</button>
+        <button id="import-deselect-all" onclick="importToggleAll(false)" style="padding:5px 12px;border-radius:99px;border:0.5px solid rgba(255,255,255,0.15);background:rgba(255,255,255,0.04);color:rgba(255,255,255,0.6);font-size:11px;cursor:pointer;font-family:'Inter',sans-serif;">☐ Ни одной</button>
+        <span id="import-count" style="margin-left:auto;font-size:11px;color:rgba(255,255,255,0.5);align-self:center;"></span>
+      </div>
+      <div id="import-list" style="flex:1;overflow-y:auto;padding:4px 8px;background:rgba(255,255,255,0.02);border-radius:8px;"></div>
+      <div class="modal-btns" style="margin-top:12px;">
+        <button class="modal-cancel" onclick="closeImportModal()">Отмена</button>
+        <button class="modal-save" id="import-confirm-btn" onclick="confirmImport()">Импортировать</button>
+      </div>
+    </div>
+  </div>
+
   <div class="dock" style="display:none;">
     <button class="dock-item active" id="dock-main" onclick="goTo('main')">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
