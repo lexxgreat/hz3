@@ -5551,13 +5551,266 @@ async function addChatMessage(role, content, confirmData) {
   renderChat();
 }
 
-// ── DAILY SUMMARY — итог дня в 00:00 (или при открытии приложения позже) ──
+// ── DAILY SUMMARY v2 — итог дня в 22:00 по Москве ──
 // Логика:
-// 1. Firestore meta/daily_summary хранит lastDate (YYYY-MM-DD) — общий для всех устройств, чтобы не было дублей
-// 2. При открытии приложения проверяем: сегодня уже был итог?
-// 3. Если нет — бронируем день в Firestore ДО генерации, берём заметки за вчера → AI генерирует summary → сообщение в чат
-// 4. При ошибке генерации бронь освобождается — ретрай при следующем открытии
-// 5. Сообщение помечаем special маркером 📊 Итог дня
+// 1. В 22:00 МСК (если приложение открыто) или при открытии после 22:00 — итог ЗА СЕГОДНЯ.
+// 2. Если открыли позже и итог за вчера не подведён — предлагаем подвести за вчера.
+// 3. СТАТУСЫ — железно (главное требование):
+//    «Сделано»   = ТОЛЬКО done===true и doneAt внутри дня (проверка статуса, не догадки)
+//    «Добавлено» = созданные в этот день (createdAt) — это ЗАПЛАНИРОВАНО, НЕ выполнение
+//    «План дня»  = scheduledDate=день и не done — запланировано, не выполнено
+//    ИИ ЗАПРЕЩЕНО называть выполненным то, что было только добавлено/запланировано.
+// 4. Денег/времени/настроения в данных нет — спрашиваем в диалоге итогов, сохраняем в meta/ds_<день>.
+// 5. Бронь meta/daily_summary (lastDate = ИТОГОВЫЙ день) — без дублей между устройствами;
+//    «Позже» возвращает предыдущую бронь — итог будет предложен снова.
+
+function mskNow() { return new Date(Date.now() + 3 * 60 * 60 * 1000); } // «московские часы» — читать через getUTC*
+
+function msUntilNext2200Msk() {
+  const m = mskNow();
+  const target = new Date(m.getTime());
+  target.setUTCHours(22, 0, 0, 0);
+  let ms = target.getTime() - m.getTime();
+  if (ms <= 0) ms += 24 * 60 * 60 * 1000;
+  return ms;
+}
+
+let dailySummaryTimer = null;
+function scheduleDailySummaryTick() {
+  if (dailySummaryTimer) clearTimeout(dailySummaryTimer);
+  dailySummaryTimer = setTimeout(async () => {
+    try { await checkAndGenerateDailySummary(); } catch(e) {}
+    scheduleDailySummaryTick();
+  }, msUntilNext2200Msk());
+}
+
+// «Сделано» за день: статус выполнено ПОДТВЕРЖДЁН (done===true, doneAt внутри дня)
+function getDoneNotesForDate(dateStr) {
+  return notes.filter(n => n.done === true && n.doneAt && formatDateKey(new Date(n.doneAt)) === dateStr);
+}
+
+// Выполненные шаги желаний за день (тоже по статусу done/completedAt)
+function getDoneMilestonesForDate(dateStr) {
+  const out = [];
+  (wishes || []).forEach(w => (w.milestones || []).forEach(ms => {
+    if (ms.done && ms.completedAt && formatDateKey(new Date(ms.completedAt)) === dateStr) {
+      out.push({ text: ms.text, wish: w.text });
+    }
+  }));
+  return out;
+}
+
+// Запланировано на эту дату, но НЕ выполнено
+function getPlannedForDate(dateStr) {
+  return notes.filter(n => scheduledOf(n) === dateStr && !n.done);
+}
+
+function fmtTimeMsk(iso) {
+  if (!iso) return '';
+  return new Date(new Date(iso).getTime() + 3*60*60*1000).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', timeZone: 'UTC' });
+}
+
+function dsListHtml(arr, empty, max) {
+  if (!arr.length) return '<div style="font-size:11.5px;color:rgba(255,255,255,0.35);font-style:italic;">' + empty + '</div>';
+  const show = arr.slice(0, max);
+  const more = arr.length > show.length ? '<div style="font-size:11px;color:rgba(255,255,255,0.35);">…и ещё ' + (arr.length - show.length) + '</div>' : '';
+  return show.map(t => '<div style="font-size:12.5px;color:rgba(255,255,255,0.75);padding:2px 0;word-break:break-word;">' + escHtml(t) + '</div>').join('') + more;
+}
+
+const DS_MOODS = [
+  { e: '😞', v: 'тяжёлый' },
+  { e: '😕', v: 'так себе' },
+  { e: '😐', v: 'нейтральное' },
+  { e: '🙂', v: 'хорошее' },
+  { e: '😄', v: 'отличное' },
+];
+
+let dsState = { day: null, mood: null, prevLast: null };
+
+function openDailySummaryModal(day) {
+  const doneNotes = getDoneNotesForDate(day);
+  const doneMs = getDoneMilestonesForDate(day);
+  const added = getNotesForDate(day);
+  const planned = getPlannedForDate(day);
+
+  const dLbl = day.split('-').reverse().join('.');
+  dsState.day = day;
+  dsState.mood = null;
+
+  let modal = document.getElementById('daily-summary-modal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'daily-summary-modal';
+    modal.className = 'modal-overlay';
+    modal.innerHTML = `
+      <div class="modal" style="max-width:440px;max-height:88vh;overflow-y:auto;">
+        <div class="modal-title" id="ds-title">📊 Итог дня</div>
+        <div id="ds-stats"></div>
+        <div style="margin-top:14px;padding-top:12px;border-top:0.5px solid rgba(255,255,255,0.08);">
+          <div style="font-size:11px;color:rgba(255,255,255,0.5);margin-bottom:6px;letter-spacing:0.5px;text-transform:uppercase;font-weight:600;">Настроение дня</div>
+          <div id="ds-moods" style="display:flex;gap:8px;">${DS_MOODS.map(m => `<button onclick="dsSetMood('${m.v}')" data-v="${m.v}" style="flex:1;aspect-ratio:1;font-size:20px;border-radius:12px;border:0.5px solid rgba(255,255,255,0.1);background:rgba(255,255,255,0.04);cursor:pointer;">${m.e}</button>`).join('')}</div>
+        </div>
+        <div style="display:flex;gap:10px;margin-top:14px;">
+          <div style="flex:1;">
+            <div style="font-size:11px;color:rgba(255,255,255,0.5);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.5px;">💰 Потрачено, ₽</div>
+            <input id="ds-money" type="number" min="0" step="10" placeholder="—" style="width:100%;background:rgba(255,255,255,0.04);border:0.5px solid rgba(255,255,255,0.1);border-radius:10px;padding:9px;color:#fff;font-size:13px;font-family:Inter,sans-serif;outline:none;color-scheme:dark;">
+          </div>
+          <div style="flex:1;">
+            <div style="font-size:11px;color:rgba(255,255,255,0.5);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.5px;">⏱ В фокусе, ч</div>
+            <input id="ds-time" type="number" min="0" max="24" step="0.5" placeholder="—" style="width:100%;background:rgba(255,255,255,0.04);border:0.5px solid rgba(255,255,255,0.1);border-radius:10px;padding:9px;color:#fff;font-size:13px;font-family:Inter,sans-serif;outline:none;color-scheme:dark;">
+          </div>
+        </div>
+        <div class="modal-btns">
+          <button class="modal-cancel" onclick="closeDailySummaryModal(true)">Позже</button>
+          <button class="modal-save" id="ds-go" onclick="generateDailySummary()">Подвести итог</button>
+        </div>
+      </div>`;
+    document.body.appendChild(modal);
+  }
+
+  // Статистика дня — статусы проверены: добавленное ≠ выполненное
+  const parts = [];
+  parts.push('<div style="background:rgba(0,255,140,0.05);border:0.5px solid rgba(0,255,140,0.2);border-radius:12px;padding:10px 12px;margin-bottom:8px;">'
+    + '<div style="font-size:11px;font-weight:700;color:rgba(0,255,140,0.8);margin-bottom:5px;">✅ СДЕЛАНО — статус «выполнено» подтверждён (' + doneNotes.length + ')</div>'
+    + dsListHtml(doneNotes.map(n => '✓ ' + n.text), 'Ничего не отмечено выполненным', 6) + '</div>');
+  if (doneMs.length) parts.push('<div style="background:rgba(0,212,255,0.05);border:0.5px solid rgba(0,212,255,0.2);border-radius:12px;padding:10px 12px;margin-bottom:8px;">'
+    + '<div style="font-size:11px;font-weight:700;color:rgba(0,212,255,0.8);margin-bottom:5px;">🎁 ШАГИ ЖЕЛАНИЙ (' + doneMs.length + ')</div>'
+    + dsListHtml(doneMs.map(m => m.text + ' ← ' + m.wish), '', 4) + '</div>');
+  parts.push('<div style="background:rgba(108,71,255,0.06);border:0.5px solid rgba(108,71,255,0.25);border-radius:12px;padding:10px 12px;margin-bottom:8px;">'
+    + '<div style="font-size:11px;font-weight:700;color:rgba(139,92,246,0.85);margin-bottom:5px;">🆕 ДОБАВЛЕНО (запланировано, НЕ выполнено) (' + added.length + ')</div>'
+    + dsListHtml(added.map(n => n.text), 'Новых записей не было', 6) + '</div>');
+  if (planned.length) parts.push('<div style="background:rgba(255,160,0,0.05);border:0.5px solid rgba(255,160,0,0.2);border-radius:12px;padding:10px 12px;margin-bottom:8px;">'
+    + '<div style="font-size:11px;font-weight:700;color:rgba(255,160,0,0.8);margin-bottom:5px;">📅 ПЛАН НА ЭТОТ ДЕНЬ — не выполнен (' + planned.length + ')</div>'
+    + dsListHtml(planned.map(n => n.text), '', 4) + '</div>');
+  document.getElementById('ds-stats').innerHTML = parts.join('');
+  document.getElementById('ds-title').textContent = '📊 Итог дня — ' + dLbl;
+  modal.classList.add('open');
+}
+window.dsSetMood = function(v) {
+  dsState.mood = v;
+  document.querySelectorAll('#ds-moods button').forEach(b => {
+    const on = b.dataset.v === v;
+    b.style.background = on ? 'rgba(108,71,255,0.3)' : 'rgba(255,255,255,0.04)';
+    b.style.borderColor = on ? 'rgba(139,92,246,0.7)' : 'rgba(255,255,255,0.1)';
+  });
+};
+window.closeDailySummaryModal = function(release) {
+  const modal = document.getElementById('daily-summary-modal');
+  if (modal) modal.classList.remove('open');
+  if (release) {
+    // «Позже» — возвращаем бронь как была: итог будет предложен снова
+    try { setDoc(uDocRef('meta', 'daily_summary'), { lastDate: dsState.prevLast }); } catch(e) {}
+  }
+};
+
+// Резерв без ИИ — те же железные правила статусов
+function buildLocalDailySummary(day, doneNotes, doneMs, added, planned, mood, money, time) {
+  const L = [];
+  L.push('📊 Итог дня (' + day.split('-').reverse().join('.') + ')');
+  L.push('');
+  L.push('✅ Сделано (' + doneNotes.length + '): ' + (doneNotes.length ? doneNotes.map(n => n.text).join('; ') : 'ничего не отмечено выполненным'));
+  if (doneMs.length) L.push('🎁 Шаги желаний (' + doneMs.length + '): ' + doneMs.map(m => m.text).join('; '));
+  L.push('🆕 Добавлено/запланировано (' + added.length + '): ' + (added.length ? added.map(n => n.text).join('; ') + ' — это планы, НЕ выполнения' : 'новых записей не было'));
+  if (planned.length) L.push('📅 Запланировано на день, не выполнено (' + planned.length + '): ' + planned.map(n => n.text).join('; '));
+  L.push('💰 Потрачено: ' + (money !== null ? money + ' ₽' : 'не указано'));
+  L.push('⏱ Время в фокусе: ' + (time !== null ? time + ' ч' : 'не указано'));
+  L.push('🙂 Настроение: ' + (mood || 'не отмечено'));
+  return L.join('\n');
+}
+
+async function generateDailySummary() {
+  const btn = document.getElementById('ds-go');
+  if (btn) { btn.disabled = true; btn.textContent = 'Формирую…'; }
+  const day = dsState.day;
+  const mood = dsState.mood;
+  const moneyRaw = (document.getElementById('ds-money') || {}).value || '';
+  const timeRaw = (document.getElementById('ds-time') || {}).value || '';
+  const money = moneyRaw !== '' ? Number(moneyRaw) : null;
+  const time = timeRaw !== '' ? Number(timeRaw) : null;
+
+  const doneNotes = getDoneNotesForDate(day);
+  const doneMs = getDoneMilestonesForDate(day);
+  const added = getNotesForDate(day);
+  const planned = getPlannedForDate(day);
+
+  // Ответы пользователя (деньги/время/настроение) — в Firestore, пригодятся ИИ-психологу
+  try { await setDoc(uDocRef('meta', 'ds_' + day), { mood: mood || null, money, time, savedAt: new Date().toISOString() }); } catch(e) {}
+
+  let text;
+  try {
+    const mk = (arr, f) => arr.map(f).join('\n') || '—';
+    const systemPrompt = `Ты — персональный ИИ-ассистент «Хэзэнштейн». Подводишь итог дня ${day}.
+Тебе даны списки, УЖЕ проверенные по статусам. ЖЕЛЕЗНЫЕ ПРАВИЛА:
+1. «Сделано» — ТОЛЬКО записи из списка СДЕЛАНО (их статус «выполнено» подтверждён). Ничего другого.
+2. Записи из списков ДОБАВЛЕНО и ПЛАН — это ЗАПЛАНИРОВАНО, а НЕ выполнено. НИКОГДА не называй их сделанными/выполненными/завершёнными.
+3. Если сделано 0 — честно скажи, что выполненного не было. Не приукрашивай.
+4. Не выдумывай события, которых нет в данных.
+Структура ответа:
+📊 Итог дня (${day})
+✅ Сделано: перечисли из СДЕЛАНО (если пусто — так и скажи)
+🆕 Добавлено (запланировано): перечисли из ДОБАВЛЕНО, это планы на будущее
+📅 План дня не выполнен: из ПЛАН (если есть) — мягко, без упрёков
+💰 Деньги и ⏱ время: как указал пользователь
+🙂 Настроение: как отметил пользователь
+🌟 Главное за день: 2-3 предложения сути (только из данных!)
+Заверши вопросом «Что завтра в фокусе?»
+Объём 80-150 слов, пиши на «ты», тепло и без пафоса.`;
+    const userPrompt = `СДЕЛАНО (статус подтверждён):\n${mk(doneNotes, n => '- ' + n.text)}\n\nШАГИ ЖЕЛАНИЙ:\n${mk(doneMs, m => '- ' + m.text + ' (желание: ' + m.wish + ')')}\n\nДОБАВЛЕНО (запланировано, НЕ выполнено):\n${mk(added, n => '- ' + n.text)}\n\nПЛАН НА ДЕНЬ, не выполнен:\n${mk(planned, n => '- ' + n.text)}\n\n💰 Потрачено: ${money !== null ? money + ' ₽' : 'не указано'}\n⏱ Время в фокусе: ${time !== null ? time + ' ч' : 'не указано'}\n🙂 Настроение: ${mood || 'не отмечено'}`;
+    text = await callPolzaAI([
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userPrompt }
+    ], { max_tokens: 600, temperature: 0.7 });
+  } catch(e) { console.error('[Daily Summary] AI error:', e); }
+  if (!text) text = buildLocalDailySummary(day, doneNotes, doneMs, added, planned, mood, money, time);
+
+  try { await addChatMessage('assistant', text); } catch(e) {}
+  window.closeDailySummaryModal(false);
+  setStatus('📊 Итог дня готов — смотри чат 💬', 4000);
+  if (btn) { btn.disabled = false; btn.textContent = 'Подвести итог'; }
+}
+window.generateDailySummary = generateDailySummary;
+
+async function checkAndGenerateDailySummary() {
+  if (!currentUid) return;
+  const today = getTodayDateString();
+  const hour = mskNow().getUTCHours();
+
+  let lastSummary = null;
+  try {
+    const snap = await getDoc(uDocRef('meta', 'daily_summary'));
+    if (snap.exists()) lastSummary = snap.data().lastDate || null;
+  } catch(e) {}
+
+  // Какой день подводим:
+  // - после 22:00 МСК (до полуночи) — итог за СЕГОДНЯ
+  // - иначе (утром/днём) — пропущенный ВЧЕРА (если за вчера ещё не подведён)
+  let day;
+  if (hour >= 22) {
+    if (lastSummary === today) return; // сегодня уже подведён
+    day = today;
+  } else {
+    const yesterday = getYesterdayDateString();
+    if (lastSummary === yesterday || lastSummary === today) return;
+    day = yesterday;
+  }
+
+  const hasAnyData = getNotesForDate(day).length > 0 || getDoneNotesForDate(day).length > 0
+    || getDoneMilestonesForDate(day).length > 0 || getPlannedForDate(day).length > 0;
+  if (!hasAnyData) {
+    // Нет данных за день — помечаем, чтобы не предлагать диалог каждый запуск
+    try { await setDoc(uDocRef('meta', 'daily_summary'), { lastDate: day }); } catch(e) {}
+    return;
+  }
+
+  // Бронь ДО показа диалога: другие устройства не откроют его параллельно.
+  // «Позже» вернёт prevLast — итог будет предложен снова.
+  dsState.day = day;
+  dsState.prevLast = lastSummary;
+  try { await setDoc(uDocRef('meta', 'daily_summary'), { lastDate: day }); } catch(e) { return; }
+  openDailySummaryModal(day);
+}
+window.checkAndGenerateDailySummary = checkAndGenerateDailySummary;
+window.scheduleDailySummaryTick = scheduleDailySummaryTick;
 
 function getYesterdayDateString() {
   const d = new Date();
@@ -5576,67 +5829,6 @@ function getNotesForDate(dateStr) {
     return formatDateKey(new Date(n.createdAt)) === dateStr;
   });
 }
-
-async function checkAndGenerateDailySummary() {
-  if (!currentUid) return;
-  const today = getTodayDateString();
-
-  // Флаг «итог за сегодня уже сделан» хранится в Firestore (meta/daily_summary),
-  // а не в localStorage — иначе каждое устройство генерирует свой дублирующий итог.
-  let lastSummary = null;
-  try {
-    const snap = await getDoc(uDocRef('meta', 'daily_summary'));
-    if (snap.exists()) lastSummary = snap.data().lastDate || null;
-  } catch(e) {}
-  if (lastSummary === today) return; // уже сделан за сегодня (на любом устройстве)
-
-  const yesterday = getYesterdayDateString();
-  const yesterdayNotes = getNotesForDate(yesterday);
-  if (yesterdayNotes.length === 0) {
-    // Нет заметок вчера — пропускаем, но день помечаем, чтобы не проверять каждый запуск
-    try { await setDoc(uDocRef('meta', 'daily_summary'), { lastDate: today }); } catch(e) {}
-    return;
-  }
-
-  // Бронируем день ДО генерации: второе устройство увидит lastDate=today и пропустит
-  try { await setDoc(uDocRef('meta', 'daily_summary'), { lastDate: today }); } catch(e) { return; }
-
-  try {
-    const notesText = yesterdayNotes.map((n, i) => {
-      const time = n.createdAt ? new Date(n.createdAt).toLocaleTimeString('ru-RU', {hour:'2-digit', minute:'2-digit'}) : '';
-      return `${i+1}. [${time}]${n.tag ? ' #' + n.tag : ''} ${n.text}`;
-    }).join('\n');
-
-    const systemPrompt = `Ты — персональный ИИ-ассистент «Хэзэнштейн». Пользователь только что открыл приложение.
-Твоя задача — создать краткий и тёплый итог вчерашнего дня на основе его записей.
-
-Правила:
-- Начни с эмодзи 📊 и заголовка «Итог дня (вчера, ${yesterday})»
-- 3-5 ключевых тем/событий дня (без воды, по сути)
-- Эмоциональный фон дня — одна фраза
-- Если есть задачи — отметить выполненные/невыполненные
-- Заверши коротким вопросом-приглашением: «Что сегодня в фокусе?»
-- Объём: 80-150 слов
-- Пиши на «ты», дружелюбно, без пафоса`;
-
-    const userPrompt = `Записи за вчера:\n${notesText}`;
-
-    const summary = await callPolzaAI([
-      { role: 'system', content: systemPrompt },
-      { role: 'user', content: userPrompt }
-    ], { max_tokens: 600, temperature: 0.7 });
-
-    if (summary) {
-      // Добавляем как сообщение от ассистента в чат
-      await addChatMessage('assistant', summary);
-    }
-  } catch(e) {
-    console.error('[Daily Summary] error:', e);
-    // Освобождаем бронь — попробуем в следующий раз
-    try { await setDoc(uDocRef('meta', 'daily_summary'), { lastDate: lastSummary }); } catch(_) {}
-  }
-}
-window.checkAndGenerateDailySummary = checkAndGenerateDailySummary;
 
 // ── AI-ПСИХОЛОГ (Phase 5) — раз в 7 дней анализирует паттерны и задаёт Socratic-вопросы ──
 // Осторожно:
@@ -7056,6 +7248,8 @@ onAuthStateChanged(auth, async (user) => {
     });
     // Daily summary — проверяем, был ли итог за сегодня (генерируется в фоне, не блокируя UI)
     setTimeout(() => checkAndGenerateDailySummary(), 2000);
+    // Планировщик: в 22:00 МСК открывает диалог «Итог дня», если приложение открыто
+    scheduleDailySummaryTick();
     // AI-психолог — раз в 7 дней, после daily summary
     setTimeout(() => checkAndGeneratePsychologistInsight(), 5000);
     // Проверяем, нужно ли показать prompt «Зарегистрируйся» (после 10 заметок или 1 желания)
