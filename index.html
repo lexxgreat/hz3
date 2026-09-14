@@ -4668,7 +4668,7 @@ function buildChatTools() {
         properties: {
           text: { type: 'string', description: 'Текст записи, который увидит пользователь и который сохранится в базу' },
           tag: { type: 'string', enum: tagLabels, description: 'Сфера жизни, к которой относится запись' },
-          wish: { type: 'string', description: 'shortTag желания из раздела ЖЕЛАНИЯ (текст в [квадратных скобках]). Заполняй, если запись относится к желанию — запись привяжется к нему и получит его тег автоматически' },
+          wish: { type: 'string', description: 'shortTag желания из раздела ЖЕЛАНИЯ — копируй ТОЧНО как в [квадратных скобках], не переводи и не транслитерируй. Заполняй, если запись относится к желанию — запись привяжется к нему и получит его тег автоматически' },
           to_todo: { type: 'boolean', description: 'true — поставить задачу в тудушку и календарь (конкретные шаги и дела); обычные мысли/заметки — false или пропусти' }
         },
         required: ['text','tag']
@@ -5231,7 +5231,7 @@ function getBaseInstructions() {
 
 ЗАПИСИ К ЖЕЛАНИЮ (поля wish и to_todo у propose_note):
 - В разделе ЖЕЛАНИЯ выше перечислены все желания пользователя — у каждого shortTag в [квадратных скобках]
-- Если пользователь упоминает желание (по названию, теме или shortTag — например «пожить в Москва Сити», «по поводу Бали») — передай shortTag этого желания в поле wish: запись привяжется к желанию и автоматически получит тег желания
+- Если пользователь упоминает желание (по названию, теме или shortTag — например «пожить в Москва Сити», «по поводу Бали») — передай shortTag этого желания в поле wish: запись привяжется к желанию и автоматически получит тег желания. Копируй shortTag в поле wish символ в символ из раздела ЖЕЛАНИЯ (как есть, без перевода и транслитерации)
 - НЕ выдумывай shortTag — используй только те, что реально есть в разделе ЖЕЛАНИЯ; если подходящего желания нет — оставь wish пустым
 - Конкретные шаги и дела к желанию — ставь to_todo: true (попадут в тудушку и в календарь); мысли, идеи, справки про желание — без to_todo
 - В разделах ТУДУШКА и КАЛЕНДАРЬ задачи желаний помечены тегом желания — по нему видно, какие шаги уже стоят в очереди и на какие дни запланированы
@@ -5564,6 +5564,17 @@ milestones: 3-5 конкретных шага, 3-7 слов каждый.`;
 }
 window.suggestWishEnhancements = suggestWishEnhancements;
 
+// нормализация shortTag для сопоставления: транслит кириллицы + только буквы/цифры —
+// чтобы «moskva-siti», «Москва-Сити» и «москва-сити» считались одним желанием
+function normalizeWishKey(s) {
+  const ru = 'абвгдеёжзийклмнопрстуфхцчшщъыьэюя';
+  const lat = ['a','b','v','g','d','e','yo','zh','z','i','y','k','l','m','n','o','p','r','s','t','u','f','h','c','ch','sh','sch','','y','','e','yu','ya'];
+  return String(s || '').toLowerCase().split('').map(ch => {
+    const i = ru.indexOf(ch);
+    return i >= 0 ? lat[i] : ch;
+  }).join('').replace(/[^a-z0-9]/g, '');
+}
+
 async function sendChatMessage(userText) {
   if (!userText.trim()) return;
 
@@ -5653,9 +5664,9 @@ async function sendChatMessage(userText) {
       let wishNote = '';
       // привязка к желанию: тег желания приоритетен над тегом сферы
       if (proposedNote.wish) {
-        const ws = String(proposedNote.wish).toLowerCase().trim();
-        const w = wishes.find(x => (x.shortTag || '').toLowerCase() === ws)
-               || wishes.find(x => (x.shortTag || '').toLowerCase().includes(ws) || ws.includes((x.shortTag || '').toLowerCase()));
+        const ws = normalizeWishKey(proposedNote.wish);
+        const w = ws ? (wishes.find(x => normalizeWishKey(x.shortTag) === ws)
+               || wishes.find(x => { const k = normalizeWishKey(x.shortTag); return k && (k.includes(ws) || ws.includes(k)); })) : null;
         if (w) {
           wishId = w.id;
           tag = w.shortTag || tag;
