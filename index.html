@@ -673,10 +673,10 @@ body.cal-dragging,body.cal-dragging *{touch-action:none!important;user-select:no
       <div id="graph-hint" style="position:absolute;top:6px;left:8px;right:8px;z-index:20;"></div>
       <canvas id="graph-canvas" style="position:absolute;inset:0;width:100%;height:100%;touch-action:none;"></canvas>
       <div id="graph-loading" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;padding:0 30px;color:rgba(255,255,255,0.4);font-size:13px;font-family:'Inter',sans-serif;">Загрузка графа…</div>
-      <div id="graph-legend" style="position:absolute;bottom:8px;left:8px;background:rgba(0,0,0,0.5);border-radius:8px;padding:6px 10px;font-size:10px;color:rgba(255,255,255,0.6);font-family:'Inter',sans-serif;backdrop-filter:blur(8px);line-height:1.5;pointer-events:none;">
-        <div>⬤ цветной узел — сфера жизни, ◉ золотое — желание</div>
-        <div>● точки — записи вокруг своей сферы</div>
-        <div>🔗 линии — связь по смыслу (строит ИИ) · тапни запись — покажу почему</div>
+      <div id="graph-zoom-controls" style="position:absolute;bottom:14px;right:10px;display:flex;flex-direction:column;gap:6px;z-index:20;">
+        <button onclick="graphZoomStep(1.35)" title="Ближе" style="width:34px;height:34px;border-radius:10px;border:0.5px solid rgba(108,71,255,0.4);background:rgba(20,18,34,0.75);color:rgba(255,255,255,0.85);font-size:17px;cursor:pointer;backdrop-filter:blur(8px);font-family:Inter,sans-serif;line-height:1;">＋</button>
+        <button onclick="graphZoomStep(1/1.35)" title="Дальше" style="width:34px;height:34px;border-radius:10px;border:0.5px solid rgba(108,71,255,0.4);background:rgba(20,18,34,0.75);color:rgba(255,255,255,0.85);font-size:17px;cursor:pointer;backdrop-filter:blur(8px);font-family:Inter,sans-serif;line-height:1;">－</button>
+        <button onclick="graphZoomReset()" title="Вся карта" style="width:34px;height:34px;border-radius:10px;border:0.5px solid rgba(108,71,255,0.4);background:rgba(20,18,34,0.75);color:rgba(255,255,255,0.85);font-size:13px;cursor:pointer;backdrop-filter:blur(8px);font-family:Inter,sans-serif;line-height:1;">⤢</button>
       </div>
     </div>
   </div>
@@ -2426,6 +2426,137 @@ let graphAnimating = false;
 let graphSelectedIdx = null;  // выбранный узел (тап-селекция) — для подсветки связей
 let graphLeafCount = 0;
 
+// ── КАМЕРА (семантический зум) ──
+// Мир = координаты узлов. Экран: sx = (wx - cam.cx)*k + w/2.
+// k<1 — отдалились (видны только сферы и желания), k>1 — приближаемся:
+// проявляются записи, их подписи, а на глубоком зуме — шаги желания и диалоги с ИИ.
+let graphCam = null; // {k, cx, cy, tk, tcx, tcy} — текущие и целевые (плавный лерп)
+const GRAPH_K_MIN = 0.35, GRAPH_K_MAX = 5;
+const graphDeepChat = {};       // wishId → {msgs:[{role, text}]} — фрагменты диалога для глубокого слоя
+
+function ensureGraphCamera() {
+  if (graphCam) return;
+  const w = (graphCanvas && graphCanvas.width) || 400;
+  const h = (graphCanvas && graphCanvas.height) || 600;
+  graphCam = { k: 1, cx: w / 2, cy: h / 2, tk: 1, tcx: w / 2, tcy: h / 2 };
+}
+function graphSmooth(a, b, x) {
+  const t = Math.max(0, Math.min(1, (x - a) / (b - a)));
+  return t * t * (3 - 2 * t);
+}
+function graphW2S(x, y) {
+  ensureGraphCamera();
+  const w = (graphCanvas && graphCanvas.width) || 400;
+  const h = (graphCanvas && graphCanvas.height) || 600;
+  return { x: (x - graphCam.cx) * graphCam.k + w / 2, y: (y - graphCam.cy) * graphCam.k + h / 2 };
+}
+function graphS2W(x, y) {
+  ensureGraphCamera();
+  const w = (graphCanvas && graphCanvas.width) || 400;
+  const h = (graphCanvas && graphCanvas.height) || 600;
+  return { x: (x - w / 2) / graphCam.k + graphCam.cx, y: (y - h / 2) / graphCam.k + graphCam.cy };
+}
+// Вся карта в кадр: целевые значения — камера доедет плавно
+function graphFitCamera(instant) {
+  ensureGraphCanvasSized();
+  const w = (graphCanvas && graphCanvas.width) || 400;
+  const h = (graphCanvas && graphCanvas.height) || 600;
+  const cx = w / 2, cy = h / 2;
+  const hubs = graphNodes.filter(n => n.kind !== 'note');
+  const R = Math.max(90, Math.min(w, h) * 0.33);
+  const worldR = (hubs.length ? R * 1.18 : 120) + 150;
+  const k = Math.max(GRAPH_K_MIN, Math.min(1.25, Math.min(w, h) / (2 * worldR)));
+  ensureGraphCamera();
+  graphCam.tk = k; graphCam.tcx = cx; graphCam.tcy = cy;
+  if (instant) { graphCam.k = k; graphCam.cx = cx; graphCam.cy = cy; }
+}
+function graphClampCamTargets() {
+  ensureGraphCamera();
+  const w = (graphCanvas && graphCanvas.width) || 400;
+  const h = (graphCanvas && graphCanvas.height) || 600;
+  graphCam.tk = Math.max(GRAPH_K_MIN, Math.min(GRAPH_K_MAX, graphCam.tk));
+  graphCam.tcx = Math.max(w / 2 - 900, Math.min(w / 2 + 900, graphCam.tcx));
+  graphCam.tcy = Math.max(h / 2 - 900, Math.min(h / 2 + 900, graphCam.tcy));
+}
+// Зум с якорем в точке экрана (колесо мыши, кнопки)
+function graphZoomAt(sx, sy, factor) {
+  ensureGraphCamera();
+  const w = (graphCanvas && graphCanvas.width) || 400;
+  const h = (graphCanvas && graphCanvas.height) || 600;
+  const wpt = graphS2W(sx, sy);
+  graphCam.tk = Math.max(GRAPH_K_MIN, Math.min(GRAPH_K_MAX, graphCam.tk * factor));
+  graphCam.tcx = wpt.x - (sx - w / 2) / graphCam.tk;
+  graphCam.tcy = wpt.y - (sy - h / 2) / graphCam.tk;
+  graphClampCamTargets();
+}
+// Щипок — без лагов: текущие и целевые значения сразу
+function graphPinchTo(k, midX, midY, wpt) {
+  ensureGraphCamera();
+  const w = (graphCanvas && graphCanvas.width) || 400;
+  const h = (graphCanvas && graphCanvas.height) || 600;
+  const nk = Math.max(GRAPH_K_MIN, Math.min(GRAPH_K_MAX, k));
+  graphCam.k = graphCam.tk = nk;
+  graphCam.cx = graphCam.tcx = wpt.x - (midX - w / 2) / nk;
+  graphCam.cy = graphCam.tcy = wpt.y - (midY - h / 2) / nk;
+  graphClampCamTargets();
+}
+function graphPanBy(dx, dy) {
+  ensureGraphCamera();
+  graphCam.cx = graphCam.tcx = graphCam.cx - dx / graphCam.k;
+  graphCam.cy = graphCam.tcy = graphCam.cy - dy / graphCam.k;
+  graphClampCamTargets();
+}
+function graphCameraTick() {
+  ensureGraphCamera();
+  const L = 0.22;
+  graphCam.k += (graphCam.tk - graphCam.k) * L;
+  graphCam.cx += (graphCam.tcx - graphCam.cx) * L;
+  graphCam.cy += (graphCam.tcy - graphCam.cy) * L;
+}
+window.graphZoomStep = function (f) { graphZoomAt((graphCanvas && graphCanvas.width || 400) / 2, (graphCanvas && graphCanvas.height || 600) / 2, f); };
+window.graphZoomReset = function () { graphFitCamera(false); };
+
+// ── Глубокий слой: фрагменты диалога желания (лениво, один раз) ──
+async function ensureWishChatDeep(wishId) {
+  if (!wishId || graphDeepChat[wishId]) return;
+  graphDeepChat[wishId] = { msgs: [] }; // placeholder — чтобы не грузить дважды
+  try {
+    const snap = await getDocs(query(wishMessagesCol(wishId), orderBy('time', 'desc')));
+    const msgs = snap.docs.map(d => d.data()).slice(0, 3).reverse()
+      .map(m => ({ role: m.role || 'assistant', text: String(m.content || '').slice(0, 150) }))
+      .filter(m => m.text);
+    graphDeepChat[wishId] = { msgs };
+  } catch (e) { console.warn('[Graph] deep chat failed', e); }
+}
+// Перенос текста по словам на canvas (для пузырей диалога)
+function graphWrapLines(ctx, text, maxW, maxLines) {
+  const words = String(text).split(/\s+/).filter(Boolean);
+  const lines = [];
+  let cur = '';
+  for (const wd of words) {
+    const test = cur ? cur + ' ' + wd : wd;
+    if (ctx.measureText(test).width <= maxW || !cur) cur = test;
+    else { lines.push(cur); cur = wd; if (lines.length === maxLines) break; }
+  }
+  if (cur) lines.push(cur);
+  if (lines.length > maxLines) { lines.length = maxLines; lines[maxLines - 1] = lines[maxLines - 1].replace(/.{1,2}$/, '') + '…'; }
+  else if (words.length && lines.length === maxLines && lines.join(' ').length < text.length - 2) {
+    lines[maxLines - 1] = lines[maxLines - 1].replace(/.{1,2}$/, '') + '…';
+  }
+  return lines;
+}
+// Скруглённый прямоугольник (совместимо со старыми браузерами)
+function graphRR(ctx, x, y, w, h, r) {
+  r = Math.min(r, w / 2, h / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+
 const GRAPH_SPHERE_COLORS = ['#8B5CF6','#22D3EE','#34D399','#F59E0B','#F472B6','#60A5FA','#FBBF24','#F87171','#A78BFA','#2DD4BF','#E879F9','#4ADE80'];
 const GRAPH_WISH_COLOR = '#FFD166';   // золото — цвет целей
 const GRAPH_NOHUB_COLOR = '#9CA3AF';  // серые записи без тега живут у центра
@@ -2567,6 +2698,7 @@ async function loadGraphData() {
     if (wishes.length) parts.push(wishes.length + ' желаний');
     parts.push(graphLeafCount + ' записей');
     parts.push(drawnAi + ' связей ИИ');
+    parts.push('щипок — глубже');
     sub.textContent = parts.join(' · ');
   }
 }
@@ -2680,7 +2812,19 @@ function drawGraph() {
   const h = graphCanvas.height;
   const ctx = graphCtx;
   ctx.clearRect(0, 0, w, h);
+  graphCameraTick();
+  ensureGraphCamera();
+  const cam = graphCam;
+  const k = cam.k;
   const now = performance.now() / 1000;
+
+  // ── LOD: слои проявляются по мере зума (плавные переходы, без щелчков) ──
+  const leafA = graphSmooth(0.5, 0.8, k);        // записи-точки
+  const leafLabelA = graphSmooth(1.15, 1.7, k);  // подписи записей
+  const aiA = graphSmooth(0.72, 1.05, k);        // ИИ-линии
+  const deepA = graphSmooth(1.9, 2.7, k);        // глубокий слой: шаги + диалоги
+  const hubScale = k < 1 ? 1 + (1 - k) * 0.3 : 1; // хабы чуть крупнее на отдалении
+
   const selIdx = graphSelectedIdx;
   const sel = selIdx !== null ? graphNodes[selIdx] : null;
 
@@ -2695,7 +2839,13 @@ function drawGraph() {
   }
   const isNeighbor = (i) => neighborSet !== null && neighborSet.has(i);
 
-  // ── Рёбра: сначала принадлежность (базовый слой), потом ИИ ──
+  // ── МИР (в координатах карты, под камерой) ──
+  ctx.save();
+  ctx.translate(w / 2, h / 2);
+  ctx.scale(k, k);
+  ctx.translate(-cam.cx, -cam.cy);
+
+  // Рёбра принадлежности — видны вместе с листьями
   for (const e of graphEdges) {
     if (e.type !== 'member') continue;
     const a = graphNodes[e.a], b = graphNodes[e.b];
@@ -2703,7 +2853,8 @@ function drawGraph() {
     const hubSel = sel && sel.kind !== 'note' && (e.a === selIdx || e.b === selIdx);
     const leafSel = selIdx !== null && (e.a === selIdx || e.b === selIdx);
     const hi = hubSel || leafSel;
-    const alpha = hi ? 0.7 : (sel ? 0.04 : 0.12);
+    let alpha = hi ? 0.7 : (sel ? 0.04 : 0.12);
+    if (!hi) alpha *= leafA;
     ctx.strokeStyle = graphHexA(b.color, alpha);
     ctx.lineWidth = hi ? 1.4 : 0.5;
     ctx.beginPath();
@@ -2711,13 +2862,14 @@ function drawGraph() {
     ctx.lineTo(b.x, b.y);
     ctx.stroke();
   }
-  // ИИ-линии — только сильные (заданы в loadGraphData), пунктир
+  // ИИ-линии — проявляются при среднем зуме, пунктир
   for (const e of graphEdges) {
     if (e.type !== 'ai') continue;
     const a = graphNodes[e.a], b = graphNodes[e.b];
     if (!a || !b) continue;
     const hi = selIdx !== null && (e.a === selIdx || e.b === selIdx);
-    const alpha = hi ? 0.95 : (sel ? 0.05 : 0.16 + e.score * 0.22);
+    let alpha = hi ? 0.95 : (sel ? 0.05 : 0.16 + e.score * 0.22);
+    if (!hi) alpha *= aiA;
     ctx.strokeStyle = hi ? `rgba(0,255,140,${alpha})` : graphHexA('#8B7CF6', alpha);
     ctx.lineWidth = hi ? 2 : 0.7 + e.score;
     ctx.setLineDash(hi ? [] : [3, 4]);
@@ -2728,16 +2880,17 @@ function drawGraph() {
     ctx.setLineDash([]);
   }
 
-  // ── Узлы ──
+  // Листья — точки
   ctx.textAlign = 'center';
-  // Листья — точки (рисуем до хабов, чтобы хабы и подписи всегда сверху)
   for (let i = 0; i < graphNodes.length; i++) {
     const n = graphNodes[i];
     if (n.kind !== 'note') continue;
     const isSel = i === selIdx;
     const neighbor = isNeighbor(i);
     const dimmed = sel && !neighbor;
-    const alpha = n.done ? 0.3 : (dimmed ? 0.18 : 0.95);
+    let alpha = n.done ? 0.3 : (dimmed ? 0.18 : 0.95);
+    if (!isSel && !neighbor) alpha *= leafA;
+    if (alpha < 0.02) continue;
     if (isSel || (neighbor && !n.done)) {
       ctx.fillStyle = graphHexA(n.color, isSel ? 0.35 : 0.22);
       ctx.beginPath();
@@ -2762,7 +2915,7 @@ function drawGraph() {
     const neighbor = isNeighbor(i);
     const dimmed = sel && !neighbor;
     const isWish = n.kind === 'wish';
-    const baseR = n.r + (isSel ? 4 : 0);
+    const baseR = n.r * hubScale + (isSel ? 4 : 0);
     const nodeAlpha = dimmed ? 0.25 : 1;
 
     // glow
@@ -2797,22 +2950,33 @@ function drawGraph() {
     ctx.globalAlpha = nodeAlpha;
     ctx.fillText(n.icon, n.x, n.y + 1);
     ctx.globalAlpha = 1;
+  }
+  ctx.restore();
 
-    // подпись хаба — всегда
+  // ── ЭКРАН (подписи константного размера — читаемость на любом зуме) ──
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  // Подписи хабов — всегда
+  for (let i = 0; i < graphNodes.length; i++) {
+    const n = graphNodes[i];
+    if (n.kind === 'note') continue;
+    const isSel = i === selIdx;
+    const dimmed = sel && !isNeighbor(i);
+    const sp = graphW2S(n.x, n.y);
+    if (sp.x < -90 || sp.x > w + 90 || sp.y < -70 || sp.y > h + 70) continue;
     const label = n.label.length > 16 ? n.label.slice(0, 15) + '…' : n.label;
     ctx.font = isSel ? 'bold 13px Inter, sans-serif' : 'bold 12px Inter, sans-serif';
-    ctx.textBaseline = 'top';
     const metrics = ctx.measureText(label);
     const labelW = metrics.width + 10;
     const labelH = 17;
-    const labelY = n.y + baseR + 5;
+    const labelY = sp.y + n.r * hubScale * k + 5;
     ctx.fillStyle = `rgba(0,0,0,${dimmed ? 0.4 : 0.65})`;
-    ctx.fillRect(n.x - labelW / 2, labelY, labelW, labelH);
+    ctx.fillRect(sp.x - labelW / 2, labelY, labelW, labelH);
     ctx.fillStyle = graphHexA(n.color, dimmed ? 0.4 : 1);
-    ctx.fillText(label, n.x, labelY + 2);
+    ctx.fillText(label, sp.x, labelY + 2);
   }
 
-  // ── Подписи листьев: только выбранные (или когда записей совсем мало) ──
+  // Подписи листьев — проявляются зумом (плюс выбранные и маленькие карты)
   const showAllLeafLabels = graphLeafCount <= 15;
   ctx.font = '10.5px Inter, sans-serif';
   ctx.textBaseline = 'top';
@@ -2820,17 +2984,105 @@ function drawGraph() {
     const n = graphNodes[i];
     if (n.kind !== 'note') continue;
     const isSel = i === selIdx;
-    if (!isSel && !(showAllLeafLabels && !n.done)) continue;
+    const ownA = isSel ? 1 : Math.max(leafLabelA, showAllLeafLabels && !n.done ? 1 : 0);
+    if (ownA <= 0.02) continue;
     const dimmed = sel && !isNeighbor(i);
     if (dimmed && !isSel) continue;
+    const sp = graphW2S(n.x, n.y);
+    if (sp.x < -90 || sp.x > w + 90 || sp.y < -50 || sp.y > h + 50) continue;
     const label = n.text.length > 26 ? n.text.slice(0, 25) + '…' : n.text;
     const metrics = ctx.measureText(label);
     const labelW = metrics.width + 6;
-    const labelY = n.y + n.r + 3;
+    const labelY = sp.y + n.r * k + 3;
+    ctx.globalAlpha = ownA;
     ctx.fillStyle = 'rgba(0,0,0,0.6)';
-    ctx.fillRect(n.x - labelW / 2, labelY, labelW, 14);
+    ctx.fillRect(sp.x - labelW / 2, labelY, labelW, 14);
     ctx.fillStyle = isSel ? '#00FF8C' : 'rgba(255,255,255,0.8)';
-    ctx.fillText(label, n.x, labelY + 1);
+    ctx.fillText(label, sp.x, labelY + 1);
+    ctx.globalAlpha = 1;
+  }
+
+  // ── ГЛУБОКИЙ СЛОЙ: приближаемся к желанию — проявляются шаги и диалог с ИИ ──
+  if (deepA > 0.02) {
+    let fwIdx = null, fd = Infinity;
+    for (let i = 0; i < graphNodes.length; i++) {
+      const n = graphNodes[i];
+      if (n.kind !== 'wish') continue;
+      const d = Math.hypot(n.x - cam.cx, n.y - cam.cy);
+      if (d < fd) { fd = d; fwIdx = i; }
+    }
+    if (sel && sel.kind === 'wish') fwIdx = selIdx;
+    if (fwIdx !== null && fd < 340) {
+      const n = graphNodes[fwIdx];
+      const sp = graphW2S(n.x, n.y);
+      ensureWishChatDeep(n.wishId); // лениво тянем диалог (один раз)
+
+      // мягкое золотое свечение вокруг желания
+      const g = ctx.createRadialGradient(sp.x, sp.y, 4, sp.x, sp.y, 110 * Math.max(1, k * 0.6));
+      g.addColorStop(0, graphHexA(GRAPH_WISH_COLOR, 0.16 * deepA));
+      g.addColorStop(1, 'rgba(255,209,102,0)');
+      ctx.fillStyle = g;
+      ctx.fillRect(sp.x - 220, sp.y - 220, 440, 440);
+
+      // шаги желания (milestones) — пилюли под желанием
+      const wobj = wishes.find(x => x.id === n.wishId);
+      const msList = ((wobj && wobj.milestones) || []).slice()
+        .sort((a, b) => (a.done ? 1 : 0) - (b.done ? 1 : 0)).slice(0, 5);
+      if (msList.length) {
+        ctx.font = '10px Inter, sans-serif';
+        ctx.textBaseline = 'middle';
+        ctx.textAlign = 'left';
+        const maxW = Math.min(210, w * 0.62);
+        let py = sp.y + n.r * k + 14;
+        for (const m of msList) {
+          const mAlpha = deepA * (m.done ? 0.55 : 1);
+          const txt = (m.done ? '✓ ' : '◻ ') + (m.text || '');
+          const tw = Math.min(ctx.measureText(txt).width + 16, maxW);
+          const tx = Math.max(6, Math.min(w - tw - 6, sp.x - tw / 2));
+          ctx.fillStyle = `rgba(10,10,20,${0.6 * mAlpha})`;
+          graphRR(ctx, tx, py, tw, 18, 9);
+          ctx.fill();
+          ctx.strokeStyle = graphHexA(GRAPH_WISH_COLOR, 0.5 * mAlpha);
+          ctx.lineWidth = 1;
+          ctx.stroke();
+          let draw = txt;
+          while (draw.length > 3 && ctx.measureText(draw).width > tw - 12) draw = draw.slice(0, -2);
+          if (draw !== txt) draw += '…';
+          ctx.fillStyle = graphHexA(GRAPH_WISH_COLOR, 0.92 * mAlpha);
+          ctx.fillText(draw, tx + 8, py + 9.5);
+          py += 22;
+          if (py > h - 24) break;
+        }
+      }
+
+      // фрагменты диалога с ИИ — пузыри сбоку от желания
+      const chat = graphDeepChat[n.wishId];
+      if (chat && chat.msgs.length) {
+        const bw = Math.min(160, w * 0.42);
+        const side = sp.x < w / 2 ? 1 : -1;
+        const bxp = side === 1 ? Math.min(w - bw - 6, sp.x + (n.r + 40) * k) : Math.max(6, sp.x - (n.r + 40) * k - bw);
+        let by = Math.max(8, sp.y - 36);
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'top';
+        for (const m of chat.msgs) {
+          ctx.font = '9.5px Inter, sans-serif';
+          const lines = graphWrapLines(ctx, m.text, bw - 14, 3);
+          if (!lines.length) continue;
+          const isAi = m.role !== 'user';
+          const bh = lines.length * 12 + 8;
+          if (by + bh > h - 8) break;
+          ctx.fillStyle = `rgba(12,14,30,${0.82 * deepA})`;
+          graphRR(ctx, bxp, by, bw, bh, 8);
+          ctx.fill();
+          ctx.strokeStyle = isAi ? `rgba(139,124,246,${0.55 * deepA})` : `rgba(255,209,102,${0.35 * deepA})`;
+          ctx.lineWidth = 1;
+          ctx.stroke();
+          ctx.fillStyle = isAi ? `rgba(214,206,255,${0.88 * deepA})` : `rgba(255,255,255,${0.72 * deepA})`;
+          lines.forEach((ln, li) => ctx.fillText(ln, bxp + 7, by + 4 + li * 12));
+          by += bh + 6;
+        }
+      }
+    }
   }
 }
 
@@ -2864,6 +3116,8 @@ async function openGraphScreen() {
       loading.innerHTML = 'Загрузка графа…';
     }
   }
+  // Камера: вся карта в кадр (мгновенно), дальше зумит пользователь
+  graphFitCamera(true);
   // Запускаем анимацию
   graphAnimating = true;
   if (graphRafId) cancelAnimationFrame(graphRafId);
@@ -2878,29 +3132,41 @@ function closeGraphScreen() {
   }
 }
 
-// Тап/драг узлов: хабы ловятся крупной зоной, записи — поменьше
+// Тап/драг узлов, пан карты, щипок-зум: хабы ловятся крупной зоной, записи — поменьше
 function setupGraphInteraction() {
   const canvas = document.getElementById('graph-canvas');
-  if (!canvas) return;
-  let dragNode = null;
-  let dragNodeStartTime = 0;
-  let dragNodeStartPos = { x: 0, y: 0 };
+  if (!canvas || canvas.dataset.graphInteract) return;
+  canvas.dataset.graphInteract = '1';
+  let mode = null;          // null | 'node' | 'pan' | 'pinch'
+  let dragIdx = null;
+  let dragStartTime = 0;
+  let dragStartPos = { x: 0, y: 0 };
+  let panLast = null;       // {x, y}
+  let pinch = null;         // {d0, mid0:{x,y}, wpt:{x,y}} — wpt = мировая точка под серединой щипка
 
   function getPos(e) {
     const r = canvas.getBoundingClientRect();
     const t = e.touches ? (e.touches[0] || e.changedTouches[0]) : e;
     return { x: t.clientX - r.left, y: t.clientY - r.top };
   }
-
-  function findNode(x, y) {
-    // Сначала хабы (зона больше), потом листья
+  function getMid(e) {
+    const r = canvas.getBoundingClientRect();
+    const a = e.touches[0], b = e.touches[1];
+    return { x: (a.clientX + b.clientX) / 2 - r.left, y: (a.clientY + b.clientY) / 2 - r.top };
+  }
+  function getDist(e) {
+    const a = e.touches[0], b = e.touches[1];
+    return Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+  }
+  function findNode(wx, wy) {
+    // Сначала хабы (зона больше), потом листья — координаты МИРА
     for (let pass = 0; pass < 2; pass++) {
       for (let i = graphNodes.length - 1; i >= 0; i--) {
         const n = graphNodes[i];
         const isHub = n.kind !== 'note';
         if ((pass === 0) !== isHub) continue;
         const r = n.r + (isHub ? 14 : 8);
-        const dx = x - n.x, dy = y - n.y;
+        const dx = wx - n.x, dy = wy - n.y;
         if (dx*dx + dy*dy <= r * r) return i;
       }
     }
@@ -2908,76 +3174,124 @@ function setupGraphInteraction() {
   }
 
   canvas.addEventListener('touchstart', (e) => {
+    if (e.touches.length >= 2) {
+      // Щипок: прерываем всё, фиксируем мировую точку под серединой жеста
+      mode = 'pinch';
+      dragIdx = null;
+      const mid = getMid(e);
+      pinch = { d0: getDist(e), mid0: { ...mid }, wpt: graphS2W(mid.x, mid.y) };
+      return;
+    }
     const p = getPos(e);
-    const idx = findNode(p.x, p.y);
+    const wpos = graphS2W(p.x, p.y);
+    const idx = findNode(wpos.x, wpos.y);
     if (idx >= 0) {
-      dragNode = idx;
-      dragNodeStartTime = Date.now();
-      dragNodeStartPos = { ...p };
+      mode = 'node';
+      dragIdx = idx;
+      dragStartTime = Date.now();
+      dragStartPos = { ...p };
     } else {
-      // Тап мимо узла — снимаем селекцию
+      mode = 'pan';
+      panLast = { ...p };
+      // Тап/пан мимо узла — снимаем селекцию
       graphSelectedIdx = null;
       hideGraphPopover();
     }
   }, { passive: true });
 
   canvas.addEventListener('touchmove', (e) => {
-    if (dragNode === null || dragNode === undefined) return;
-    const p = getPos(e);
-    const n = graphNodes[dragNode];
-    if (n) {
-      n.x = p.x;
-      n.y = p.y;
-      n.vx = 0;
-      n.vy = 0;
+    if (mode === 'pinch' && e.touches.length >= 2 && pinch) {
+      e.preventDefault();
+      const d = Math.max(20, getDist(e));
+      const mid = getMid(e);
+      graphPinchTo(graphCam.tk * (d / pinch.d0), mid.x, mid.y, pinch.wpt);
+      return;
     }
-  }, { passive: true });
+    if (mode === 'node' && dragIdx !== null && dragIdx !== undefined) {
+      e.preventDefault();
+      const p = getPos(e);
+      const wpos = graphS2W(p.x, p.y);
+      const n = graphNodes[dragIdx];
+      if (n) { n.x = wpos.x; n.y = wpos.y; n.vx = 0; n.vy = 0; }
+      return;
+    }
+    if (mode === 'pan' && panLast) {
+      e.preventDefault();
+      const p = getPos(e);
+      graphPanBy(p.x - panLast.x, p.y - panLast.y);
+      panLast = { ...p };
+    }
+  }, { passive: false });
 
   canvas.addEventListener('touchend', (e) => {
-    if (dragNode === null || dragNode === undefined) return;
-    const p = getPos(e);
-    const dt = Date.now() - dragNodeStartTime;
-    const moved = Math.hypot(p.x - dragNodeStartPos.x, p.y - dragNodeStartPos.y);
-    if (dt < 300 && moved < 5) {
-      // Это тап — селекция узла + показ popover
-      graphSelectedIdx = dragNode;
-      showGraphPopover(dragNode);
+    if (mode === 'pinch') {
+      if (e.touches.length < 2) { mode = null; pinch = null; }
+      return;
     }
-    dragNode = null;
+    if (mode === 'node' && dragIdx !== null && dragIdx !== undefined) {
+      const p = getPos(e);
+      const dt = Date.now() - dragStartTime;
+      const moved = Math.hypot(p.x - dragStartPos.x, p.y - dragStartPos.y);
+      if (dt < 300 && moved < 5) {
+        // Это тап — селекция узла + показ popover
+        graphSelectedIdx = dragIdx;
+        showGraphPopover(dragIdx);
+      }
+      dragIdx = null;
+    }
+    mode = null;
+    panLast = null;
   }, { passive: true });
 
-  // Mouse для теста
-  let mouseDown = false, mouseDragNode = null;
+  canvas.addEventListener('touchcancel', () => { mode = null; pinch = null; panLast = null; dragIdx = null; });
+
+  // Колесо мыши — зум к курсору
+  canvas.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    const p = getPos(e);
+    graphZoomAt(p.x, p.y, Math.exp(-e.deltaY * 0.0016));
+  }, { passive: false });
+
+  // Mouse для теста (десктоп): драг узлов, пан пустотой, тап — селекция
+  let mouseMode = null, mouseDragIdx = null;
   canvas.addEventListener('mousedown', (e) => {
     const p = getPos(e);
-    const idx = findNode(p.x, p.y);
-    if (idx >= 0) {
-      mouseDragNode = idx;
-      mouseDown = true;
-      dragNodeStartTime = Date.now();
-      dragNodeStartPos = { ...p };
-    } else {
+    const wpos = graphS2W(p.x, p.y);
+    const idx = findNode(wpos.x, wpos.y);
+    dragStartTime = Date.now();
+    dragStartPos = { ...p };
+    if (idx >= 0) { mouseMode = 'node'; mouseDragIdx = idx; }
+    else {
+      mouseMode = 'pan';
+      panLast = { ...p };
       graphSelectedIdx = null;
       hideGraphPopover();
     }
   });
   canvas.addEventListener('mousemove', (e) => {
-    if (!mouseDown || mouseDragNode === null) return;
+    if (!mouseMode) return;
     const p = getPos(e);
-    const n = graphNodes[mouseDragNode];
-    if (n) { n.x = p.x; n.y = p.y; n.vx = 0; n.vy = 0; }
+    if (mouseMode === 'node' && mouseDragIdx !== null) {
+      const wpos = graphS2W(p.x, p.y);
+      const n = graphNodes[mouseDragIdx];
+      if (n) { n.x = wpos.x; n.y = wpos.y; n.vx = 0; n.vy = 0; }
+    } else if (mouseMode === 'pan' && panLast) {
+      graphPanBy(p.x - panLast.x, p.y - panLast.y);
+      panLast = { ...p };
+    }
   });
   canvas.addEventListener('mouseup', (e) => {
-    if (!mouseDown || mouseDragNode === null) return;
+    if (!mouseMode) return;
     const p = getPos(e);
-    const dt = Date.now() - dragNodeStartTime;
-    const moved = Math.hypot(p.x - dragNodeStartPos.x, p.y - dragNodeStartPos.y);
-    if (dt < 300 && moved < 5) {
-      graphSelectedIdx = mouseDragNode;
-      showGraphPopover(mouseDragNode);
+    const dt = Date.now() - dragStartTime;
+    const moved = Math.hypot(p.x - dragStartPos.x, p.y - dragStartPos.y);
+    if (mouseMode === 'node' && mouseDragIdx !== null && dt < 300 && moved < 5) {
+      graphSelectedIdx = mouseDragIdx;
+      showGraphPopover(mouseDragIdx);
     }
-    mouseDown = false;
-    mouseDragNode = null;
+    mouseMode = null;
+    mouseDragIdx = null;
+    panLast = null;
   });
 }
 
@@ -4849,7 +5163,7 @@ function goTo(screen) {
   }
   if (screen === 'graph') {
     // Разовая подсказка: объясняем язык карты и ИИ-связи
-    showHintOnce('graph_intro','🌌 Это облако твоих мыслей: сферы жизни и желания — крупные узлы, записи крутятся вокруг них. Тапни любую запись — покажу, почему ИИ связал её с другими.', 'graph-hint', () => notes.length >= 1);
+    showHintOnce('graph_intro','🌌 Это облако твоих мыслей. Сведи два пальца — и карта раскроется: желания, под ними задачи, ещё глубже — шаги и диалоги с ИИ. Тапни запись — расскажу, почему ИИ связал её с другими.', 'graph-hint', () => notes.length >= 1);
   }
   if (screen === 'calendar') {
     renderCalendar();
