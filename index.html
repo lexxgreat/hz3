@@ -707,7 +707,7 @@ body.cal-dragging,body.cal-dragging *{touch-action:none!important;user-select:no
   <div class="screen" id="screen-wishes">
     <div class="hist-header">
       <div style="display:flex;justify-content:space-between;align-items:center">
-        <div><div class="hist-title">🌠 Желания</div><div class="hist-sub" id="wishes-count">до 3 одновременно</div></div>
+        <div><div class="hist-title">🌠 Желания</div><div class="hist-sub" id="wishes-count">твои мечты</div></div>
       </div>
     </div>
     <div id="wishes-hint" style="padding:0 16px;"></div>
@@ -3545,8 +3545,9 @@ const WISH_STATES = {
 function renderWishes() {
   const el = document.getElementById('wishes-list');
   if (!el) return;
-  document.getElementById('wishes-count').textContent = wishes.length + ' из 3';
-  document.getElementById('wish-add-btn').style.opacity = wishes.length >= 3 ? '0.3' : '1';
+  const wn = wishes.length;
+  const wPl = (wn % 10 === 1 && wn % 100 !== 11) ? 'желание' : ([2,3,4].includes(wn % 10) && !(wn % 100 >= 12 && wn % 100 <= 14)) ? 'желания' : 'желаний';
+  document.getElementById('wishes-count').textContent = wn > 0 ? (wn + ' ' + wPl) : 'твои мечты';
   if (!wishes.length) {
     el.innerHTML = '<div class="hist-empty"><div class="hist-empty-icon">🌠</div>Пока нет желаний</div>';
     return;
@@ -3584,7 +3585,7 @@ function renderWishes() {
 document.getElementById('wish-add-btn').addEventListener('click', async () => {
   const inp = document.getElementById('wish-input');
   const text = inp.value.trim();
-  if (!text || wishes.length >= 3) return;
+  if (!text) return;  // лимита на количество желаний больше нет
   inp.value = '';
   // Показываем модалку «AI думает…»
   showWishSuggestionModal(text);
