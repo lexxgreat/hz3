@@ -875,9 +875,13 @@ body.cal-dragging,body.cal-dragging *{touch-action:none!important;user-select:no
         <span style="color:rgba(255,255,255,0.4);">→</span>
       </button>
     </div>
-    <div id="balance-widget" style="display:flex;align-items:center;justify-content:space-between;padding:10px 16px;margin:12px 16px 0;background:rgba(255,255,255,0.04);border:0.5px solid rgba(255,255,255,0.1);border-radius:12px;">
+    <div id="balance-widget" style="display:none;align-items:center;justify-content:space-between;padding:10px 16px;margin:12px 16px 0;background:rgba(255,255,255,0.04);border:0.5px solid rgba(255,255,255,0.1);border-radius:12px;">
       <span style="font-size:12.5px;color:rgba(255,255,255,0.55);">💰 Баланс Polza: <span id="balance-amount" style="color:rgba(139,92,246,0.95);font-weight:600;">—</span></span>
       <button onclick="loadBalance()" style="background:none;border:none;color:rgba(255,255,255,0.35);font-size:14px;cursor:pointer;padding:4px;">↻</button>
+    </div>
+    <div id="users-count-widget" style="display:none;align-items:center;justify-content:space-between;padding:10px 16px;margin:12px 16px 0;background:rgba(255,255,255,0.04);border:0.5px solid rgba(255,255,255,0.1);border-radius:12px;">
+      <span style="font-size:12.5px;color:rgba(255,255,255,0.55);">👥 Пользователей: <span id="users-count" style="color:rgba(139,92,246,0.95);font-weight:600;">—</span></span>
+      <button onclick="refreshUsersCount()" style="background:none;border:none;color:rgba(255,255,255,0.35);font-size:14px;cursor:pointer;padding:4px;">↻</button>
     </div>
     <div style="padding:8px 16px 0;">
       <button id="pwa-install-btn" onclick="installFromSettings()" style="width:100%;background:rgba(108,71,255,0.1);border:0.5px solid rgba(108,71,255,0.35);border-radius:12px;padding:9px;color:rgba(160,130,255,0.95);font-size:12.5px;font-weight:500;cursor:pointer;font-family:'Inter',sans-serif;margin-bottom:8px;">📲 Установить приложение</button>
@@ -953,7 +957,7 @@ body.cal-dragging,body.cal-dragging *{touch-action:none!important;user-select:no
 <!-- Firebase -->
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-import { getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, addDoc, getDocs, getDoc, updateDoc, deleteDoc, doc, orderBy, query, setDoc } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+import { getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, addDoc, getDocs, getDoc, updateDoc, deleteDoc, doc, orderBy, query, setDoc, serverTimestamp, getCountFromServer } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, signInAnonymously, linkWithCredential, EmailAuthProvider } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 
 const firebaseConfig = {
@@ -4348,7 +4352,7 @@ function goTo(screen) {
   }
   if (screen === 'todo') loadNotes();
   if (screen === 'chat') { renderChat(); checkRemindersOnOpen(); }
-  if (screen === 'prompt') { renderPromptRules(); loadBalance(); updateAccountWidget(); updatePwaInstallBtn(); }
+  if (screen === 'prompt') { renderPromptRules(); updateOwnerPanel(); updateAccountWidget(); updatePwaInstallBtn(); }
   if (screen === 'tags') renderTagsScreen();
   if (screen === 'cloud') {
     renderWordCloud();
@@ -4477,6 +4481,51 @@ async function loadBalance() {
   }
 }
 window.loadBalance = loadBalance;
+
+// ── ПАНЕЛЬ ВЛАДЕЛЬЦА (только lanterns@yandex.ru): баланс + счётчик пользователей ──
+const OWNER_EMAIL = 'lanterns@yandex.ru';
+function isOwner() {
+  const u = auth.currentUser;
+  return !!(u && !u.isAnonymous && (u.email || '').toLowerCase() === OWNER_EMAIL);
+}
+window.isOwner = isOwner;
+
+// Профиль пользователя в users/{uid} (сам документ, не подколлекции) — для счётчика:
+// каждый пишет только свой документ; владелец потом делает count по коллекции users
+async function upsertProfileDoc(user) {
+  try {
+    const ref = doc(db, 'users', user.uid);
+    const snap = await getDoc(ref);
+    const data = { lastSeen: serverTimestamp() };
+    if (user.email) data.email = user.email;
+    if (user.isAnonymous) data.anon = true;
+    if (!snap.exists()) data.createdAt = serverTimestamp();
+    await setDoc(ref, data, { merge: true });
+  } catch(e) {
+    console.warn('[Profile] upsert failed (нужны новые rules?)', e && (e.code || e.message));
+  }
+}
+
+function refreshUsersCount() {
+  const el = document.getElementById('users-count');
+  if (!el || !isOwner()) return;
+  el.textContent = '...';
+  getCountFromServer(query(collection(db, 'users')))
+    .then(snap => { el.textContent = String(snap.data().count); })
+    .catch(e => { el.textContent = '—'; console.warn('[Users] count failed (нужны новые rules?)', e && (e.code || e.message)); });
+}
+window.refreshUsersCount = refreshUsersCount;
+
+// Показывает владелец-панели и запускает загрузку данных; остальным — ничего не видно и не тратится
+function updateOwnerPanel() {
+  const show = isOwner();
+  const bw = document.getElementById('balance-widget');
+  if (bw) bw.style.display = show ? 'flex' : 'none';
+  const uw = document.getElementById('users-count-widget');
+  if (uw) uw.style.display = show ? 'flex' : 'none';
+  if (show) { loadBalance(); refreshUsersCount(); }
+}
+window.updateOwnerPanel = updateOwnerPanel;
 const CHAT_MODEL = 'anthropic/claude-haiku-4.5';
 
 // ── ИНСТРУМЕНТЫ ДЛЯ ИИ (вместо ненадёжных текстовых тегов [ДОБАВИТЬ:...]) ──
@@ -6045,6 +6094,7 @@ onAuthStateChanged(auth, async (user) => {
     document.getElementById('screen-splash').classList.remove('active');
     currentUid = user.uid;
     isAnonymousUser = user.isAnonymous;
+    upsertProfileDoc(user); // профиль для счётчика пользователей (fire-and-forget, ошибки гасятся внутри)
     document.getElementById('screen-auth').classList.remove('active');
     if (dockEl) dockEl.style.display = '';
     if (statusEl) statusEl.style.display = '';
