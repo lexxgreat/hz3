@@ -489,6 +489,7 @@ body.cal-dragging .cal-hours-grid{display:grid}
 .dragging-src{opacity:0.3}
 body.cal-dragging,body.cal-dragging *{touch-action:none!important;user-select:none!important;-webkit-user-select:none!important}
 [data-drop-none].drop-hover{border-color:rgba(0,230,130,0.9)!important;background:rgba(0,230,130,0.07)!important}
+.cal-queue-top{border-left:3px solid rgba(0,230,130,0.7)!important}
 </style>
 </head>
 <body>
@@ -683,6 +684,7 @@ body.cal-dragging,body.cal-dragging *{touch-action:none!important;user-select:no
       <button onclick="changeCalendarMonth(0)" id="calendar-today-btn" style="background:rgba(108,71,255,0.15);border:0.5px solid rgba(108,71,255,0.4);border-radius:8px;padding:5px 12px;color:rgba(139,92,246,0.95);font-size:11px;font-weight:600;cursor:pointer;font-family:Inter,sans-serif;">Сегодня</button>
       <button onclick="changeCalendarMonth(1)" style="background:rgba(255,255,255,0.04);border:0.5px solid rgba(255,255,255,0.1);border-radius:8px;padding:5px 10px;color:rgba(255,255,255,0.7);font-size:14px;cursor:pointer;font-family:Inter,sans-serif;">→</button>
       <div id="calendar-month-title" style="margin-left:auto;font-size:11px;color:rgba(255,255,255,0.55);font-weight:600;text-transform:capitalize;font-family:Inter,sans-serif;"></div>
+      <button onclick="toggleSortMode()" id="calendar-sort-btn" style="background:rgba(108,71,255,0.15);border:0.5px solid rgba(108,71,255,0.4);border-radius:8px;padding:5px 10px;color:rgba(139,92,246,0.95);font-size:11px;font-weight:600;cursor:pointer;font-family:Inter,sans-serif;white-space:nowrap;">🎯 Раскидать</button>
     </div>
     <div id="calendar-list" style="flex:1;overflow-y:auto;padding:8px 16px;"></div>
     <div id="calendar-hint" style="padding:0 16px 4px;"></div>
@@ -2023,9 +2025,10 @@ function setCloudPeriod(period) {
 }
 window.setCloudPeriod = setCloudPeriod;
 
-// ── CALENDAR — месячная сетка + drag&drop задач (дни и часы) ──
+// ── CALENDAR — месячная сетка + режим «Раскидать» (конвейер) + drag&drop (дни и часы) ──
 let calendarMonthOffset = 0;     // 0 = текущий месяц
 let calendarSelectedKey = null;  // YYYY-MM-DD выбранный день (по умолчанию — сегодня)
+let calendarSortMode = false;    // режим распределения: очередь снизу, тянешь на дни
 let calendarShowHours = false;   // показывать сетку часов в панели дня
 let calDrag = null;              // состояние перетаскивания
 let calSuppressClick = false;    // подавить клик сразу после драга
@@ -2061,6 +2064,19 @@ function selectCalendarDay(key) {
 }
 window.selectCalendarDay = selectCalendarDay;
 
+function toggleSortMode() {
+  calendarSortMode = !calendarSortMode;
+  const btn = document.getElementById('calendar-sort-btn');
+  if (btn) {
+    btn.textContent = calendarSortMode ? '✓ Готово' : '🎯 Раскидать';
+    btn.style.background = calendarSortMode ? 'rgba(0,220,120,0.15)' : 'rgba(108,71,255,0.15)';
+    btn.style.borderColor = calendarSortMode ? 'rgba(0,220,120,0.4)' : 'rgba(108,71,255,0.4)';
+    btn.style.color = calendarSortMode ? 'rgba(0,230,130,0.95)' : 'rgba(139,92,246,0.95)';
+  }
+  renderCalendar();
+}
+window.toggleSortMode = toggleSortMode;
+
 function getCalendarTasks() {
   // Только то, что можно сделать: в тудушке и ещё не выполнено
   return notes.filter(n => n.inTodo === true && n.done !== true);
@@ -2081,7 +2097,7 @@ function calTaskCard(t, opts = {}) {
     const lbl = dd.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' }) + (t.scheduledTime ? ' · ' + t.scheduledTime.slice(0, 5) : '');
     whenBadge = `<span style="flex-shrink:0;font-size:9.5px;padding:2px 6px;border-radius:99px;${overdue ? 'background:rgba(255,80,80,0.12);color:rgba(255,110,110,0.9);' : 'background:rgba(108,71,255,0.1);color:rgba(139,92,246,0.85);'}">${overdue ? '⚠ ' : ''}${lbl}</span>`;
   }
-  return `<div data-drag-note="${t.id}" style="display:flex;align-items:flex-start;gap:8px;padding:6px 8px;margin-bottom:4px;border-radius:8px;background:rgba(255,255,255,0.03);border:0.5px solid rgba(255,255,255,0.05);cursor:grab;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;">
+  return `<div data-drag-note="${t.id}" class="${opts.qTop ? 'cal-queue-top' : ''}" style="display:flex;align-items:flex-start;gap:8px;padding:6px 8px;margin-bottom:4px;border-radius:8px;background:rgba(255,255,255,0.03);border:0.5px solid rgba(255,255,255,0.05);cursor:grab;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;">
     <button onclick="toggleDone('${t.id}', false)" title="Выполнить" style="flex-shrink:0;width:18px;height:18px;border-radius:50%;border:1.5px solid rgba(255,255,255,0.3);background:transparent;cursor:pointer;display:flex;align-items:center;justify-content:center;margin-top:1px;"></button>
     <div style="flex:1;min-width:0;">
       <div style="font-size:12.5px;color:rgba(255,255,255,0.9);line-height:1.4;word-break:break-word;font-family:Inter,sans-serif;">${escHtml(t.text)}${tagBadge}</div>
@@ -2138,11 +2154,18 @@ function renderCalendar() {
     ${selTasks.length === 0 ? '<div style="font-size:11px;color:rgba(255,255,255,0.25);padding:0 8px 4px;font-style:italic;">— ничего не запланировано —</div>' : selTasks.map(t => calTaskCard(t)).join('')}
   </div>`;
 
-  // ── Низ: Ближайшие (по дате+времени) + «Без срока» (drop-зона для снятия даты) ──
-  const scheduled = tasks.filter(t => scheduledOf(t))
-    .sort((a, b) => (scheduledOf(a) + ' ' + (a.scheduledTime || '99:99')).localeCompare(scheduledOf(b) + ' ' + (b.scheduledTime || '99:99')));
-  const unsched = tasks.filter(t => !scheduledOf(t)).sort((a, b) => (a.todoOrder || 0) - (b.todoOrder || 0));
-  html += `<div style="margin-top:14px;padding-top:10px;border-top:0.5px solid rgba(255,255,255,0.08);">
+  // ── Низ: в режиме распределения — очередь-конвейер; в обычном — Ближайшие + Без срока ──
+  if (calendarSortMode) {
+    const queue = tasks.filter(t => !scheduledOf(t)).sort((a, b) => (a.todoOrder || 0) - (b.todoOrder || 0));
+    html += `<div data-drop-none="1" style="margin-top:14px;padding:10px 8px 6px;border-top:0.5px solid rgba(255,255,255,0.08);">
+      <div style="font-size:11px;color:rgba(0,230,130,0.75);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;font-family:Inter,sans-serif;">🎯 Очередь на распределение · ${queue.length}</div>
+      ${queue.length === 0 ? '<div style="font-size:12px;color:rgba(0,230,130,0.6);padding:2px 8px 6px;font-style:italic;">✓ Все задачи распределены</div>' : queue.map((t, i) => calTaskCard(t, { qTop: i === 0 })).join('')}
+    </div>`;
+  } else {
+    const scheduled = tasks.filter(t => scheduledOf(t))
+      .sort((a, b) => (scheduledOf(a) + ' ' + (a.scheduledTime || '99:99')).localeCompare(scheduledOf(b) + ' ' + (b.scheduledTime || '99:99')));
+    const unsched = tasks.filter(t => !scheduledOf(t)).sort((a, b) => (a.todoOrder || 0) - (b.todoOrder || 0));
+    html += `<div style="margin-top:14px;padding-top:10px;border-top:0.5px solid rgba(255,255,255,0.08);">
       <div style="font-size:11px;color:rgba(255,255,255,0.5);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;font-family:Inter,sans-serif;">Ближайшие · ${scheduled.length}</div>
       ${scheduled.length === 0 ? '<div style="font-size:11px;color:rgba(255,255,255,0.25);padding:0 8px 4px;font-style:italic;">Нет запланированных задач</div>' : scheduled.map(t => calTaskCard(t, { showWhen: true })).join('')}
     </div>
@@ -2150,10 +2173,13 @@ function renderCalendar() {
       <div style="font-size:11px;color:rgba(255,255,255,0.5);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;font-family:Inter,sans-serif;">Без срока · ${unsched.length}</div>
       ${unsched.length === 0 ? '<div style="font-size:11px;color:rgba(255,255,255,0.25);padding:0 0 4px;font-style:italic;">Все задачи распределены</div>' : unsched.map(t => calTaskCard(t)).join('')}
     </div>`;
+  }
 
   list.innerHTML = html;
   const sub = document.getElementById('calendar-sub');
-  if (sub) sub.textContent = `${tasks.length} задач · ${tasks.filter(t => scheduledOf(t)).length} распределено`;
+  if (sub) sub.textContent = calendarSortMode
+    ? 'Тяни верхнюю задачу из очереди на день — очередь сдвинется сама'
+    : `${tasks.length} задач · ${tasks.filter(t => scheduledOf(t)).length} распределено`;
   bindCalDrag();
 }
 
@@ -4330,7 +4356,7 @@ function goTo(screen) {
   }
   if (screen === 'calendar') {
     renderCalendar();
-    showHintOnce('calendar_intro','📅 Тап на день — план дня. Долгое нажатие на задачу — перетащить её на день или на час.','calendar-hint', () => notes.filter(n => n.inTodo).length >= 1);
+    showHintOnce('calendar_intro','📅 Тап на день — план дня. 🎯 Раскидать — очередь конвейером: тяни верхнюю на день. Долгое нажатие на задачу — перетащить на день или час.','calendar-hint', () => notes.filter(n => n.inTodo).length >= 1);
   }
   if (screen === 'wishes') {
     renderWishes();
@@ -6195,7 +6221,7 @@ onAuthStateChanged(auth, async (user) => {
       if (isIOS()) {
         sub.innerHTML = 'iPhone: нажми <b>Поделиться</b> (⬆) в Safari → <b>«На экран „Домой"»</b>';
       } else {
-        sub.innerHTML = 'Android: меню (⋮) в Chrome → <b>«Установить приложение»</b>';
+        sub.innerHTML = 'Открой сайт в <b>Chrome</b> → меню (⋮) → <b>«Установить приложение»</b>';
       }
     }
   };
@@ -6228,6 +6254,18 @@ onAuthStateChanged(auth, async (user) => {
   };
 
   if (isStandalone()) console.log('[PWA] Running in installed mode');
+
+  // Второй триггер показа баннера: ~25 сек в приложении (первая заметка может так и не появиться).
+  // Не мешаем: если юзер печатает или вкладка скрыта — переносим проверку на +25 сек.
+  function scheduleInstallBanner() {
+    setTimeout(function() {
+      if (document.hidden) { scheduleInstallBanner(); return; }
+      var ae = document.activeElement;
+      if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.isContentEditable)) { scheduleInstallBanner(); return; }
+      window.maybeShowInstallBanner(); // внутри: показ только если ещё не показывали и не standalone
+    }, 25000);
+  }
+  scheduleInstallBanner();
 })();
 </script>
 </body>
