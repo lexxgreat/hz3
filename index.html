@@ -1449,6 +1449,7 @@ function renderNotes(list) {
       const dd = new Date(new Date(n.doneAt).getTime() + 3*60*60*1000);
       doneAtStr = ' · ✓ ' + dd.toLocaleDateString('ru-RU', { day:'numeric', month:'short', timeZone:'UTC' }) + ' ' + dd.toLocaleTimeString('ru-RU', { hour:'2-digit', minute:'2-digit', timeZone:'UTC' });
     }
+    const schedStr = !isDone ? whenBadgeStr(n) : '';
     const cardClick = selectionMode ? `onclick="toggleSelectNote('${n.id}')" style="cursor:pointer;${cardStyle}"` : `style="${cardStyle}"`;
     const checkbox = selectionMode ? `<div style="width:20px;height:20px;border-radius:6px;border:1.5px solid ${isSelected?'rgba(139,92,246,0.9)':'rgba(255,255,255,0.25)'};background:${isSelected?'rgba(139,92,246,0.9)':'transparent'};display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:12px;color:#fff;">${isSelected?'✓':''}</div>` : '';
     // MVP: кнопка "Выполнено" доступна для ЛЮБОЙ записи, а не только с тегом "Задача"
@@ -1461,7 +1462,7 @@ function renderNotes(list) {
           ${checkbox}
           <div style="flex:1;min-width:0;">
             <div class="note-meta">
-              <span class="note-date">${date} · ${time}${n.tag ? ' · ' + n.tag : ''}${doneAtStr}</span>
+              <span class="note-date">${date} · ${time}${n.tag ? ' · ' + n.tag : ''}${doneAtStr}${schedStr ? ' · ' + schedStr : ''}</span>
               <span class="note-type ${n.type === 'voice' ? 'type-voice' : 'type-text'}">${n.type === 'voice' ? '🎤 Голос' : '✏️ Текст'}</span>
             </div>
             <div class="note-text" style="${textStyle}">${escHtml(n.text)}</div>
@@ -1828,6 +1829,7 @@ async function toggleTodo(id, currentInTodo) {
     }
     await updateDoc(uDocRef('notes', id), update);
     await loadNotes();
+    renderCalendar(); // синхронизация: убрать/добавить в тудушку = сразу отражается в календаре
   } catch(e) { alert('Ошибка: ' + e.message); }
 }
 window.toggleTodo = toggleTodo;
@@ -3113,6 +3115,12 @@ async function confirmWishSuggestion() {
 window.confirmWishSuggestion = confirmWishSuggestion;
 document.getElementById('wish-input').addEventListener('keydown', e => { if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();document.getElementById('wish-add-btn').click();} });
 
+async function toggleWishTask(wishId, noteId, cur) {
+  await toggleDone(noteId, cur); // loadNotes + renderCalendar уже внутри
+  openWishDetail(wishId); // перерисовываем модалку с новым статусом и счётчиком
+}
+window.toggleWishTask = toggleWishTask;
+
 async function toggleWishDone(id, cur) {
   await updateDoc(uDocRef('wishes', id), { done: !cur, state: !cur ? 'done' : 'active' });
   if (!cur) celebrateTaskDone();
@@ -3368,6 +3376,25 @@ async function openWishDetail(id) {
             `).join('')}
           </div>
         </div>
+
+        <!-- Задачи, добавленные из чата (привязаны по wishId, не milestone) -->
+        ${(() => {
+          const linked = notes.filter(n => n.wishId === w.id && !n.milestoneLink);
+          if (!linked.length) return '';
+          const openN = linked.filter(n => !n.done).length;
+          return `
+          <div style="margin-bottom:14px;">
+            <div style="font-size:10px;color:rgba(255,255,255,0.5);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;font-family:Inter,sans-serif;">Задачи из чата · осталось ${openN}/${linked.length}</div>
+            <div style="display:flex;flex-direction:column;gap:6px;">
+              ${linked.map(n => `
+                <div style="display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:8px;background:rgba(108,71,255,0.05);border:0.5px solid rgba(108,71,255,0.15);">
+                  <button onclick="toggleWishTask('${w.id}','${n.id}', ${n.done})" style="flex-shrink:0;width:22px;height:22px;border-radius:50%;border:1.5px solid ${n.done ? 'rgba(0,255,140,0.8)' : 'rgba(255,255,255,0.3)'};background:${n.done ? 'rgba(0,255,140,0.8)' : 'transparent'};color:#fff;font-size:11px;cursor:pointer;display:flex;align-items:center;justify-content:center;font-weight:700;">${n.done ? '✓' : ''}</button>
+                  <div style="flex:1;min-width:0;font-size:12.5px;color:${n.done ? 'rgba(255,255,255,0.5)' : 'rgba(255,255,255,0.9)'};line-height:1.4;text-decoration:${n.done ? 'line-through' : 'none'};word-break:break-word;font-family:Inter,sans-serif;">${escHtml(n.text)}${n.scheduledDate ? '<span style="font-size:10px;color:rgba(139,92,246,0.7);margin-left:6px;">📅 ' + n.scheduledDate + (n.scheduledTime ? ' ' + n.scheduledTime.slice(0,5) : '') + '</span>' : ''}</div>
+                </div>
+              `).join('')}
+            </div>
+          </div>`;
+        })()}
 
         <!-- Actions -->
         <div style="display:flex;gap:8px;flex-wrap:wrap;">
@@ -3684,27 +3711,39 @@ function wishMessagesCol(wishId) { return collection(db,'users',currentUid,'wish
 
 let currentWishPerspective = 'general';
 
+// короткая сводка по желанию для системного промпта чата — ИИ видит тег и текущий план
+function wishContextLine(wish) {
+  const ms = (wish.milestones || []);
+  const doneMs = ms.filter(m => m.done).length;
+  let s = '';
+  if (wish.shortTag) s += ` Короткий тег желания: #${wish.shortTag}.`;
+  if (ms.length) s += `\nТекущий план (выполнено ${doneMs}/${ms.length}): ` + ms.map(m => (m.done ? '[x] ' : '[ ] ') + m.text).join('; ') + '.';
+  return s;
+}
+
 const WISH_PERSPECTIVES = {
   general: {
     icon: '💬',
     name: 'Чат',
-    system: (wish) => `Ты помогаешь пользователю добиться конкретной цели-желания: "${wish.text}". Держись только этой темы. Задавай уточняющие вопросы, помогай построить конкретный пошаговый план, будь кратким и по-русски. Если пользователь просит добавить конкретный шаг как задачу — вызови propose_note.`,
+    system: (wish) => `Ты помогаешь пользователю добиться конкретной цели-желания: "${wish.text}".${wishContextLine(wish)}
+Держись только этой темы. Задавай уточняющие вопросы, помогай построить конкретный пошаговый план, будь кратким и по-русски.
+Когда пользователь просит добавить шаг/задачу/заметку к желанию (или ты сам предлагаешь конкретный шаг) — вызывай propose_note: запись автоматически привяжется к этому желанию, получит его тег и попадёт в тудушку. Не пиши «добавил» текстом без вызова функции.`,
   },
   practitioner: {
     icon: '🎯',
     name: 'Практик',
-    system: (wish) => `Ты — практик-наставник для желания: "${wish.text}".
+    system: (wish) => `Ты — практик-наставник для желания: "${wish.text}".${wishContextLine(wish)}
 Твоя задача — помочь разбить это на конкретные выполнимые шаги.
 - Будь коротким и по делу
 - Предлагай СЛЕДУЮЩИЙ конкретный шаг (не весь план сразу)
 - Учитывай реальные ресурсы (время, деньги, навыки)
 - Фокус на действии, а не на размышлениях
-- Если есть milestones — выбери следующий невыполненный и помоги с ним`,
+- Предлагая шаг, вызывай propose_note — он попадёт в тудушку с тегом этого желания; если пользователь просит отметить шаг сделанным — вызывай mark_done`,
   },
   skeptic: {
     icon: '🤔',
     name: 'Скептик',
-    system: (wish) => `Ты — внутренний скептик для желания: "${wish.text}".
+    system: (wish) => `Ты — внутренний скептик для желания: "${wish.text}".${wishContextLine(wish)}
 - НЕ отговаривай, а помоги увидеть слабые места
 - Задавай вопросы про риски: «что если не хватит времени?», «что если столкнёшься с X?»
 - Помогай подготовиться к трудностям
@@ -3714,7 +3753,7 @@ const WISH_PERSPECTIVES = {
   dreamer: {
     icon: '🌟',
     name: 'Мечтатель',
-    system: (wish) => `Ты — мечтатель-наставник для желания: "${wish.text}".
+    system: (wish) => `Ты — мечтатель-наставник для желания: "${wish.text}".${wishContextLine(wish)}
 - Помоги представить, как будет когда достигнешь
 - Опиши эмоции, моменты, детали будущей реальности
 - Заряди вдохновением и энергией
@@ -3724,7 +3763,7 @@ const WISH_PERSPECTIVES = {
   philosopher: {
     icon: '🧠',
     name: 'Философ',
-    system: (wish) => `Ты — философ-наставник для желания: "${wish.text}".
+    system: (wish) => `Ты — философ-наставник для желания: "${wish.text}".${wishContextLine(wish)}
 - Задавай вопросы про смыслы: «зачем тебе это?», «что это даст?»
 - Помоги найти глубинную мотивацию
 - Спрашивай про ценности и связи с другим
@@ -3840,14 +3879,67 @@ document.getElementById('wishchat-send').addEventListener('click', async () => {
     return;
   }
   let reply = (msg && msg.content) ? msg.content.trim() : '';
-  const call = (msg && msg.tool_calls || []).find(c => c.function.name === 'propose_note');
+  let toolCalls = (msg && msg.tool_calls) || [];
+
+  // query_period — как в главном чате: возвращаем точный список и переспрашиваем модель
+  const periodCall = toolCalls.find(c => c.function.name === 'query_period');
+  if (periodCall) {
+    let pArgs = {};
+    try { pArgs = JSON.parse(periodCall.function.arguments || '{}'); } catch(e) {}
+    apiMsgs.push({ role: 'assistant', content: msg.content || null, tool_calls: toolCalls });
+    apiMsgs.push({ role: 'tool', tool_call_id: periodCall.id, content: formatPeriodContext(Math.max(1, parseInt(pArgs.days) || 7)) });
+    console.log('[WishChat] query_period handled, re-calling API');
+    msg = await callChatAPI(apiMsgs);
+    toolCalls = (msg && msg.tool_calls) || [];
+    reply = (msg && msg.content) ? msg.content.trim() : '';
+  }
+
+  // mark_done — выполняем сразу (приоритет задачам, привязанным к этому желанию)
+  const doneCall = toolCalls.find(c => c.function.name === 'mark_done');
+  if (doneCall) {
+    try {
+      const args = JSON.parse(doneCall.function.arguments || '{}');
+      const needle = (args.task_text || '').toLowerCase();
+      const scope = notes.filter(n => n.wishId === currentWishId);
+      const pool = scope.length ? scope : notes;
+      const task = pool.find(n => needle && n.text.toLowerCase().includes(needle) && !n.done);
+      if (task) {
+        await toggleDone(task.id, false);
+        reply += (reply ? '\n\n' : '') + '✅ Выполнил: ' + task.text;
+      } else {
+        reply += (reply ? '\n\n' : '') + '⚠ Не нашёл такую задачу среди незакрытых.';
+      }
+    } catch(e) { console.warn('[WishChat] mark_done failed', e); }
+  }
+
+  // update_prompt — долгосрочная инструкция (модель вызывает только после подтверждения)
+  const promptCall = toolCalls.find(c => c.function.name === 'update_prompt');
+  if (promptCall) {
+    try {
+      const args = JSON.parse(promptCall.function.arguments || '{}');
+      if (args.rule) { await addPromptRule(args.rule, 'chat'); }
+    } catch(e) { console.warn('[WishChat] update_prompt failed', e); }
+  }
+
+  // propose_note — задача/заметка к ЖЕЛАНИЮ: тег желания приоритетен, сразу в тудушку
+  const call = toolCalls.find(c => c.function.name === 'propose_note');
   if (call) {
     try {
       const args = JSON.parse(call.function.arguments || '{}');
       if (args.text) {
-        await addDoc(notesCol(), { text: args.text, type:'text', tag: args.tag || null, createdAt: new Date().toISOString() });
+        const minOrder = notes.reduce((m, n) => n.inTodo ? Math.min(m, n.todoOrder ?? Infinity) : m, Infinity);
+        await addDoc(notesCol(), {
+          text: args.text,
+          type: 'text',
+          tag: w.shortTag || args.tag || null, // тег желания — главный признак задач из желания
+          wishId: currentWishId,               // связь с желанием (видно в карточке желания и при удалении)
+          inTodo: true,
+          todoOrder: minOrder === Infinity ? Date.now() : minOrder - 1,
+          createdAt: new Date().toISOString()
+        });
         await loadNotes();
-        reply += '\n\n📋 Добавил заметку: ' + args.text;
+        renderCalendar();
+        reply += (reply ? '\n\n' : '') + '📋 Добавил задачу к желанию [' + (w.shortTag || '') + ']: ' + args.text + ' — уже в тудушке. День и час можно назначить кнопкой 📅 или перетаскиванием в календаре.';
       }
     } catch(e) { console.warn('[WishChat] failed to handle tool call', e); }
   }
@@ -3860,7 +3952,11 @@ document.getElementById('wishchat-send').addEventListener('click', async () => {
     } catch(e) { console.error('[WishChat] failed to save AI message:', e); }
   } else {
     console.warn('[WishChat] empty reply from AI');
-    alert('AI вернул пустой ответ. Попробуйте переформулировать.');
+    // мягкий фолбэк вместо alert — диалог продолжается
+    const aiMsg = { role:'assistant', content:'Хм, ответ не сформировался. Попробуй переформулировать — или напиши конкретнее, что добавить к желанию.', time:new Date().toISOString(), perspective };
+    wishChatMessages.push(aiMsg);
+    renderWishChat();
+    try { await addDoc(wishMessagesCol(currentWishId), aiMsg); } catch(e) {}
   }
 });
 document.getElementById('wishchat-input').addEventListener('keydown', e => { if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();document.getElementById('wishchat-send').click();} });
@@ -4291,6 +4387,16 @@ async function reorderTodo(id, newIndex) {
   } catch(e) { alert('Ошибка сортировки: ' + e.message); }
 }
 
+// бейдж запланированной даты/времени (общий для тудушки и истории) — синхронизация с календарём
+function whenBadgeStr(n) {
+  if (!n.scheduledDate) return '';
+  const dd = parseDayKey(n.scheduledDate);
+  if (!dd) return '';
+  const overdue = n.scheduledDate < formatDateKey(new Date());
+  const lbl = dd.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' }) + (n.scheduledTime ? ' ' + n.scheduledTime.slice(0, 5) : '');
+  return (overdue ? '⚠ ' : '') + '📅 ' + lbl;
+}
+
 function renderTodo() {
   const el = document.getElementById('todo-list');
   if (!el) return;
@@ -4300,21 +4406,25 @@ function renderTodo() {
     el.innerHTML = '<div class="hist-empty"><div class="hist-empty-icon">📋</div>Список пуст — добавь задачи из Истории кнопкой «В тудулист»</div>';
     return;
   }
-  el.innerHTML = queue.map((n, i) => `
+  el.innerHTML = queue.map((n, i) => {
+    const whenStr = whenBadgeStr(n);
+    const whenStyle = n.scheduledDate && n.scheduledDate < formatDateKey(new Date()) ? ' style="color:rgba(255,110,110,0.9);"' : '';
+    return `
     <div class="note-card" data-id="${n.id}" style="display:flex;gap:10px;align-items:flex-start;">
       <div class="todo-drag-handle">⠿</div>
       <div style="flex:1;min-width:0;">
         <div class="note-meta">
-          <span class="note-date">#${i+1}${n.tag ? ' · ' + n.tag : ''}</span>
+          <span class="note-date"${whenStyle}>#${i+1}${n.tag ? ' · ' + n.tag : ''}${whenStr ? ' · ' + whenStr : ''}</span>
         </div>
         <div class="note-text">${escHtml(n.text)}</div>
         <div class="note-actions">
           <button class="note-btn note-done" onclick="toggleDone('${n.id}', false)">✓ Выполнено</button>
+          <button class="note-btn note-edit" onclick="openScheduleModal('${n.id}')">📅 Дата</button>
           <button class="note-btn note-undone" onclick="toggleTodo('${n.id}', true)">✕ Убрать</button>
         </div>
       </div>
     </div>
-  `).join('');
+  `; }).join('');
 }
 
 // экспорт чата
@@ -4557,7 +4667,9 @@ function buildChatTools() {
         type: 'object',
         properties: {
           text: { type: 'string', description: 'Текст записи, который увидит пользователь и который сохранится в базу' },
-          tag: { type: 'string', enum: tagLabels, description: 'Сфера жизни, к которой относится запись' }
+          tag: { type: 'string', enum: tagLabels, description: 'Сфера жизни, к которой относится запись' },
+          wish: { type: 'string', description: 'shortTag желания из раздела ЖЕЛАНИЯ (текст в [квадратных скобках]). Заполняй, если запись относится к желанию — запись привяжется к нему и получит его тег автоматически' },
+          to_todo: { type: 'boolean', description: 'true — поставить задачу в тудушку и календарь (конкретные шаги и дела); обычные мысли/заметки — false или пропусти' }
         },
         required: ['text','tag']
       }
@@ -4658,13 +4770,17 @@ window.resolveConfirm = async function(idx, yes) {
   if (yes) {
     const nd = m.confirmData.note;
     try {
-      await addDoc(notesCol(), {
+      const newDoc = {
         text: nd.text, type: 'text',
         tag: nd.tag || null,
         createdAt: new Date().toISOString()
-      });
-      await addChatMessage('assistant', '✅ Добавлено в базу!');
+      };
+      if (nd.wishId) newDoc.wishId = nd.wishId; // привязка к желанию (тег уже = тегу желания)
+      if (nd.inTodo === true) { newDoc.inTodo = true; newDoc.todoOrder = nd.todoOrder !== null && nd.todoOrder !== undefined ? nd.todoOrder : Date.now(); }
+      await addDoc(notesCol(), newDoc);
+      await addChatMessage('assistant', '✅ Добавлено в базу!' + (nd.inTodo ? ' Задача — в тудушке и календаре.' : '') + (nd.wishId ? ' Привязал к желанию.' : ''));
       await loadNotes();
+      renderCalendar();
     } catch(e) { await addChatMessage('assistant', 'Ошибка: ' + e.message); }
   } else {
     await addChatMessage('assistant', 'Хорошо, ничего не добавляю.');
@@ -5113,6 +5229,13 @@ function getBaseInstructions() {
 - НЕ вызывай если: болтовня, вопрос, ответ «да/нет» без контекста, обсуждение без конкретики, или похожая незакрытая запись уже точно есть в базе
 - tag — это СФЕРА ЖИЗНИ, к которой относится запись (не тип записи). Выбирай строго из значений enum поля tag — этот список настраивается пользователем в приложении и может меняться
 
+ЗАПИСИ К ЖЕЛАНИЮ (поля wish и to_todo у propose_note):
+- В разделе ЖЕЛАНИЯ выше перечислены все желания пользователя — у каждого shortTag в [квадратных скобках]
+- Если пользователь упоминает желание (по названию, теме или shortTag — например «пожить в Москва Сити», «по поводу Бали») — передай shortTag этого желания в поле wish: запись привяжется к желанию и автоматически получит тег желания
+- НЕ выдумывай shortTag — используй только те, что реально есть в разделе ЖЕЛАНИЯ; если подходящего желания нет — оставь wish пустым
+- Конкретные шаги и дела к желанию — ставь to_todo: true (попадут в тудушку и в календарь); мысли, идеи, справки про желание — без to_todo
+- В разделах ТУДУШКА и КАЛЕНДАРЬ задачи желаний помечены тегом желания — по нему видно, какие шаги уже стоят в очереди и на какие дни запланированы
+
 КОГДА ВЫЗЫВАТЬ mark_done:
 - Только когда пользователь явно подтвердил, что уже сделал задачу
 - Не более одной задачи за раз
@@ -5174,8 +5297,31 @@ function buildSystemPrompt() {
 
   const todoQueue = getTodoQueue();
   const todoContext = todoQueue.length
-    ? todoQueue.map((n, i) => `${i+1}. ${n.text}${n.tag ? ' ('+n.tag+')' : ''}`).join('\n')
+    ? todoQueue.map((n, i) => `${i+1}. ${n.text}${n.tag ? ' ('+n.tag+')' : ''}${n.scheduledDate ? ' — на ' + n.scheduledDate + (n.scheduledTime ? ' ' + n.scheduledTime : '') : ''}`).join('\n')
     : '(пусто — ничего не поставлено в очередь на выполнение сейчас)';
+
+  // ЖЕЛАНИЯ — полный список с shortTag, статусом и шагами (для поля wish у propose_note)
+  const wishesContext = wishes.length
+    ? wishes.map((w, i) => {
+        const ms = (w.milestones || []);
+        const doneMs = ms.filter(m => m.done).length;
+        const openLinked = notes.filter(n => n.wishId === w.id && !n.done).length;
+        let line = `  ${i+1}. [${w.shortTag || 'без-тега'}] ${w.text} — статус: ${w.state || 'active'}${ms.length ? `, шагов: ${doneMs}/${ms.length}` : ''}${openLinked ? `, незакрытых задач: ${openLinked}` : ''}`;
+        if (ms.length) {
+          line += '\n' + ms.slice(0, 10).map(m => `       ${m.done ? '[x]' : '[ ]'} ${m.text}`).join('\n');
+        }
+        return line;
+      }).join('\n')
+    : '  (пока нет желаний)';
+
+  // КАЛЕНДАРЬ — что уже запланировано по дням (для вопросов «что на завтра» и планирования)
+  const scheduledCtx = notes
+    .filter(n => n.inTodo === true && n.done !== true && n.scheduledDate)
+    .sort((a, b) => ((a.scheduledDate + (a.scheduledTime || '')) || '').localeCompare((b.scheduledDate + (b.scheduledTime || '')) || ''))
+    .slice(0, 15);
+  const calendarContext = scheduledCtx.length
+    ? scheduledCtx.map(n => `  - ${n.scheduledDate}${n.scheduledTime ? ' ' + n.scheduledTime : ''} — ${n.text}${n.tag ? ' [' + n.tag + ']' : ''}`).join('\n')
+    : '  (ничего не запланировано на конкретные дни)';
 
   return `Ты — личный ИИ-ассистент пользователя в приложении Hazenstein. Сейчас: ${todayStr}.
 
@@ -5183,6 +5329,12 @@ function buildSystemPrompt() {
 
 ТУДУШКА (текущая очередь дел на выполнение прямо сейчас, по приоритету — пункт 1 самый первостепенный):
 ${todoContext}
+
+КАЛЕНДАРЬ (что запланировано по дням и времени — используй для вопросов «что на завтра/на неделе» и при планировании):
+${calendarContext}
+
+ЖЕЛАНИЯ (цели пользователя; shortTag в [скобках] — это значение для поля wish функции propose_note; шаги: [x] выполнен, [ ] нет):
+${wishesContext}
 
 ЗА СЕГОДНЯ (добавлено или выполнено сегодня — этот список уже точно отфильтрован по сегодняшнему дню, используй его напрямую для любых вопросов про "сегодня", не нужно искать это в общей базе ниже):
 ${todayContext}
@@ -5496,10 +5648,29 @@ async function sendChatMessage(userText) {
 
     if (proposedNote && proposedNote.text) {
       const validTags = tags.map(t => t.label);
-      const tag = validTags.includes(proposedNote.tag) ? proposedNote.tag : null;
+      let tag = validTags.includes(proposedNote.tag) ? proposedNote.tag : null;
+      let wishId = null;
+      let wishNote = '';
+      // привязка к желанию: тег желания приоритетен над тегом сферы
+      if (proposedNote.wish) {
+        const ws = String(proposedNote.wish).toLowerCase().trim();
+        const w = wishes.find(x => (x.shortTag || '').toLowerCase() === ws)
+               || wishes.find(x => (x.shortTag || '').toLowerCase().includes(ws) || ws.includes((x.shortTag || '').toLowerCase()));
+        if (w) {
+          wishId = w.id;
+          tag = w.shortTag || tag;
+          wishNote = ' → к желанию ' + (w.text.length > 40 ? '«' + w.text.slice(0, 40) + '…»' : '«' + w.text + '»');
+        }
+      }
+      let inTodo = false, todoOrder = null;
+      if (proposedNote.to_todo === true) {
+        inTodo = true;
+        const minOrder = notes.reduce((m, n) => n.inTodo ? Math.min(m, n.todoOrder ?? Infinity) : m, Infinity);
+        todoOrder = minOrder === Infinity ? Date.now() : minOrder - 1;
+      }
       const confirmText = (replyText ? replyText + '\n\n' : '') +
-        'Добавить в базу: «' + proposedNote.text + '»' + (tag ? ' [' + tag + ']' : '') + '?';
-      await addChatMessage('assistant', confirmText, { note: { text: proposedNote.text, tag }, resolved: false });
+        'Добавить в базу: «' + proposedNote.text + '»' + (tag ? ' [' + tag + ']' : '') + wishNote + (inTodo ? ' · ✅ в тудушку' : '') + '?';
+      await addChatMessage('assistant', confirmText, { note: { text: proposedNote.text, tag, wishId, inTodo, todoOrder }, resolved: false });
     } else {
       await addChatMessage('assistant', replyText || 'Хорошо.');
     }
