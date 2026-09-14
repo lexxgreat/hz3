@@ -957,7 +957,7 @@ body.cal-dragging,body.cal-dragging *{touch-action:none!important;user-select:no
 <!-- Firebase -->
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-import { getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, addDoc, getDocs, getDoc, updateDoc, deleteDoc, doc, orderBy, query, setDoc, serverTimestamp, getCountFromServer } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+import { getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, addDoc, getDocs, getDoc, updateDoc, deleteDoc, doc, orderBy, query, where, setDoc, serverTimestamp, getCountFromServer } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, signInAnonymously, linkWithCredential, EmailAuthProvider } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 
 const firebaseConfig = {
@@ -4510,9 +4510,24 @@ function refreshUsersCount() {
   const el = document.getElementById('users-count');
   if (!el || !isOwner()) return;
   el.textContent = '...';
-  getCountFromServer(query(collection(db, 'users')))
-    .then(snap => { el.textContent = String(snap.data().count); })
-    .catch(e => { el.textContent = '—'; console.warn('[Users] count failed (нужны новые rules?)', e && (e.code || e.message)); });
+  // считаем только профили с email — «количество строк почт»; гости-анонимы не считаются
+  getCountFromServer(query(collection(db, 'users'), where('email', '!=', null)))
+    .then(snap => {
+      el.textContent = String(snap.data().count);
+      el.title = '';
+    })
+    .catch(e => {
+      const code = String((e && e.code) || '');
+      if (code.indexOf('permission-denied') >= 0) {
+        el.textContent = 'нет правил'; // Firestore Rules не опубликованы
+      } else if (code.indexOf('unavailable') >= 0) {
+        el.textContent = 'офлайн';
+      } else {
+        el.textContent = '—';
+      }
+      el.title = code || 'ошибка';
+      console.warn('[Users] count failed:', code || e);
+    });
 }
 window.refreshUsersCount = refreshUsersCount;
 
