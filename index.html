@@ -1447,30 +1447,113 @@ function heuristicIsTask(text) {
   return / (надо|нужно|необходимо|не забыть|не забудь|напомни|напоминание|сделать|купить|позвонить|записаться|отправить|отослать|написать|оплатить|заплатить|перевести|забрать|сдать|починить|заказать|проверить|подготовить|доделать|закончить|встретиться|сходить|пойти|отвезти|привезти|выбросить|постирать|убраться|позвони|купи|сделай|проверь|отправь|запиши|закажи|оплати|забери) /.test(norm);
 }
 
+// валидация даты/времени, пришедших от ИИ (поле date/time у propose_note и классификатора)
+function isValidDateStr(s) {
+  return typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s) && !isNaN(new Date(s + 'T00:00:00').getTime());
+}
+function isValidTimeStr(s) {
+  return typeof s === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(s);
+}
+
+// фолбэк-парсер русских относительных дат (когда ИИ недоступен; baseDate — для тестов)
+// «сегодня/завтра/послезавтра», «через N дней/неделю/две недели/месяц», «в пятницу»,
+// «на следующей неделе» → ближайший понедельник; время «15:00», «в 3 часа дня», «утром/днём/вечером»
+function parseRelativeDateRu(text, baseDate) {
+  let t = ' ' + String(text || '').toLowerCase() + ' ';
+  const base = baseDate ? new Date(baseDate) : new Date();
+  base.setHours(0,0,0,0);
+  const dayMs = 86400000;
+  let date = null, time = null;
+  // числительные словами → цифры («в три часа дня» → «в 3 часа дня»)
+  const numWords = { 'один':1,'одну':1,'два':2,'две':2,'три':3,'четыре':4,'пять':5,'шесть':6,'семь':7,'восемь':8,'девять':9,'десять':10,'одиннадцать':11,'двенадцать':12 };
+  for (const [w, n] of Object.entries(numWords)) t = t.replace(new RegExp(' ' + w + ' ', 'g'), ' ' + n + ' ');
+  if (/сегодня/.test(t)) date = new Date(base);
+  else if (/послезавтра/.test(t)) date = new Date(base.getTime() + 2 * dayMs);
+  else if (/завтра/.test(t)) date = new Date(base.getTime() + dayMs);
+  else {
+    const mN = t.match(/через\s+(\d+|пару)\s*(дн|день|дня|дней)/);
+    const mW = t.match(/через\s+(две|2)?\s*недел/);
+    const mM = t.match(/через\s+месяц/);
+    if (mN) date = new Date(base.getTime() + (mN[1] === 'пару' ? 2 : parseInt(mN[1])) * dayMs);
+    else if (mW) date = new Date(base.getTime() + (mW[1] ? 14 : 7) * dayMs);
+    else if (mM) date = new Date(base.getTime() + 30 * dayMs);
+    else {
+      // дни недели в винительном падеже: «в пятницу», «во вторник», «в среду»…
+      const wdAcc = ['воскресенье','понедельник','вторник','среду','четверг','пятницу','субботу'];
+      const wIdx = wdAcc.findIndex(w => t.includes(' ' + w));
+      if (wIdx >= 0) {
+        const diff = (wIdx - base.getDay() + 7) % 7 || 7; // ближайший будущий (если сегодня — через 7)
+        date = new Date(base.getTime() + diff * dayMs);
+      } else if (/на\s+следующ(ей|ую)\s+недел/.test(t)) {
+        const diff = (1 - base.getDay() + 7) % 7 || 7; // ближайший понедельник
+        date = new Date(base.getTime() + diff * dayMs);
+      }
+    }
+  }
+  // время: «15:00» / «в 3 часа дня» / «в 9 утра» / «утром/днём/вечером»
+  const mHm = t.match(/(\d{1,2}):(\d{2})/);
+  if (mHm) {
+    time = String(Math.min(23, parseInt(mHm[1]))).padStart(2,'0') + ':' + mHm[2];
+  } else {
+    const mH = t.match(/в\s+(\d{1,2})\s*(?:час(?:ов|а)?)?\s*(утра|ночи|дня|вечера)/);
+    if (mH) {
+      let h = parseInt(mH[1]) % 24;
+      if ((mH[2] === 'дня' || mH[2] === 'вечера') && h < 12) h += 12;
+      if (mH[2] === 'ночи' && h === 12) h = 0;
+      time = String(h).padStart(2,'0') + ':00';
+    } else if (/утром/.test(t)) time = '09:00';
+    else if (/дн(ё|е)м/.test(t)) time = '13:00';
+    else if (/вечером/.test(t)) time = '18:00';
+  }
+  return { date: date ? formatDateKey(date) : null, time: time && isValidTimeStr(time) ? time : null };
+}
+
 async function classifyAndRouteNote(note) {
   if (!note || !note.id || !note.text) return;
   if (note.inTodo === true) return; // уже в тудушке
-  let isTask = null;
+  const todayKey = formatDateKey(new Date());
+  const tomorrowKey = formatDateKey(new Date(Date.now() + 86400000));
+  let isTask = null, aiDate = null, aiTime = null;
   try {
     const resp = await callPolzaAI([
-      { role: 'system', content: 'Ты — классификатор записей пользователя. Ответь ТОЛЬКО валидным JSON без markdown: {"task": true} — если запись это конкретное действие, которое предстоит сделать и потом можно поставить галочку (купить, позвонить, записаться, отправить, сделать, не забыть); {"task": false} — если это мысль, факт, идея без действия, дневниковая запись или справка. Сомневаешься — {"task": true}: лучше поставить в тудушку, чем потерять дело.' },
+      { role: 'system', content: 'Ты — классификатор записей пользователя. Ответь ТОЛЬКО валидным JSON без markdown: {"task": true/false, "date": "YYYY-MM-DD" или null, "time": "HH:MM" или null}. task: true — если запись это конкретное действие, которое предстоит сделать и потом можно поставить галочку (купить, позвонить, записаться, отправить, сделать, не забыть); false — мысль, факт, идея без действия, дневниковая запись, справка. Сомневаешься — true: лучше поставить в тудушку, чем потерять дело. date: если задача привязана ко дню — вычисли точную дату от СЕГОДНЯ (сегодня=' + todayKey + ', завтра=' + tomorrowKey + '; «через неделю» = +7 дней; «на следующей неделе» = ближайший понедельник; названный день недели = ближайший будущий). time: если названо время («в 15:00», «утром» = 09:00, «вечером» = 18:00) — HH:MM. Если это не задача или срок не назван — date/time = null.' },
       { role: 'user', content: note.text.slice(0, 300) }
-    ], { max_tokens: 20, temperature: 0 });
+    ], { max_tokens: 60, temperature: 0 });
     const m = resp && resp.match(/\{[\s\S]*\}/);
-    if (m) { const p = JSON.parse(m[0]); if (typeof p.task === 'boolean') isTask = p.task; }
+    if (m) {
+      const p = JSON.parse(m[0]);
+      if (typeof p.task === 'boolean') {
+        isTask = p.task;
+        if (isValidDateStr(p.date)) aiDate = p.date;
+        if (isValidTimeStr(p.time)) aiTime = p.time;
+      }
+    }
   } catch(e) { console.warn('[Classify] AI failed, fallback to heuristic:', e); }
   if (isTask === null) isTask = heuristicIsTask(note.text); // фолбэк без ИИ
   if (!isTask) return; // заметка — остаётся в истории, ничего не делаем
+  // дата/время: от ИИ, иначе — локальный фолбэк-парсер относительных дат
+  let scheduledDate = aiDate, scheduledTime = aiTime;
+  if (scheduledDate && !scheduledTime || !scheduledDate) {
+    const heur = parseRelativeDateRu(note.text);
+    if (!scheduledDate && heur.date) scheduledDate = heur.date;
+    if (scheduledDate && !scheduledTime && heur.time) scheduledTime = heur.time;
+  }
+  if (!scheduledDate) scheduledTime = null;
   // перепроверка актуального состояния (могли изменить с другого устройства пока думали)
   const fresh = notes.find(n => n.id === note.id);
   if (!fresh || fresh.inTodo === true || fresh.done) return;
   const minOrder = notes.reduce((mm, n) => n.inTodo ? Math.min(mm, n.todoOrder ?? Infinity) : mm, Infinity);
   const todoOrder = minOrder === Infinity ? Date.now() : minOrder - 1; // новая задача — вверху очереди
   try {
-    await updateDoc(uDocRef('notes', note.id), { inTodo: true, todoOrder });
+    const patch = { inTodo: true, todoOrder };
+    if (scheduledDate) patch.scheduledDate = scheduledDate; // задача с датой → в календарь
+    if (scheduledTime) patch.scheduledTime = scheduledTime;
+    await updateDoc(uDocRef('notes', note.id), patch);
     await loadNotes();
+    renderCalendar(); // календарь видит задачу с датой сразу
     const short = note.text.length > 30 ? note.text.slice(0, 30) + '…' : note.text;
-    setStatus('✅ Определил как задачу — поставил в тудушку: «' + short + '»', 4000);
+    const when = scheduledDate ? ' на ' + scheduledDate.slice(8,10) + '.' + scheduledDate.slice(5,7) + (scheduledTime ? ' ' + scheduledTime : '') : '';
+    setStatus('✅ Определил как задачу — поставил в тудушку: «' + short + '»' + when, 4000);
   } catch(e) { console.warn('[Classify] failed to add to todo:', e); }
 }
 
@@ -5461,7 +5544,9 @@ function buildChatTools() {
           text: { type: 'string', description: 'Текст записи, который увидит пользователь и который сохранится в базу' },
           tag: { type: 'string', enum: tagLabels, description: 'Сфера жизни, к которой относится запись' },
           wish: { type: 'string', description: 'shortTag желания из раздела ЖЕЛАНИЯ — копируй ТОЧНО как в [квадратных скобках], не переводи и не транслитерируй. Заполняй, если запись относится к желанию — запись привяжется к нему и получит его тег автоматически' },
-          to_todo: { type: 'boolean', description: 'true — это ЗАДАЧА: конкретное действие, которое предстоит сделать (купить, позвонить, отправить, записаться, сделать) — сохранится сразу и попадёт в тудушку автоматически. false или пропуск — это ЗАМЕТКА: мысль, факт, идея, дневниковая запись — добавится после подтверждения пользователя' }
+          to_todo: { type: 'boolean', description: 'true — это ЗАДАЧА: конкретное действие, которое предстоит сделать (купить, позвонить, отправить, записаться, сделать) — сохранится сразу и попадёт в тудушку автоматически. false или пропуск — это ЗАМЕТКА: мысль, факт, идея, дневниковая запись — добавится после подтверждения пользователя' },
+          date: { type: 'string', description: 'Дата выполнения задачи YYYY-MM-DD, если из слов пользователя ясно когда (сегодня, завтра, через неделю, в пятницу, на следующей неделе). Вычисли точную дату от текущей даты (см. СЕГОДНЯ в контексте). «На следующей неделе» = ближайший понедельник. Если срок не назван — не заполняй' },
+          time: { type: 'string', description: 'Время выполнения HH:MM, если пользователь назвал время («в 15:00», «в три часа дня»). Если время не названо — не заполняй' }
         },
         required: ['text','tag']
       }
@@ -5564,6 +5649,8 @@ async function addNoteFromChat(nd) {
   };
   if (nd.wishId) newDoc.wishId = nd.wishId; // привязка к желанию (тег уже = тегу желания)
   if (nd.inTodo === true) { newDoc.inTodo = true; newDoc.todoOrder = nd.todoOrder !== null && nd.todoOrder !== undefined ? nd.todoOrder : Date.now(); }
+  if (nd.scheduledDate) newDoc.scheduledDate = nd.scheduledDate; // дата → задача попадёт в календарь
+  if (nd.scheduledTime) newDoc.scheduledTime = nd.scheduledTime;
   await addDoc(notesCol(), newDoc);
   await loadNotes();
   renderCalendar();
@@ -6218,6 +6305,13 @@ function getBaseInstructions() {
 - Тест: если в записи есть действие, которое можно выполнить и потом поставить галочку — это ЗАДАЧА. Если запись описывает прошлое/настоящее и ничего не требует сделать — ЗАМЕТКА
 - Сомневаешься — выбирай ЗАДАЧУ: лучше поставить в тудушку, чем потерять дело
 
+ДАТЫ ЗАДАЧ (поля date и time у propose_note):
+- Пользователь назвал срок («сегодня», «завтра», «через неделю», «в пятницу», «на следующей неделе») — вычисли точную дату от СЕГОДНЯ (см. контекст выше) и передай в поле date в формате YYYY-MM-DD
+- Правила пересчёта: «сегодня» → сегодня; «завтра» → +1 день; «послезавтра» → +2; «через N дней» → +N; «через неделю» → +7; «через месяц» → +30; «в понедельник…воскресенье» → ближайший будущий такой день недели; «на следующей неделе» → ближайший понедельник (пользователь потом перенесёт, если что); «25 числа» → ближайшее будущее 25-е число
+- Время («в 15:00», «в три часа дня», «утром», «вечером») — в поле time в формате HH:MM (утром → 09:00, днём → 13:00, вечером → 18:00). Не названо — не заполняй
+- Если посчитанная дата уже в прошлом — возьми ближайшую будущую (следующий такой день)
+- Задача с датой автоматически попадёт в календарь на этот день — напиши об этом, если поставил дату
+
 КОГДА ВЫЗЫВАТЬ propose_note (добавить запись):
 - Пользователь говорит о действии которое надо сделать («надо», «нужно», «сделать», «не забыть»), ставит задачу, формулирует цель или упоминает идею — сразу вызови propose_note с точным текстом и тегом
 - Это касается и случаев, когда идея или задача всплывает мимоходом в разговоре, а не только явной просьбы «добавь»
@@ -6269,6 +6363,8 @@ function buildSystemPrompt() {
   const days = ['воскресенье','понедельник','вторник','среда','четверг','пятница','суббота'];
   const months = ['января','февраля','марта','апреля','мая','июня','июля','августа','сентября','октября','ноября','декабря'];
   const todayStr = `${days[now.getUTCDay()]}, ${now.getUTCDate()} ${months[now.getUTCMonth()]} ${now.getUTCFullYear()}, ${String(now.getUTCHours()).padStart(2,'0')}:${String(now.getUTCMinutes()).padStart(2,'0')} (МСК)`;
+  // машиночитаемая дата для вычисления сроков задач (поле date у propose_note)
+  const todayKeyStr = now.getUTCFullYear() + '-' + String(now.getUTCMonth()+1).padStart(2,'0') + '-' + String(now.getUTCDate()).padStart(2,'0');
 
   const notesContext = notes.slice(0,100).map(n => {
     const status = n.done ? ' [ВЫПОЛНЕНО]' : '';
@@ -6320,6 +6416,7 @@ function buildSystemPrompt() {
     : '  (ничего не запланировано на конкретные дни)';
 
   return `Ты — личный ИИ-ассистент пользователя в приложении Hazenstein. Сейчас: ${todayStr}.
+СЕГОДНЯ (машиночитаемо, для вычисления сроков задач в поле date): ${todayKeyStr}.
 
 ЗНАКОМСТВО: если в разделе "ДОПОЛНИТЕЛЬНЫЕ ИНСТРУКЦИИ" ниже нет имени пользователя — вежливо спроси, как к нему обращаться, при первом же удобном случае в диалоге (не обязательно первым сообщением, если пользователь уже начал с чего-то другого — сначала ответь по существу, а имя спроси следом). Когда пользователь назовёт имя, предложи запомнить его через update_prompt как обычно (с подтверждением, по общему правилу выше), и сформулируй rule СТРОГО в виде "Пользователя зовут Имя" (без лишних слов) — это нужно чтобы имя можно было показать на главном экране.
 
@@ -6675,12 +6772,16 @@ async function sendChatMessage(userText) {
         const minOrder = notes.reduce((m, n) => n.inTodo ? Math.min(m, n.todoOrder ?? Infinity) : m, Infinity);
         todoOrder = minOrder === Infinity ? Date.now() : minOrder - 1;
       }
+      // дата/время от ИИ: валидируем формат, без даты время не сохраняем
+      let scheduledDate = isValidDateStr(proposedNote.date) ? proposedNote.date : null;
+      let scheduledTime = scheduledDate && isValidTimeStr(proposedNote.time) ? proposedNote.time : null;
+      const whenStr = scheduledDate ? ' · 📅 ' + scheduledDate.slice(8,10) + '.' + scheduledDate.slice(5,7) + (scheduledTime ? ' ' + scheduledTime : '') : '';
       // ЗАДАЧА (to_todo) — ИИ сам классифицировал: сохраняем сразу, без кнопок «Да/Нет»
       if (inTodo) {
         try {
-          await addNoteFromChat({ text: proposedNote.text, tag, wishId, inTodo: true, todoOrder });
+          await addNoteFromChat({ text: proposedNote.text, tag, wishId, inTodo: true, todoOrder, scheduledDate, scheduledTime });
           const okText = (replyText ? replyText + '\n\n' : '') +
-            '✅ Задача добавлена в тудушку: «' + proposedNote.text + '»' + (tag ? ' [' + tag + ']' : '') + wishNote + '.';
+            '✅ Задача добавлена в тудушку: «' + proposedNote.text + '»' + (tag ? ' [' + tag + ']' : '') + wishNote + whenStr + (scheduledDate ? ' — поставил в календарь.' : '.');
           await addChatMessage('assistant', okText);
         } catch(e) {
           await addChatMessage('assistant', 'Ошибка: ' + e.message);
@@ -6689,7 +6790,7 @@ async function sendChatMessage(userText) {
         // ЗАМЕТКА — как раньше: подтверждение «Да/Нет»
         const confirmText = (replyText ? replyText + '\n\n' : '') +
           'Добавить в базу: «' + proposedNote.text + '»' + (tag ? ' [' + tag + ']' : '') + wishNote + '?';
-        await addChatMessage('assistant', confirmText, { note: { text: proposedNote.text, tag, wishId, inTodo: false, todoOrder: null }, resolved: false });
+        await addChatMessage('assistant', confirmText, { note: { text: proposedNote.text, tag, wishId, inTodo: false, todoOrder: null, scheduledDate, scheduledTime }, resolved: false });
       }
     } else {
       await addChatMessage('assistant', replyText || 'Хорошо.');
