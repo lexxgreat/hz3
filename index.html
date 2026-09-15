@@ -334,6 +334,9 @@ body{background:#060918;font-family:'Inter',sans-serif;display:flex;justify-cont
 .note-meta{display:flex;justify-content:space-between;align-items:center;margin-bottom:7px}
 .note-date{font-size:10px;color:rgba(255,255,255,0.28);font-weight:500}
 .note-type{font-size:9px;padding:2px 7px;border-radius:99px;font-weight:600}
+.note-copy-btn{background:none;border:none;cursor:pointer;font-size:13px;padding:0 2px;opacity:0.4;transition:opacity 0.15s,transform 0.1s;line-height:1;flex-shrink:0}
+.note-copy-btn:hover{opacity:0.85}
+.note-copy-btn:active{opacity:1;transform:scale(0.88)}
 .type-voice{background:rgba(0,212,255,0.1);color:rgba(0,212,255,0.8);border:0.5px solid rgba(0,212,255,0.2)}
 .type-text{background:rgba(108,71,255,0.1);color:rgba(139,92,246,0.8);border:0.5px solid rgba(108,71,255,0.2)}
 .note-text{font-size:13.5px;color:rgba(255,255,255,0.72);line-height:1.5;word-break:break-word}
@@ -1607,7 +1610,10 @@ function renderNotes(list) {
           <div style="flex:1;min-width:0;">
             <div class="note-meta">
               <span class="note-date">${date} · ${time}${n.tag ? ' · ' + n.tag : ''}${doneAtStr}${schedStr ? ' · ' + schedStr : ''}</span>
-              <span class="note-type ${n.type === 'voice' ? 'type-voice' : 'type-text'}">${n.type === 'voice' ? '🎤 Голос' : '✏️ Текст'}</span>
+              <span style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
+                <span class="note-type ${n.type === 'voice' ? 'type-voice' : 'type-text'}">${n.type === 'voice' ? '🎤 Голос' : '✏️ Текст'}</span>
+                ${selectionMode ? '' : `<button class="note-copy-btn" title="Скопировать текст" onclick="copyNoteText('${n.id}');event.stopPropagation();">📋</button>`}
+              </span>
             </div>
             <div class="note-text" style="${textStyle}">${escHtml(n.text)}</div>
             ${selectionMode ? '' : `
@@ -1622,6 +1628,36 @@ function renderNotes(list) {
       </div>`;
   }).join('');
 }
+
+// ── КОПИРОВАНИЕ ТЕКСТА ЗАМЕТКИ (иконка 📋 на карточке: история + тудушка) ──
+// Копируем ТОЛЬКО текст заметки (не тег/дату), не открывая карточку.
+window.copyNoteText = async function(id) {
+  const n = notes.find(x => x.id === id);
+  if (!n) return;
+  const text = (n.text || '').trim();
+  if (!text) return;
+  const legacyCopy = () => { // фолбэк для старых WebView без clipboard API
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.cssText = 'position:fixed;left:-9999px;top:0;opacity:0;';
+    document.body.appendChild(ta);
+    ta.focus(); ta.select();
+    let ok = false;
+    try { ok = document.execCommand('copy'); } catch(e) { ok = false; }
+    document.body.removeChild(ta);
+    return ok;
+  };
+  let copied = false;
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(text);
+      copied = true;
+    }
+  } catch(e) { /* отклонено/недоступно — пробуем фолбэк */ }
+  if (!copied) copied = legacyCopy();
+  if (copied) setStatus('📋 Текст скопирован — можно послать кому угодно', 2200);
+  else alert('Не удалось скопировать текст');
+};
 
 function escHtml(s) {
   return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
@@ -5304,6 +5340,7 @@ function renderTodo() {
       <div style="flex:1;min-width:0;">
         <div class="note-meta">
           <span class="note-date"${whenStyle}>#${i+1}${n.tag ? ' · ' + n.tag : ''}${whenStr ? ' · ' + whenStr : ''}</span>
+          <button class="note-copy-btn" title="Скопировать текст" onclick="copyNoteText('${n.id}');event.stopPropagation();">📋</button>
         </div>
         <div class="note-text">${escHtml(n.text)}</div>
         <div class="note-actions">
