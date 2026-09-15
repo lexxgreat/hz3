@@ -3755,12 +3755,19 @@ function renderWishes() {
     const doneMs = (w.milestones || []).filter(m => m.done).length;
     const progress = totalMs > 0 ? Math.round(doneMs / totalMs * 100) : 0;
     const hasMood = !!w.moodImage;
+    const moodPending = !hasMood && isMoodPending(w.id);
+    const moodFailed = !hasMood && !moodPending && isMoodFailed(w.id);
     // Fallback gradient based on category color
     const gradient = `linear-gradient(135deg, ${cat.color}33, ${cat.color}11)`;
+    const moodOverlay = hasMood ? '' : moodPending
+      ? '<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:10px;color:rgba(255,255,255,0.4);">🎨 Генерится картинка…</div>'
+      : moodFailed
+      ? `<div onclick="event.stopPropagation();retryWishMoodImage('${w.id}')" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:10px;color:rgba(255,255,255,0.55);background:rgba(0,0,0,0.25);cursor:pointer;text-align:center;padding:0 12px;">🎨 Не вышло — нажми, чтобы повторить</div>`
+      : (w.moodImagePrompt ? '<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:10px;color:rgba(255,255,255,0.4);">🎨 Генерится картинка…</div>' : '');
     return `
       <div class="note-card wish-card" onclick="openWishDetail('${w.id}')" style="padding:0;overflow:hidden;cursor:pointer;border:0.5px solid rgba(${w.state === 'done' ? '0,255,140' : '255,255,255'},0.15);${w.state === 'done' ? 'box-shadow:0 0 20px rgba(0,255,140,0.15);' : ''}">
         <div style="position:relative;height:140px;background:${hasMood ? `url('${w.moodImage}') center/cover` : gradient};">
-          ${!hasMood && w.moodImagePrompt ? '<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:10px;color:rgba(255,255,255,0.4);">🎨 Генерится картинка…</div>' : ''}
+          ${moodOverlay}
           <div style="position:absolute;top:8px;left:8px;font-size:22px;text-shadow:0 2px 8px rgba(0,0,0,0.8);">${w.icon || cat.icon}</div>
           <div style="position:absolute;top:8px;right:8px;background:rgba(0,0,0,0.7);padding:3px 8px;border-radius:99px;font-size:10px;color:${state.color};font-weight:600;font-family:Inter,sans-serif;backdrop-filter:blur(8px);">${state.icon} ${state.label}</div>
           ${totalMs > 0 ? `<div style="position:absolute;bottom:8px;left:8px;right:8px;display:flex;align-items:center;gap:6px;">
@@ -4152,7 +4159,8 @@ async function openWishDetail(id) {
     <div class="modal" style="max-width:440px;max-height:90vh;display:flex;flex-direction:column;padding:0;overflow:hidden;">
       <!-- Header with mood image -->
       <div style="position:relative;height:180px;background:${hasMood ? `url('${w.moodImage}') center/cover` : gradient};flex-shrink:0;">
-        ${!hasMood && w.moodImagePrompt ? '<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:12px;color:rgba(255,255,255,0.5);background:rgba(0,0,0,0.3);">🎨 Генерится картинка…</div>' : ''}
+        ${!hasMood && isMoodPending(id) ? '<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:12px;color:rgba(255,255,255,0.5);background:rgba(0,0,0,0.3);">🎨 Генерится картинка…</div>' : ''}
+        ${!hasMood && !isMoodPending(id) && isMoodFailed(id) ? `<div onclick="event.stopPropagation();retryWishMoodImage('${id}');this.remove();" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:12px;color:rgba(255,255,255,0.65);background:rgba(0,0,0,0.35);cursor:pointer;">🎨 Не вышло — нажми, чтобы повторить</div>` : ''}
         <button onclick="closeWishDetail()" style="position:absolute;top:8px;right:8px;background:rgba(0,0,0,0.6);border:none;color:#fff;width:28px;height:28px;border-radius:50%;font-size:16px;cursor:pointer;backdrop-filter:blur(8px);">✕</button>
         <div style="position:absolute;bottom:8px;left:8px;right:8px;display:flex;justify-content:space-between;align-items:flex-end;">
           <div style="font-size:32px;text-shadow:0 2px 12px rgba(0,0,0,0.8);">${w.icon || cat.icon}</div>
@@ -6803,36 +6811,117 @@ async function generatePolzaImage(prompt) {
     body: JSON.stringify({ prompt, n:1, size:'1024x1024' })
   });
   if (!res.ok) throw new Error('Image gen start failed: ' + res.status);
-  const data = await res.json();
-  if (!data.requestId) throw new Error('No requestId');
-  // Poll
-  for (let i = 0; i < 20; i++) {  // max 60 seconds (20 × 3s)
+  let data;
+  try { data = await res.json(); } catch(e) { throw new Error('Image gen start: bad JSON'); }
+  const reqId = data.requestId || data.id;
+  if (!reqId) throw new Error('No requestId');
+  // Poll — до 90 секунд (30 × 3s); одиночная сетевая осечка при опросе не валим всю генерацию
+  for (let i = 0; i < 30; i++) {
     await new Promise(r => setTimeout(r, 3000));
-    const stRes = await fetch(`https://api.polza.ai/api/v1/images/${data.requestId}`, {
-      headers: { 'Authorization':'Bearer ' + POLZA_KEY }
-    });
-    const stData = await stRes.json();
-    if (stData.status === 'COMPLETED' && stData.url) return stData.url;
-    if (stData.status === 'FAILED' || stData.error) throw new Error('Image gen failed');
+    let stData;
+    try {
+      const stRes = await fetch(`https://api.polza.ai/api/v1/images/${reqId}`, {
+        headers: { 'Authorization':'Bearer ' + POLZA_KEY }
+      });
+      stData = await stRes.json();
+    } catch(e) { continue; }
+    const imgUrl = stData.url || (Array.isArray(stData.images) && stData.images[0]);
+    if (stData.status === 'COMPLETED' && imgUrl) return imgUrl;
+    if (stData.status === 'FAILED' || stData.error) {
+      throw new Error('Image gen failed' + (stData.error && stData.error.message ? ': ' + stData.error.message : ''));
+    }
   }
   throw new Error('Image gen timeout');
 }
 
-// Запуск генерации mood-image для желания (async, не блокирует UI)
-async function generateWishMoodImage(wishId, prompt) {
-  try {
-    const url = await generatePolzaImage(prompt);
-    // Сохраняем URL в Firestore
-    await updateDoc(uDocRef('wishes', wishId), { moodImage: url });
-    // Перерисовываем список если открыт
-    await loadWishes();
-    renderWishes();
-    console.log('[Wish] mood image ready for', wishId);
-  } catch(e) {
-    console.warn('[Wish] mood image generation failed:', e);
+// ── Очередь генерации картинок желаний (по одной за раз) + самолечение ──
+// Раньше: если генерация срывалась (сеть, перезагрузка, таймаут) — желание навсегда
+// оставалось с заглушкой «Генерится картинка…». Теперь: желания без картинки при
+// старте сами становятся в очередь, а на неудаче на карточке появляется «повторить».
+const moodGen = { queue: [], runningId: null, failed: new Set(), healed: false };
+function isMoodPending(id) { return moodGen.runningId === id || moodGen.queue.some(j => j.wishId === id); }
+function isMoodFailed(id) { return moodGen.failed.has(id); }
+
+function queueWishImage(wishId, prompt) {
+  if (moodGen.runningId === wishId) return;
+  const existing = moodGen.queue.find(j => j.wishId === wishId);
+  if (existing) { if (prompt) existing.prompt = prompt; return; }
+  moodGen.failed.delete(wishId);
+  moodGen.queue.push({ wishId, prompt: (prompt || '').trim() });
+  runMoodQueue();
+}
+
+async function runMoodQueue() {
+  if (moodGen.runningId) return;
+  while (moodGen.queue.length) {
+    const job = moodGen.queue.shift();
+    if (!job) break;
+    const w = wishes.find(x => x.id === job.wishId);
+    if (!w || w.moodImage) continue; // удалено или картинка уже есть
+    moodGen.runningId = job.wishId;
+    renderWishes(); // показать «Генерится…»
+    try {
+      await generateWishMoodImageCore(job.wishId, job.prompt || w.moodImagePrompt || '');
+      moodGen.failed.delete(job.wishId);
+    } catch(e) {
+      console.warn('[Wish] mood image generation failed:', e);
+      moodGen.failed.add(job.wishId);
+    }
+    moodGen.runningId = null;
+    renderWishes(); // показать картинку или «повторить»
   }
 }
+
+// Ядро: гарантирует промпт (для старых желаний добывает через AI) и генерирует картинку
+async function generateWishMoodImageCore(wishId, prompt) {
+  const w = wishes.find(x => x.id === wishId);
+  if (!w) throw new Error('wish not found');
+  let p = (prompt || '').trim();
+  if (!p) {
+    const suggestion = await suggestWishEnhancements(w.text);
+    p = (suggestion.moodImagePrompt || `${w.text.slice(0, 100)}, oil painting style, warm lighting, vibrant colors, peaceful mood`).trim();
+    // Обновляем только недостающее — milestones/tasks не трогаем, чтобы не сюрпризить
+    const updates = { moodImagePrompt: p, moodImage: null };
+    if (!w.icon || w.icon === '🌠') updates.icon = suggestion.icon || '⭐';
+    if (!w.category || w.category === 'other') updates.category = suggestion.category || 'other';
+    await updateDoc(uDocRef('wishes', wishId), updates);
+    await loadWishes();
+  }
+  const url = await generatePolzaImage(p);
+  await updateDoc(uDocRef('wishes', wishId), { moodImage: url });
+  await loadWishes();
+  renderWishes();
+  // Если открыта модалка этого желания — обновляем, чтобы картинка появилась сразу
+  if (currentWishId === wishId) {
+    const md = document.getElementById('wish-detail-modal');
+    if (md && md.classList.contains('open')) openWishDetail(wishId);
+  }
+  console.log('[Wish] mood image ready for', wishId);
+}
+
+// Публичная точка входа — совместима со старыми вызовами: ставит задачу в очередь
+function generateWishMoodImage(wishId, prompt) {
+  queueWishImage(wishId, prompt);
+}
 window.generateWishMoodImage = generateWishMoodImage;
+
+// Самолечение: желания без картинки (сорвавшаяся генерация или созданные до фичи)
+// при старте приложения сами становятся в очередь генерации
+function healWishImages() {
+  if (moodGen.healed) return;
+  moodGen.healed = true;
+  const need = wishes.filter(w => !w.moodImage);
+  for (const w of need) queueWishImage(w.id, w.moodImagePrompt || '');
+  if (need.length) console.log('[Wish] healing', need.length, 'wish image(s) in background');
+}
+
+// Повторная попытка из UI (клик по карточке с ошибкой)
+function retryWishMoodImage(wishId) {
+  queueWishImage(wishId, '');
+}
+window.retryWishMoodImage = retryWishMoodImage;
+window.isMoodPending = isMoodPending;
+window.isMoodFailed = isMoodFailed;
 
 // ── WISH SUGGESTION — AI предлагает icon, category, mood prompt, milestones ──
 async function suggestWishEnhancements(text) {
@@ -7664,6 +7753,9 @@ async function initUserData() {
     loadWishes(),
   ]);
   checkTagSuggestions(); // не блокируем интерфейс — проверяем в фоне, банер появится когда будет готов
+  // Самолечение картинок желаний: желания без moodImage (сорвавшаяся генерация,
+  // либо созданные до появления фичи) молча дорисовываются в фоне
+  setTimeout(healWishImages, 2000);
 }
 
 onAuthStateChanged(auth, async (user) => {
