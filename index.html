@@ -5414,14 +5414,14 @@ function buildChatTools() {
     type: 'function',
     function: {
       name: 'propose_note',
-      description: 'Предложить пользователю добавить новую запись (задачу, цель, идею, напоминание и т.д.) в базу. Запись НЕ сохраняется сразу — пользователю покажутся кнопки «Да/Нет», сохранение произойдёт только после подтверждения. Вызывай это вместо того, чтобы писать текстом «добавил» или «записал».',
+      description: 'Добавить запись в базу. Сам классифицируй запись: ЗАДАЧА (to_todo: true) — сохранится сразу и попадёт в тудушку автоматически, без подтверждения; ЗАМЕТКА (без to_todo) — пользователю покажутся кнопки «Да/Нет». Вызывай это вместо того, чтобы писать текстом «добавил» или «записал».',
       parameters: {
         type: 'object',
         properties: {
           text: { type: 'string', description: 'Текст записи, который увидит пользователь и который сохранится в базу' },
           tag: { type: 'string', enum: tagLabels, description: 'Сфера жизни, к которой относится запись' },
           wish: { type: 'string', description: 'shortTag желания из раздела ЖЕЛАНИЯ — копируй ТОЧНО как в [квадратных скобках], не переводи и не транслитерируй. Заполняй, если запись относится к желанию — запись привяжется к нему и получит его тег автоматически' },
-          to_todo: { type: 'boolean', description: 'true — поставить задачу в тудушку и календарь (конкретные шаги и дела); обычные мысли/заметки — false или пропусти' }
+          to_todo: { type: 'boolean', description: 'true — это ЗАДАЧА: конкретное действие, которое предстоит сделать (купить, позвонить, отправить, записаться, сделать) — сохранится сразу и попадёт в тудушку автоматически. false или пропуск — это ЗАМЕТКА: мысль, факт, идея, дневниковая запись — добавится после подтверждения пользователя' }
         },
         required: ['text','tag']
       }
@@ -5515,6 +5515,21 @@ function renderChat() {
   el.scrollTop = el.scrollHeight;
 }
 
+// единое добавление записи из чата: подтверждённые заметки + автозадачи (to_todo)
+async function addNoteFromChat(nd) {
+  const newDoc = {
+    text: nd.text, type: 'text',
+    tag: nd.tag || null,
+    createdAt: new Date().toISOString()
+  };
+  if (nd.wishId) newDoc.wishId = nd.wishId; // привязка к желанию (тег уже = тегу желания)
+  if (nd.inTodo === true) { newDoc.inTodo = true; newDoc.todoOrder = nd.todoOrder !== null && nd.todoOrder !== undefined ? nd.todoOrder : Date.now(); }
+  await addDoc(notesCol(), newDoc);
+  await loadNotes();
+  renderCalendar();
+  return newDoc;
+}
+
 window.resolveConfirm = async function(idx, yes) {
   const m = chatHistory[idx];
   if (!m || !m.confirmData) return;
@@ -5522,17 +5537,8 @@ window.resolveConfirm = async function(idx, yes) {
   if (yes) {
     const nd = m.confirmData.note;
     try {
-      const newDoc = {
-        text: nd.text, type: 'text',
-        tag: nd.tag || null,
-        createdAt: new Date().toISOString()
-      };
-      if (nd.wishId) newDoc.wishId = nd.wishId; // привязка к желанию (тег уже = тегу желания)
-      if (nd.inTodo === true) { newDoc.inTodo = true; newDoc.todoOrder = nd.todoOrder !== null && nd.todoOrder !== undefined ? nd.todoOrder : Date.now(); }
-      await addDoc(notesCol(), newDoc);
+      await addNoteFromChat(nd);
       await addChatMessage('assistant', '✅ Добавлено в базу!' + (nd.inTodo ? ' Задача — в тудушке и календаре.' : '') + (nd.wishId ? ' Привязал к желанию.' : ''));
-      await loadNotes();
-      renderCalendar();
     } catch(e) { await addChatMessage('assistant', 'Ошибка: ' + e.message); }
   } else {
     await addChatMessage('assistant', 'Хорошо, ничего не добавляю.');
@@ -6166,10 +6172,16 @@ function getBaseInstructions() {
 - Обещать что-то добавишь «сейчас» текстом вместо реального вызова функции
 - Писать тег через слеш в тексте (например «задача | Задача» — НЕЛЬЗЯ, тег передаётся только в поле tag функции)
 
-КОГДА ВЫЗЫВАТЬ propose_note (предложить добавить запись):
+КЛАССИФИКАЦИЯ: ЗАДАЧА или ЗАМЕТКА — решаешь сам для каждой записи, без вопросов пользователю:
+- ЗАДАЧА (to_todo: true) — конкретное действие, которое предстоит сделать: «купить хлеб», «позвонить маме», «записаться к врачу», «надо/нужно/не забыть + действие». Задача сохранится СРАЗУ и попадёт в тудушку автоматически, без кнопок «Да/Нет»
+- ЗАМЕТКА (без to_todo) — мысль, факт, наблюдение, идея без конкретного действия, дневниковая запись, справка. Покажется пользователю с кнопками «Да/Нет»
+- Тест: если в записи есть действие, которое можно выполнить и потом поставить галочку — это ЗАДАЧА. Если запись описывает прошлое/настоящее и ничего не требует сделать — ЗАМЕТКА
+- Сомневаешься — выбирай ЗАДАЧУ: лучше поставить в тудушку, чем потерять дело
+
+КОГДА ВЫЗЫВАТЬ propose_note (добавить запись):
 - Пользователь говорит о действии которое надо сделать («надо», «нужно», «сделать», «не забыть»), ставит задачу, формулирует цель или упоминает идею — сразу вызови propose_note с точным текстом и тегом
 - Это касается и случаев, когда идея или задача всплывает мимоходом в разговоре, а не только явной просьбы «добавь»
-- Вызов propose_note НЕ добавляет запись сразу — пользователю покажутся кнопки «Да/Нет», запись попадёт в базу только после его подтверждения. Поэтому можно вызывать функцию сразу, не дожидаясь отдельного «да» — это и есть шаг уточнения
+- Задачи (to_todo: true) после вызова сохраняются сразу — можешь писать «поставил в тудушку»; заметки покажутся с кнопками «Да/Нет» — в этом случае предложи подтвердить
 - НЕ вызывай если: болтовня, вопрос, ответ «да/нет» без контекста, обсуждение без конкретики, или похожая незакрытая запись уже точно есть в базе
 - tag — это СФЕРА ЖИЗНИ, к которой относится запись (не тип записи). Выбирай строго из значений enum поля tag — этот список настраивается пользователем в приложении и может меняться
 
@@ -6177,7 +6189,7 @@ function getBaseInstructions() {
 - В разделе ЖЕЛАНИЯ выше перечислены все желания пользователя — у каждого shortTag в [квадратных скобках]
 - Если пользователь упоминает желание (по названию, теме или shortTag — например «пожить в Москва Сити», «по поводу Бали») — передай shortTag этого желания в поле wish: запись привяжется к желанию и автоматически получит тег желания. Копируй shortTag в поле wish символ в символ из раздела ЖЕЛАНИЯ (как есть, без перевода и транслитерации)
 - НЕ выдумывай shortTag — используй только те, что реально есть в разделе ЖЕЛАНИЯ; если подходящего желания нет — оставь wish пустым
-- Конкретные шаги и дела к желанию — ставь to_todo: true (попадут в тудушку и в календарь); мысли, идеи, справки про желание — без to_todo
+- Конкретные шаги и дела к желанию — это ЗАДАЧИ: ставь to_todo: true (сохранятся сразу, попадут в тудушку и в календарь); мысли, идеи, справки про желание — это ЗАМЕТКИ, без to_todo
 - В разделах ТУДУШКА и КАЛЕНДАРЬ задачи желаний помечены тегом желания — по нему видно, какие шаги уже стоят в очереди и на какие дни запланированы
 
 КОГДА ВЫЗЫВАТЬ mark_done:
@@ -6623,9 +6635,22 @@ async function sendChatMessage(userText) {
         const minOrder = notes.reduce((m, n) => n.inTodo ? Math.min(m, n.todoOrder ?? Infinity) : m, Infinity);
         todoOrder = minOrder === Infinity ? Date.now() : minOrder - 1;
       }
-      const confirmText = (replyText ? replyText + '\n\n' : '') +
-        'Добавить в базу: «' + proposedNote.text + '»' + (tag ? ' [' + tag + ']' : '') + wishNote + (inTodo ? ' · ✅ в тудушку' : '') + '?';
-      await addChatMessage('assistant', confirmText, { note: { text: proposedNote.text, tag, wishId, inTodo, todoOrder }, resolved: false });
+      // ЗАДАЧА (to_todo) — ИИ сам классифицировал: сохраняем сразу, без кнопок «Да/Нет»
+      if (inTodo) {
+        try {
+          await addNoteFromChat({ text: proposedNote.text, tag, wishId, inTodo: true, todoOrder });
+          const okText = (replyText ? replyText + '\n\n' : '') +
+            '✅ Задача добавлена в тудушку: «' + proposedNote.text + '»' + (tag ? ' [' + tag + ']' : '') + wishNote + '.';
+          await addChatMessage('assistant', okText);
+        } catch(e) {
+          await addChatMessage('assistant', 'Ошибка: ' + e.message);
+        }
+      } else {
+        // ЗАМЕТКА — как раньше: подтверждение «Да/Нет»
+        const confirmText = (replyText ? replyText + '\n\n' : '') +
+          'Добавить в базу: «' + proposedNote.text + '»' + (tag ? ' [' + tag + ']' : '') + wishNote + '?';
+        await addChatMessage('assistant', confirmText, { note: { text: proposedNote.text, tag, wishId, inTodo: false, todoOrder: null }, resolved: false });
+      }
     } else {
       await addChatMessage('assistant', replyText || 'Хорошо.');
     }
