@@ -5119,11 +5119,13 @@ function initTodoDrag() {
     if (!todoDragState) return;
     cancelAnimationFrame(todoDragState.rafId);
     const finalIndex = todoDragState.currentTargetIndex;
-    resetShifts();
-    todoDragState.itemEl.style.transform = '';
-    todoDragState.itemEl.classList.remove('todo-dragging');
-    reorderTodo(todoDragState.id, finalIndex);
+    const draggedId = todoDragState.id;
+    // ВАЖНО: не сбрасываем сдвиги и transform вручную — раньше карточка
+    // «соскальзывала» на старое DOM-место и ждала Firestore-записи.
+    // Теперь reorderTodo мгновенно применяет новый порядок локально,
+    // renderTodo заменит DOM целиком — карточка остаётся там, куда утащили.
     todoDragState = null;
+    reorderTodo(draggedId, finalIndex);
   }
 
   listEl.addEventListener('touchend', () => finishDrag());
@@ -5139,17 +5141,26 @@ function initTodoDrag() {
 }
 
 async function reorderTodo(id, newIndex) {
+  // Оптимистичный порядок: карточка мгновенно остаётся там, куда её утащили.
+  // Локальный state мутируется ДО любых await, рендер синхронный — Firestore
+  // пишет фоном и больше не заставляет список «соскальзывать» на старый порядок.
   const queue = getTodoQueue();
   const dragged = queue.find(n => n.id === id);
   if (!dragged) return;
   const rest = queue.filter(n => n.id !== id);
   rest.splice(newIndex, 0, dragged);
+  const updates = [];
+  rest.forEach((n, i) => {
+    const order = i + 1;
+    if ((n.todoOrder || 0) !== order) updates.push({ id: n.id, order }); // пишем только изменившиеся
+    n.todoOrder = order; // getTodoQueue() возвращает те же ссылки — порядок уже новый
+  });
+  renderTodo();      // синхронный рендер — до первого await, без «мигания» старым порядком
+  renderFocusCard(); // фокус-карточка на главной — вдруг наверх утащили другую задачу
   try {
-    for (let i = 0; i < rest.length; i++) {
-      await updateDoc(uDocRef('notes', rest[i].id), { todoOrder: i + 1 });
-    }
-    await loadNotes();
+    await Promise.all(updates.map(u => updateDoc(uDocRef('notes', u.id), { todoOrder: u.order })));
   } catch(e) { alert('Ошибка сортировки: ' + e.message); }
+  await loadNotes(); // подтягиваем серверную правду после записи
 }
 
 // ── КАРТОЧКА ФОКУСА НА ГЛАВНОЙ: тап → открыть задачу, свайп вправо → в конец очереди ──
