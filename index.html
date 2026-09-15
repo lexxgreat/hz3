@@ -811,6 +811,7 @@ body.cal-dragging,body.cal-dragging *{touch-action:none!important;user-select:no
         <div class="chat-title">Хазенштейн ИИ</div>
         <div class="chat-subtitle" id="chat-subtitle">Готов помочь</div>
       </div>
+      <button class="chat-clear-btn" onclick="openDailySummaryManual()" title="Итог дня">📊</button>
       <button class="chat-clear-btn" onclick="goTo('prompt')" title="Промпт">⚙️</button>
       <button class="chat-clear-btn" onclick="exportChat()">⬇ Экспорт</button>
     </div>
@@ -5805,8 +5806,10 @@ let dailySummaryTimer = null;
 function scheduleDailySummaryTick() {
   if (dailySummaryTimer) clearTimeout(dailySummaryTimer);
   dailySummaryTimer = setTimeout(async () => {
-    try { await checkAndGenerateDailySummary(); } catch(e) {}
+    // Следующий тик планируем ДО проверки: зависший/упавший запрос
+    // больше не останавливает планировщик до перезапуска приложения
     scheduleDailySummaryTick();
+    try { await checkAndGenerateDailySummary(); } catch(e) {}
   }, msUntilNext2200Msk());
 }
 
@@ -6201,24 +6204,29 @@ async function checkAndGenerateDailySummary() {
   // - иначе (утром/днём) — пропущенный ВЧЕРА (если за вчера ещё не подведён)
   let day;
   if (hour >= 22) {
-    if (lastSummary === today) return; // сегодня уже подведён
+    if (lastSummary === today) { console.log('[DS] skip: today already summarized'); return; }
     day = today;
   } else {
     const yesterday = getYesterdayDateString();
-    if (lastSummary === yesterday || lastSummary === today) return;
+    if (lastSummary === yesterday || lastSummary === today) { console.log('[DS] skip: yesterday/today already handled'); return; }
     day = yesterday;
   }
 
   const hasAnyData = getNotesForDate(day).length > 0 || getDoneNotesForDate(day).length > 0
     || getDoneMilestonesForDate(day).length > 0 || getPlannedForDate(day).length > 0;
-  if (!hasAnyData) {
-    // Нет данных за день — помечаем, чтобы не предлагать диалог каждый запуск
+  if (!hasAnyData && hour < 22) {
+    // Догоняющий итог за вчера при пустом дне: помечаем молча,
+    // чтобы не предлагать пустой диалог при каждом открытии приложения
+    console.log('[DS] empty catch-up day', day, '— mark silently');
     try { await setDoc(uDocRef('meta', 'daily_summary'), { lastDate: day }); } catch(e) {}
     return;
   }
+  // Вечером (после 22:00) итог показываем ВСЕГДА, даже за пустой день —
+  // это ежедневный ритуал, в диалоге просто будут нули
 
   // Бронь ДО показа диалога: другие устройства не откроют его параллельно.
   // «Позже» вернёт prevLast — итог будет предложен снова.
+  console.log('[DS] showing dialog for', day, hour >= 22 ? '(evening)' : '(catch-up)');
   dsState.day = day;
   dsState.prevLast = lastSummary;
   try { await setDoc(uDocRef('meta', 'daily_summary'), { lastDate: day }); } catch(e) { return; }
@@ -6226,6 +6234,34 @@ async function checkAndGenerateDailySummary() {
 }
 window.checkAndGenerateDailySummary = checkAndGenerateDailySummary;
 window.scheduleDailySummaryTick = scheduleDailySummaryTick;
+
+// Ручной «Итог дня» (кнопка 📊 в чате): вечер — за сегодня, день — за вчера.
+// Спасает и когда день уже был списан автоматикой (пустой/пропущенный).
+window.openDailySummaryManual = async function() {
+  if (!currentUid) { setStatus('Войди, чтобы подводить итоги', 3000); return; }
+  const hour = mskNow().getUTCHours();
+  const day = hour >= 22 ? getTodayDateString() : getYesterdayDateString();
+  let last = null;
+  try {
+    const s = await getDoc(uDocRef('meta', 'daily_summary'));
+    if (s.exists()) last = s.data().lastDate || null;
+  } catch(e) {}
+  dsState.day = day;
+  dsState.prevLast = last; // «Позже» вернёт бронь как была
+  try { await setDoc(uDocRef('meta', 'daily_summary'), { lastDate: day }); } catch(e) {}
+  openDailySummaryModal(day);
+};
+
+// Догон при возврате приложения из фона: у мобильных браузеров таймеры замирают,
+// и тик 22:00 может проспать свой час. Не чаще раза в 10 минут.
+let lastDsVisCheck = 0;
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'visible' || !currentUid) return;
+  const now = Date.now();
+  if (now - lastDsVisCheck < 10 * 60 * 1000) return;
+  lastDsVisCheck = now;
+  setTimeout(() => { try { checkAndGenerateDailySummary(); } catch(e) {} }, 1500);
+});
 
 function getYesterdayDateString() {
   const d = new Date();
@@ -6779,25 +6815,33 @@ async function callPolzaAI(messages, options = {}) {
     messages: messages,
   };
   if (options.temperature !== undefined) body.temperature = options.temperature;
-  const res = await fetch(POLZA_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + POLZA_KEY },
-    body: JSON.stringify(body)
-  });
-  if (!res.ok) {
-    const errText = await res.text().catch(() => '');
-    throw new Error(`Polza API HTTP ${res.status}: ${errText.slice(0, 200)}`);
-  }
-  const data = await res.json();
-  // Проверяем Polza-specific ошибки
-  if (data.error) {
-    const errCode = data.error.code || 'UNKNOWN';
-    if (errCode === 'INSUFFICIENT_BALANCE') {
-      throw new Error('Недостаточно средств на Polza.ai. Проверьте баланс на polza.ai');
+  // Жёсткий таймаут: без него зависший fetch вечные «Формирую…» и мёртвый планировщик
+  const ctrl = new AbortController();
+  const timeoutId = setTimeout(() => ctrl.abort(), options.timeoutMs || 90000);
+  try {
+    const res = await fetch(POLZA_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + POLZA_KEY },
+      body: JSON.stringify(body),
+      signal: ctrl.signal,
+    });
+    if (!res.ok) {
+      const errText = await res.text().catch(() => '');
+      throw new Error(`Polza API HTTP ${res.status}: ${errText.slice(0, 200)}`);
     }
-    throw new Error('Polza API: ' + (data.error.message || errCode));
+    const data = await res.json();
+    // Проверяем Polza-specific ошибки
+    if (data.error) {
+      const errCode = data.error.code || 'UNKNOWN';
+      if (errCode === 'INSUFFICIENT_BALANCE') {
+        throw new Error('Недостаточно средств на Polza.ai. Проверьте баланс на polza.ai');
+      }
+      throw new Error('Polza API: ' + (data.error.message || errCode));
+    }
+    return data.choices?.[0]?.message?.content || '';
+  } finally {
+    clearTimeout(timeoutId);
   }
-  return data.choices?.[0]?.message?.content || '';
 }
 window.callPolzaAI = callPolzaAI;
 
