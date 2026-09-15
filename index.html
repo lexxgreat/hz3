@@ -846,6 +846,28 @@ body.cal-dragging,body.cal-dragging *{touch-action:none!important;user-select:no
     <div style="padding:12px 16px 0;">
       <button onclick="goTo('tags')" style="width:100%;background:rgba(255,255,255,0.04);border:0.5px solid rgba(255,255,255,0.1);border-radius:12px;padding:9px;color:rgba(255,255,255,0.7);font-size:12.5px;font-weight:500;cursor:pointer;font-family:'Inter',sans-serif;">🏷️ Управление тегами</button>
     </div>
+    <!-- ── НАПОМИНАНИЯ: настройка в общих настройках ── -->
+    <div style="padding:12px 16px 0;">
+      <div style="background:rgba(255,255,255,0.04);border:0.5px solid rgba(255,255,255,0.1);border-radius:12px;padding:12px 14px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;">
+          <div style="font-size:12.5px;font-weight:600;color:rgba(255,255,255,0.8);font-family:Inter,sans-serif;">🔔 Напоминания</div>
+          <label style="cursor:pointer;flex-shrink:0;">
+            <input type="checkbox" id="reminders-toggle" onchange="onRemindersToggle(this.checked)" style="display:none;">
+            <span id="reminders-toggle-track" style="display:block;width:38px;height:22px;border-radius:99px;background:rgba(255,255,255,0.12);transition:background 0.2s;position:relative;">
+              <span id="reminders-toggle-knob" style="position:absolute;left:2px;top:2px;width:18px;height:18px;border-radius:50%;background:#fff;transition:transform 0.2s;display:block;"></span>
+            </span>
+          </label>
+        </div>
+        <div id="reminders-body">
+          <div style="font-size:11px;color:rgba(255,255,255,0.45);line-height:1.45;margin-top:9px;font-family:Inter,sans-serif;">Предупрежу о задачах из календаря с конкретным временем — всплывающим окном и системным уведомлением (пока приложение открыто).</div>
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-top:10px;">
+            <span style="font-size:12px;color:rgba(255,255,255,0.6);font-family:Inter,sans-serif;">Предупреждать за (минут)</span>
+            <input type="number" id="reminders-lead" min="1" max="720" onchange="onRemindersLead(this.value)" style="width:64px;background:rgba(255,255,255,0.06);border:0.5px solid rgba(255,255,255,0.15);border-radius:8px;padding:6px;color:#fff;font-size:13px;text-align:center;color-scheme:dark;font-family:Inter,sans-serif;">
+          </div>
+          <button id="reminders-perm-btn" onclick="requestReminderPermission()" style="width:100%;margin-top:10px;background:rgba(108,71,255,0.1);border:0.5px solid rgba(108,71,255,0.35);border-radius:10px;padding:8px;color:rgba(160,130,255,0.95);font-size:12px;font-weight:500;cursor:pointer;font-family:Inter,sans-serif;">Разрешить системные уведомления</button>
+        </div>
+      </div>
+    </div>
     <!-- Account status / Register button -->
     <div id="account-widget" style="display:none;padding:12px 16px 0;">
       <button onclick="showAccountModal()" style="width:100%;background:rgba(108,71,255,0.08);border:0.5px solid rgba(108,71,255,0.35);border-radius:12px;padding:11px;color:#fff;font-size:12.5px;font-weight:600;cursor:pointer;font-family:Inter,sans-serif;display:flex;align-items:center;justify-content:space-between;">
@@ -937,6 +959,19 @@ body.cal-dragging,body.cal-dragging *{touch-action:none!important;user-select:no
       <div class="modal-btns" style="margin-top:12px;">
         <button class="modal-cancel" onclick="closeImportModal()">Отмена</button>
         <button class="modal-save" id="import-confirm-btn" onclick="confirmImport()">Импортировать</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Напоминание о задаче (всплывает за N минут до старта) ── -->
+  <div class="modal-overlay" id="reminder-popup">
+    <div class="modal" style="max-width:340px;">
+      <div style="font-size:30px;text-align:center;">⏰</div>
+      <div class="modal-title" style="text-align:center;margin-top:4px;" id="reminder-when">Скоро задача</div>
+      <div id="reminder-text" style="font-size:14px;color:rgba(255,255,255,0.85);line-height:1.5;text-align:center;word-break:break-word;font-family:Inter,sans-serif;"></div>
+      <div class="modal-btns" style="margin-top:16px;">
+        <button class="modal-cancel" onclick="closeReminderPopup()">Понятно</button>
+        <button class="modal-save" onclick="closeReminderPopup(); if (currentReminderNoteId) openScheduleModal(currentReminderNoteId);">📅 Перенести</button>
       </div>
     </div>
   </div>
@@ -5767,6 +5802,195 @@ function scheduleDailySummaryTick() {
   }, msUntilNext2200Msk());
 }
 
+// ════════ НАПОМИНАНИЯ О ЗАДАЧАХ (дата + конкретное время) ════════
+// Окно напоминания: [старт − leadMinutes; старт], проверка каждые 20с пока приложение открыто.
+// Показываем всплывающее окно в приложении + системное уведомление (если разрешено).
+// Дубли гасятся ключом id_дата_время в localStorage: перенос задачи меняет время в ключе → напомнит заново.
+let reminderSettings = { enabled: true, leadMinutes: 10 }; // по умолчанию предупреждать за 10 минут
+let reminderTimerStarted = false;
+let currentReminderNoteId = null; // id задачи, показанной в попапе (для кнопки «Перенести»)
+
+function loadReminderSettingsLocal() {
+  try {
+    const raw = localStorage.getItem('hz3_reminder_settings');
+    if (raw) {
+      const s = JSON.parse(raw);
+      if (typeof s.enabled === 'boolean') reminderSettings.enabled = s.enabled;
+      const lead = parseInt(s.leadMinutes, 10);
+      if (!isNaN(lead) && lead >= 1 && lead <= 720) reminderSettings.leadMinutes = lead;
+    }
+  } catch(e) {}
+}
+
+async function loadReminderSettings() {
+  loadReminderSettingsLocal(); // мгновенный старт из локального кэша
+  try {
+    const snap = await getDoc(uDocRef('meta', 'settings'));
+    if (snap.exists()) {
+      const d = snap.data();
+      if (typeof d.remindersEnabled === 'boolean') reminderSettings.enabled = d.remindersEnabled;
+      const lead = parseInt(d.reminderLeadMinutes, 10);
+      if (!isNaN(lead) && lead >= 1 && lead <= 720) reminderSettings.leadMinutes = lead;
+      try { localStorage.setItem('hz3_reminder_settings', JSON.stringify(reminderSettings)); } catch(e) {}
+    }
+  } catch(e) {} // офлайн — работаем с локальным кэшем
+  updateReminderSettingsUI();
+}
+
+async function saveReminderSettings() {
+  try { localStorage.setItem('hz3_reminder_settings', JSON.stringify(reminderSettings)); } catch(e) {}
+  try { await setDoc(uDocRef('meta', 'settings'), { remindersEnabled: reminderSettings.enabled, reminderLeadMinutes: reminderSettings.leadMinutes }, { merge: true }); } catch(e) {}
+}
+
+function initReminderEngine() {
+  loadReminderSettings().finally(() => {
+    if (reminderTimerStarted) return; // защита от повторного setInterval при re-auth
+    reminderTimerStarted = true;
+    checkReminders();
+    setInterval(checkReminders, 20000);
+  });
+}
+
+// старт задачи в эпоху: scheduledDate YYYY-MM-DD + scheduledTime HH:MM — по московскому времени (UTC+3),
+// как весь календарь приложения
+function scheduledNoteEpoch(n) {
+  if (!n.scheduledDate || !n.scheduledTime) return null;
+  const ts = new Date(n.scheduledDate + 'T' + n.scheduledTime + ':00+03:00').getTime();
+  return isNaN(ts) ? null : ts;
+}
+
+function reminderKey(n) { return n.id + '_' + n.scheduledDate + '_' + n.scheduledTime; }
+
+function loadRemindedSet() {
+  try { return new Set(JSON.parse(localStorage.getItem('hz3_reminded') || '[]')); } catch(e) { return new Set(); }
+}
+function persistRemindedSet(set) {
+  try { localStorage.setItem('hz3_reminded', JSON.stringify([...set].slice(-200))); } catch(e) {}
+}
+
+function checkReminders() {
+  if (!reminderSettings.enabled) return;
+  const now = Date.now();
+  const reminded = loadRemindedSet();
+  let changed = false;
+  for (const n of notes) {
+    if (n.done) continue;
+    if (!n.scheduledDate || !n.scheduledTime) continue; // только дата И конкретное время
+    const when = scheduledNoteEpoch(n);
+    if (when === null) continue;
+    const remindAt = when - reminderSettings.leadMinutes * 60000;
+    if (now < remindAt || now > when) continue; // окно [когда − lead; когда], позже — уже поздно
+    const key = reminderKey(n);
+    if (reminded.has(key)) continue;
+    reminded.add(key);
+    changed = true;
+    fireReminder(n, when);
+  }
+  if (changed) persistRemindedSet(reminded);
+}
+
+function fireReminder(n, whenEpoch) {
+  const text = (n.text || '').trim();
+  const body = 'В ' + n.scheduledTime + ' — ' + text;
+  const title = '⏰ Скоро задача';
+  try {
+    if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+      if (navigator.serviceWorker && navigator.serviceWorker.ready) {
+        navigator.serviceWorker.ready.then(reg => {
+          try { reg.showNotification(title, { body, tag: 'hz3-remind-' + n.id }); } catch(e) {
+            try { new Notification(title, { body }); } catch(e2) {}
+          }
+        }).catch(() => { try { new Notification(title, { body }); } catch(e2) {} });
+      } else {
+        try { new Notification(title, { body }); } catch(e) {}
+      }
+    }
+  } catch(e) {}
+  showReminderPopup(n, whenEpoch);
+}
+
+function reminderMinutesLeftStr(whenEpoch) {
+  const left = Math.round((whenEpoch - Date.now()) / 60000);
+  if (left <= 0) return 'время пришло';
+  if (left === 1) return 'через минуту';
+  return 'через ' + left + ' мин';
+}
+
+function showReminderPopup(n, whenEpoch) {
+  currentReminderNoteId = n.id;
+  const el = document.getElementById('reminder-popup');
+  if (!el) return;
+  const textEl = document.getElementById('reminder-text');
+  const whenEl = document.getElementById('reminder-when');
+  if (textEl) textEl.textContent = (n.text || '').trim();
+  if (whenEl) whenEl.textContent = '⏰ ' + n.scheduledTime + ' · ' + reminderMinutesLeftStr(whenEpoch);
+  el.classList.add('open');
+}
+
+window.closeReminderPopup = function() {
+  const el = document.getElementById('reminder-popup');
+  if (el) el.classList.remove('open');
+  currentReminderNoteId = null;
+};
+
+// ── Настройки напоминаний (экран «Настройки») ──
+window.onRemindersToggle = async function(checked) {
+  reminderSettings.enabled = checked;
+  await saveReminderSettings();
+  updateReminderSettingsUI();
+  if (checked) {
+    requestReminderPermission(true); // мягко попросим разрешение, если ещё не давали
+    checkReminders();
+    setStatus('🔔 Напоминания включены', 2000);
+  } else {
+    setStatus('Напоминания выключены', 2000);
+  }
+};
+
+window.onRemindersLead = async function(value) {
+  const lead = parseInt(value, 10);
+  if (isNaN(lead) || lead < 1 || lead > 720) { updateReminderSettingsUI(); return; } // вне диапазона — вернуть прежнее
+  reminderSettings.leadMinutes = lead;
+  await saveReminderSettings();
+  setStatus('⏰ Буду предупреждать за ' + lead + ' мин', 2200);
+};
+
+window.requestReminderPermission = async function(silent) {
+  try {
+    if (typeof Notification === 'undefined') {
+      if (!silent) setStatus('Здесь системные уведомления не поддерживаются', 2600);
+      updateReminderSettingsUI();
+      return;
+    }
+    if (Notification.permission === 'granted') { updateReminderSettingsUI(); return; }
+    const perm = await Notification.requestPermission();
+    updateReminderSettingsUI();
+    if (perm === 'granted') setStatus('🔔 Системные уведомления разрешены', 2200);
+    else if (!silent) setStatus('Уведомления заблокированы в браузере', 2600);
+  } catch(e) {}
+};
+
+function updateReminderSettingsUI() {
+  const toggle = document.getElementById('reminders-toggle');
+  const track = document.getElementById('reminders-toggle-track');
+  const knob = document.getElementById('reminders-toggle-knob');
+  const body = document.getElementById('reminders-body');
+  const lead = document.getElementById('reminders-lead');
+  const permBtn = document.getElementById('reminders-perm-btn');
+  if (toggle) toggle.checked = reminderSettings.enabled;
+  if (track) track.style.background = reminderSettings.enabled ? 'rgba(139,92,246,0.9)' : 'rgba(255,255,255,0.12)';
+  if (knob) knob.style.transform = reminderSettings.enabled ? 'translateX(18px)' : 'translateX(0)';
+  if (body) body.style.display = reminderSettings.enabled ? '' : 'none';
+  if (lead) lead.value = reminderSettings.leadMinutes;
+  if (permBtn) {
+    let perm = 'unsupported';
+    try { if (typeof Notification !== 'undefined') perm = Notification.permission; } catch(e) {}
+    if (perm === 'granted') { permBtn.textContent = '✓ Системные уведомления разрешены'; permBtn.disabled = true; permBtn.style.opacity = '0.45'; }
+    else if (perm === 'denied') { permBtn.textContent = 'Уведомления заблокированы в браузере'; permBtn.disabled = true; permBtn.style.opacity = '0.45'; }
+    else { permBtn.textContent = 'Разрешить системные уведомления'; permBtn.disabled = false; permBtn.style.opacity = '1'; }
+  }
+}
+
 // «Сделано» за день: статус выполнено ПОДТВЕРЖДЁН (done===true, doneAt внутри дня)
 function getDoneNotesForDate(dateStr) {
   return notes.filter(n => n.done === true && n.doneAt && formatDateKey(new Date(n.doneAt)) === dateStr);
@@ -7466,6 +7690,8 @@ onAuthStateChanged(auth, async (user) => {
     setTimeout(() => checkAndGenerateDailySummary(), 2000);
     // Планировщик: в 22:00 МСК открывает диалог «Итог дня», если приложение открыто
     scheduleDailySummaryTick();
+    // Напоминания: дата + время → попап и уведомление за N минут до старта (настройки в meta/settings)
+    initReminderEngine();
     // AI-психолог — раз в 7 дней, после daily summary
     setTimeout(() => checkAndGeneratePsychologistInsight(), 5000);
     // Проверяем, нужно ли показать prompt «Зарегистрируйся» (после 10 заметок или 1 желания)
