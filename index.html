@@ -630,7 +630,7 @@ body.cal-dragging,body.cal-dragging *{touch-action:none!important;user-select:no
     </div>
     <div id="todo-hint" style="padding:0 16px;"></div>
     <div class="hist-list" id="todo-list" style="padding-top:8px;">
-      <div class="hist-empty"><div class="hist-empty-icon">📋</div>Список пуст — добавь задачи из Истории кнопкой «В тудулист»</div>
+      <div class="hist-empty"><div class="hist-empty-icon">📋</div>Список пуст — напиши задачу на главном, ИИ сам поставит её сюда. Или добавь из Истории кнопкой «В тудулист»</div>
     </div>
   </div>
 
@@ -1426,12 +1426,52 @@ async function saveNote(text, type) {
     const newNote = notes.find(n => n.id === docRef.id);
     if (newNote) {
       setTimeout(() => findAndSaveLinksForNote(newNote), 100);
+      // ИИ сам определяет: задача или заметка — задачу ставит в тудушку автоматически
+      setTimeout(() => classifyAndRouteNote(newNote), 100);
     }
     // Проверяем, не пора ли предложить регистрацию
     setTimeout(checkShowRegisterPrompt, 500);
   } catch(e) {
     setStatus('Ошибка: ' + e.message, 4000);
   }
+}
+
+// ── ИИ-КЛАССИФИКАЦИЯ РУЧНОЙ ЗАМЕТКИ: задача → сразу в тудушку ──
+// Вызывается в фоне после saveNote (текст и голос). ИИ решает задача/заметка;
+// при недоступности ИИ — локальная эвристика heuristicIsTask.
+function heuristicIsTask(text) {
+  // нормализуем: всё не-буквенное → пробел, ключевые слова ищем как целые токены
+  // (\b в JS не работает с кириллицей, поэтому границы — пробелы)
+  const norm = ' ' + String(text || '').toLowerCase().replace(/[^а-яёa-z0-9]+/g, ' ') + ' ';
+  // явные маркеры + инфинитивы/императивы «деловых» глаголов (в мыслях/дневнике почти не встречаются)
+  return / (надо|нужно|необходимо|не забыть|не забудь|напомни|напоминание|сделать|купить|позвонить|записаться|отправить|отослать|написать|оплатить|заплатить|перевести|забрать|сдать|починить|заказать|проверить|подготовить|доделать|закончить|встретиться|сходить|пойти|отвезти|привезти|выбросить|постирать|убраться|позвони|купи|сделай|проверь|отправь|запиши|закажи|оплати|забери) /.test(norm);
+}
+
+async function classifyAndRouteNote(note) {
+  if (!note || !note.id || !note.text) return;
+  if (note.inTodo === true) return; // уже в тудушке
+  let isTask = null;
+  try {
+    const resp = await callPolzaAI([
+      { role: 'system', content: 'Ты — классификатор записей пользователя. Ответь ТОЛЬКО валидным JSON без markdown: {"task": true} — если запись это конкретное действие, которое предстоит сделать и потом можно поставить галочку (купить, позвонить, записаться, отправить, сделать, не забыть); {"task": false} — если это мысль, факт, идея без действия, дневниковая запись или справка. Сомневаешься — {"task": true}: лучше поставить в тудушку, чем потерять дело.' },
+      { role: 'user', content: note.text.slice(0, 300) }
+    ], { max_tokens: 20, temperature: 0 });
+    const m = resp && resp.match(/\{[\s\S]*\}/);
+    if (m) { const p = JSON.parse(m[0]); if (typeof p.task === 'boolean') isTask = p.task; }
+  } catch(e) { console.warn('[Classify] AI failed, fallback to heuristic:', e); }
+  if (isTask === null) isTask = heuristicIsTask(note.text); // фолбэк без ИИ
+  if (!isTask) return; // заметка — остаётся в истории, ничего не делаем
+  // перепроверка актуального состояния (могли изменить с другого устройства пока думали)
+  const fresh = notes.find(n => n.id === note.id);
+  if (!fresh || fresh.inTodo === true || fresh.done) return;
+  const minOrder = notes.reduce((mm, n) => n.inTodo ? Math.min(mm, n.todoOrder ?? Infinity) : mm, Infinity);
+  const todoOrder = minOrder === Infinity ? Date.now() : minOrder - 1; // новая задача — вверху очереди
+  try {
+    await updateDoc(uDocRef('notes', note.id), { inTodo: true, todoOrder });
+    await loadNotes();
+    const short = note.text.length > 30 ? note.text.slice(0, 30) + '…' : note.text;
+    setStatus('✅ Определил как задачу — поставил в тудушку: «' + short + '»', 4000);
+  } catch(e) { console.warn('[Classify] failed to add to todo:', e); }
 }
 
 // ── ЗАГРУЗКА ──
@@ -5158,7 +5198,7 @@ function renderTodo() {
   const queue = getTodoQueue();
   document.getElementById('todo-count').textContent = queue.length + ' в очереди';
   if (!queue.length) {
-    el.innerHTML = '<div class="hist-empty"><div class="hist-empty-icon">📋</div>Список пуст — добавь задачи из Истории кнопкой «В тудулист»</div>';
+    el.innerHTML = '<div class="hist-empty"><div class="hist-empty-icon">📋</div>Список пуст — напиши задачу на главном, ИИ сам поставит её сюда. Или добавь из Истории кнопкой «В тудулист»</div>';
     return;
   }
   el.innerHTML = queue.map((n, i) => {
