@@ -262,7 +262,7 @@ body{background:#060918;font-family:'Inter',sans-serif;display:flex;justify-cont
   box-shadow:0 0 30px rgba(255,40,110,0.5), 0 0 70px rgba(220,0,90,0.3);
   border:1px solid rgba(255,255,255,0.15);
 }
-.chaos-img{width:100%;height:100%;object-fit:cover;display:block;}
+.chaos-img{width:100%;height:100%;object-fit:cover;display:block;pointer-events:none;-webkit-touch-callout:none;user-select:none;-webkit-user-select:none;}
 @keyframes chaosBreathe{
   0%,100%{transform:scale(1);filter:brightness(1) saturate(1);}
   50%{transform:scale(1.08);filter:brightness(1.18) saturate(1.15);}
@@ -356,6 +356,15 @@ body{background:#060918;font-family:'Inter',sans-serif;display:flex;justify-cont
 .todo-drag-handle{
   cursor:grab;padding:6px 4px;color:rgba(255,255,255,0.28);font-size:18px;
   touch-action:none;user-select:none;flex-shrink:0;line-height:1;margin-top:2px;
+}
+.wish-drag-handle{
+  cursor:grab;padding:4px 8px;color:rgba(255,255,255,0.3);font-size:16px;
+  touch-action:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;
+  flex-shrink:0;line-height:1;border-radius:8px;
+}
+.wish-drag-handle:hover{color:rgba(255,215,102,0.7)}
+.wish-dragging{
+  opacity:0.92;box-shadow:0 10px 28px rgba(0,0,0,0.5);z-index:20;transition:none !important;
 }
 .todo-dragging{
   opacity:0.9;box-shadow:0 10px 28px rgba(0,0,0,0.5);z-index:20;transition:none !important;
@@ -564,7 +573,7 @@ body.cal-dragging,body.cal-dragging *{touch-action:none!important;user-select:no
         </svg>
         <textarea class="cap-input" id="cap-input" placeholder="Ввод текстом" rows="1"></textarea>
         <button class="cap-clear" id="cap-clear" title="Очистить">✕</button>
-        <button class="cap-mic" id="cap-mic" title="Нажми и говори — нажми ещё раз, отправится">
+        <button class="cap-mic" id="cap-mic" title="Держи и говори — отпусти, отправится">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.6)" stroke-width="1.7" stroke-linecap="round">
             <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
             <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
@@ -818,7 +827,7 @@ body.cal-dragging,body.cal-dragging *{touch-action:none!important;user-select:no
     <div class="chat-input-wrap">
       <div class="chat-input-row">
         <textarea class="chat-textarea" id="chat-input" placeholder="Спросите что угодно..." rows="1"></textarea>
-        <button class="chat-mic-btn" id="chat-mic" title="Нажми и говори — нажми ещё раз, отправится">
+        <button class="chat-mic-btn" id="chat-mic" title="Держи и говори — отпусти, отправится">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.6)" stroke-width="1.7" stroke-linecap="round">
             <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
             <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
@@ -1044,8 +1053,9 @@ service cloud.firestore {
   <div class="modal-overlay" id="modal">
     <div class="modal">
       <div class="modal-title">Редактировать запись</div>
+      <div id="modal-meta" style="display:none;font-size:11px;color:rgba(255,255,255,0.45);margin:0 0 8px;line-height:1.5;font-family:Inter,sans-serif;"></div>
       <textarea class="modal-textarea" id="modal-text"></textarea>
-      <div id="modal-schedule-row" style="display:flex;gap:6px;margin:10px 0;align-items:flex-end;">
+      <div id="modal-schedule-row" style="display:flex;gap:6px;margin:10px 0 6px;align-items:flex-end;">
         <div style="flex:1.4;">
           <div style="font-size:9.5px;color:rgba(255,255,255,0.45);margin-bottom:4px;text-transform:uppercase;letter-spacing:1px;font-family:Inter,sans-serif;">📅 Срок (в календарь)</div>
           <input type="date" id="modal-date" style="width:100%;background:rgba(255,255,255,0.04);border:0.5px solid rgba(108,71,255,0.3);border-radius:8px;padding:8px;color:#fff;font-size:13px;font-family:Inter,sans-serif;outline:none;color-scheme:dark;">
@@ -1056,7 +1066,14 @@ service cloud.firestore {
         </div>
         <button onclick="clearModalSchedule()" title="Убрать срок" style="flex-shrink:0;background:rgba(255,80,80,0.1);border:0.5px solid rgba(255,80,80,0.3);color:rgba(255,110,110,0.9);border-radius:8px;padding:8px 10px;font-size:12px;cursor:pointer;font-family:Inter,sans-serif;">✕</button>
       </div>
+      <div style="display:flex;gap:6px;margin:0 0 10px;flex-wrap:wrap;">
+        <button onclick="modalQuickDate(0)" style="padding:6px 11px;border-radius:99px;border:0.5px solid rgba(108,71,255,0.4);background:rgba(108,71,255,0.1);color:rgba(139,92,246,0.95);font-size:11px;font-weight:600;cursor:pointer;font-family:Inter,sans-serif;">Сегодня</button>
+        <button onclick="modalQuickDate(1)" style="padding:6px 11px;border-radius:99px;border:0.5px solid rgba(108,71,255,0.4);background:rgba(108,71,255,0.1);color:rgba(139,92,246,0.95);font-size:11px;font-weight:600;cursor:pointer;font-family:Inter,sans-serif;">Завтра</button>
+        <button onclick="modalQuickDate(7)" style="padding:6px 11px;border-radius:99px;border:0.5px solid rgba(108,71,255,0.4);background:rgba(108,71,255,0.1);color:rgba(139,92,246,0.95);font-size:11px;font-weight:600;cursor:pointer;font-family:Inter,sans-serif;">+7 дней</button>
+      </div>
       <div id="modal-tag-picker" style="display:flex;flex-wrap:wrap;gap:6px;margin:10px 0;"></div>
+      <!-- Действия над записью: выполнить, тудушка, копия, дубликат, удалить -->
+      <div id="modal-actions" style="display:flex;gap:6px;flex-wrap:wrap;margin:2px 0 10px;"></div>
       <!-- AI-связи — появляются после openEdit, когда links загрузятся -->
       <div id="modal-links-section" style="display:none;margin-top:14px;padding-top:14px;border-top:0.5px solid rgba(255,255,255,0.08);">
         <div style="font-size:11px;color:rgba(255,255,255,0.5);margin-bottom:8px;letter-spacing:0.5px;text-transform:uppercase;font-weight:600;">🔗 Похожие записи</div>
@@ -1468,7 +1485,7 @@ async function startRecording() {
   isRecording = true;
   pendingStopRecording = false;
   setMicState(true);
-  setStatus('🎙️ Слушаю... нажми ещё раз — отправлю');
+  setStatus('🎙️ Слушаю... отпусти палец — отправлю');
   try {
     activeStream = await navigator.mediaDevices.getUserMedia({ audio: true });
   } catch(e) {
@@ -1883,12 +1900,12 @@ function renderNotes(list) {
       doneAtStr = ' · ✓ ' + dd.toLocaleDateString('ru-RU', { day:'numeric', month:'short', timeZone:'UTC' }) + ' ' + dd.toLocaleTimeString('ru-RU', { hour:'2-digit', minute:'2-digit', timeZone:'UTC' });
     }
     const schedStr = !isDone ? whenBadgeStr(n) : '';
-    const cardClick = selectionMode ? `onclick="toggleSelectNote('${n.id}')" style="cursor:pointer;${cardStyle}"` : `style="${cardStyle}"`;
+    const cardClick = selectionMode ? `onclick="toggleSelectNote('${n.id}')" style="cursor:pointer;${cardStyle}"` : `onclick="openEdit('${n.id}')" style="cursor:pointer;${cardStyle}"`;
     const checkbox = selectionMode ? `<div style="width:20px;height:20px;border-radius:6px;border:1.5px solid ${isSelected?'rgba(139,92,246,0.9)':'rgba(255,255,255,0.25)'};background:${isSelected?'rgba(139,92,246,0.9)':'transparent'};display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:12px;color:#fff;">${isSelected?'✓':''}</div>` : '';
     // MVP: кнопка "Выполнено" доступна для ЛЮБОЙ записи, а не только с тегом "Задача"
-    const doneBtn = `<button class="note-btn ${isDone ? 'note-undone' : 'note-done'}" onclick="toggleDone('${n.id}', ${isDone})">${isDone ? '↩ Открыть' : '✓ Выполнено'}</button>`;
+    const doneBtn = `<button class="note-btn ${isDone ? 'note-undone' : 'note-done'}" onclick="toggleDone('${n.id}', ${isDone});event.stopPropagation();">${isDone ? '↩ Открыть' : '✓ Выполнено'}</button>`;
     const isInTodo = n.inTodo === true;
-    const todoBtn = `<button class="note-btn ${isInTodo ? 'note-undone' : 'note-edit'}" onclick="toggleTodo('${n.id}', ${isInTodo})">${isInTodo ? '✕ Убрать из тудулиста' : '➜ В тудулист'}</button>`;
+    const todoBtn = `<button class="note-btn ${isInTodo ? 'note-undone' : 'note-edit'}" onclick="toggleTodo('${n.id}', ${isInTodo});event.stopPropagation();">${isInTodo ? '✕ Убрать из тудулиста' : '➜ В тудулист'}</button>`;
     return `
       <div class="note-card" ${cardClick}>
         <div style="display:flex;gap:10px;align-items:flex-start;">
@@ -1906,8 +1923,6 @@ function renderNotes(list) {
             <div class="note-actions">
               ${doneBtn}
               ${todoBtn}
-              <button class="note-btn note-edit" onclick="openEdit('${n.id}')">Редактировать</button>
-              <button class="note-btn note-del" onclick="deleteNote('${n.id}')">Удалить</button>
             </div>`}
           </div>
         </div>
@@ -2151,10 +2166,106 @@ function openEdit(id) {
     if (st && !matched) opts += `<option value="${st}" selected>${st.slice(0, 5)}</option>`; // нестандартное время (HH:MM)
     timeSel.innerHTML = opts;
   }
+  // Мета-строка: когда и как создана запись (+ когда выполнена)
+  const metaEl = document.getElementById('modal-meta');
+  if (metaEl) {
+    const parts = [];
+    if (n.createdAt) {
+      const cd = new Date(new Date(n.createdAt).getTime() + 3*60*60*1000);
+      parts.push('Добавлено: ' + cd.toLocaleDateString('ru-RU', { day:'numeric', month:'short', timeZone:'UTC' }) + ' в ' + cd.toLocaleTimeString('ru-RU', { hour:'2-digit', minute:'2-digit', timeZone:'UTC' }) + (n.type === 'voice' ? ' · 🎤 голос' : ' · ⌨️ текст'));
+    }
+    if (n.done && n.doneAt) {
+      const dd = new Date(new Date(n.doneAt).getTime() + 3*60*60*1000);
+      parts.push('Выполнено: ' + dd.toLocaleDateString('ru-RU', { day:'numeric', month:'short', timeZone:'UTC' }) + ' в ' + dd.toLocaleTimeString('ru-RU', { hour:'2-digit', minute:'2-digit', timeZone:'UTC' }));
+    }
+    metaEl.textContent = parts.join(' · ');
+    metaEl.style.display = parts.length ? 'block' : 'none';
+  }
+  renderModalActions(n);
   // Загружаем AI-связи для этой заметки
   renderModalLinks(id);
   document.getElementById('modal').classList.add('open');
 }
+
+// Кнопки действий прямо в редакторе: выполнить, тудушка, копия, дубликат, удалить.
+// Не трогаем поля ввода — несохранённые правки текста остаются при действии.
+function renderModalActions(n) {
+  const box = document.getElementById('modal-actions');
+  if (!box) return;
+  const isDone = n.done === true;
+  const isInTodo = n.inTodo === true;
+  const st = 'padding:7px 11px;border-radius:9px;font-size:11.5px;font-weight:600;cursor:pointer;font-family:Inter,sans-serif;';
+  box.innerHTML = `
+    <button onclick="modalToggleDone()" style="${st}border:0.5px solid ${isDone ? 'rgba(255,255,255,0.15)' : 'rgba(0,220,120,0.4)'};background:${isDone ? 'rgba(255,255,255,0.05)' : 'rgba(0,220,120,0.12)'};color:${isDone ? 'rgba(255,255,255,0.6)' : 'rgba(0,230,130,0.95)'};">${isDone ? '↩ Вернуть в работу' : '✓ Выполнить'}</button>
+    <button onclick="modalToggleTodo()" style="${st}border:0.5px solid ${isInTodo ? 'rgba(255,80,80,0.3)' : 'rgba(108,71,255,0.4)'};background:${isInTodo ? 'rgba(255,80,80,0.08)' : 'rgba(108,71,255,0.1)'};color:${isInTodo ? 'rgba(255,110,110,0.9)' : 'rgba(139,92,246,0.95)'};">${isInTodo ? '✕ Из тудушки' : '➜ В тудушку'}</button>
+    <button onclick="modalCopyText()" style="${st}border:0.5px solid rgba(255,255,255,0.15);background:rgba(255,255,255,0.05);color:rgba(255,255,255,0.75);">📋 Копировать</button>
+    <button onclick="modalDuplicate()" style="${st}border:0.5px solid rgba(0,212,255,0.3);background:rgba(0,212,255,0.08);color:rgba(0,212,255,0.85);">⧉ Дублировать</button>
+    <button onclick="modalDelete()" style="${st}border:0.5px solid rgba(255,80,80,0.3);background:rgba(255,80,80,0.1);color:rgba(255,110,110,0.9);">🗑 Удалить</button>`;
+}
+
+// Быстрая дата в редакторе: Сегодня / Завтра / +7 дней — одним тапом
+function modalQuickDate(days) {
+  const d = new Date();
+  d.setDate(d.getDate() + days);
+  const inp = document.getElementById('modal-date');
+  if (inp) inp.value = formatDateKey(d);
+}
+window.modalQuickDate = modalQuickDate;
+
+async function modalToggleDone() {
+  const n = notes.find(x => x.id === editingId);
+  if (!n) return;
+  await toggleDone(n.id, n.done === true);
+  const fresh = notes.find(x => x.id === editingId);
+  if (fresh) renderModalActions(fresh);
+}
+window.modalToggleDone = modalToggleDone;
+
+async function modalToggleTodo() {
+  const n = notes.find(x => x.id === editingId);
+  if (!n) return;
+  await toggleTodo(n.id, n.inTodo === true);
+  const fresh = notes.find(x => x.id === editingId);
+  if (fresh) renderModalActions(fresh);
+}
+window.modalToggleTodo = modalToggleTodo;
+
+function modalCopyText() {
+  const n = notes.find(x => x.id === editingId);
+  if (!n) return;
+  copyNoteText(n.id);
+}
+window.modalCopyText = modalCopyText;
+
+async function modalDuplicate() {
+  const n = notes.find(x => x.id === editingId);
+  if (!n) return;
+  try {
+    await addDoc(notesCol(), {
+      text: n.text + ' (копия)',
+      type: n.type || 'text',
+      tag: n.tag || null,
+      scheduledDate: n.scheduledDate || null,
+      scheduledTime: n.scheduledTime || null,
+      inTodo: false,
+      done: false,
+      doneAt: null,
+      createdAt: new Date().toISOString()
+    });
+    await loadNotes();
+    renderCalendar();
+    closeModal();
+  } catch(e) { alert('Ошибка: ' + e.message); }
+}
+window.modalDuplicate = modalDuplicate;
+
+async function modalDelete() {
+  const id = editingId;
+  if (!id) return;
+  closeModal();
+  await deleteNote(id); // confirm внутри deleteNote
+}
+window.modalDelete = modalDelete;
 
 function clearModalSchedule() {
   const d = document.getElementById('modal-date');
@@ -2609,16 +2720,23 @@ function calTaskCard(t, opts = {}) {
     const lbl = dd.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' }) + (t.scheduledTime ? ' · ' + t.scheduledTime.slice(0, 5) : '');
     whenBadge = `<span style="flex-shrink:0;font-size:9.5px;padding:2px 6px;border-radius:99px;${overdue ? 'background:rgba(255,80,80,0.12);color:rgba(255,110,110,0.9);' : 'background:rgba(108,71,255,0.1);color:rgba(139,92,246,0.85);'}">${overdue ? '⚠ ' : ''}${lbl}</span>`;
   }
-  return `<div data-drag-note="${t.id}" class="${opts.qTop ? 'cal-queue-top' : ''}" style="display:flex;align-items:flex-start;gap:8px;padding:6px 8px;margin-bottom:4px;border-radius:8px;background:rgba(255,255,255,0.03);border:0.5px solid rgba(255,255,255,0.05);cursor:grab;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;">
-    <button onclick="toggleDone('${t.id}', false)" title="Выполнить" style="flex-shrink:0;width:18px;height:18px;border-radius:50%;border:1.5px solid rgba(255,255,255,0.3);background:transparent;cursor:pointer;display:flex;align-items:center;justify-content:center;margin-top:1px;"></button>
+  return `<div data-drag-note="${t.id}" onclick="calTaskTap('${t.id}')" class="${opts.qTop ? 'cal-queue-top' : ''}" style="display:flex;align-items:flex-start;gap:8px;padding:6px 8px;margin-bottom:4px;border-radius:8px;background:rgba(255,255,255,0.03);border:0.5px solid rgba(255,255,255,0.05);cursor:grab;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;">
+    <button onclick="toggleDone('${t.id}', false);event.stopPropagation();" title="Выполнить" style="flex-shrink:0;width:18px;height:18px;border-radius:50%;border:1.5px solid rgba(255,255,255,0.3);background:transparent;cursor:pointer;display:flex;align-items:center;justify-content:center;margin-top:1px;"></button>
     <div style="flex:1;min-width:0;">
       <div style="font-size:12.5px;color:rgba(255,255,255,0.9);line-height:1.4;word-break:break-word;font-family:Inter,sans-serif;">${escHtml(t.text)}${tagBadge}</div>
     </div>
     ${whenBadge}
-    <button onclick="openEdit('${t.id}');event.stopPropagation();" title="Редактировать" style="flex-shrink:0;background:rgba(255,255,255,0.05);border:0.5px solid rgba(255,255,255,0.12);color:rgba(255,255,255,0.75);border-radius:6px;padding:3px 6px;font-size:11px;cursor:pointer;font-family:Inter,sans-serif;">✏️</button>
-    <button onclick="openScheduleModal('${t.id}');event.stopPropagation();" title="Дата и время" style="flex-shrink:0;background:rgba(255,200,50,0.1);border:0.5px solid rgba(255,200,50,0.25);color:rgba(255,210,80,0.85);border-radius:6px;padding:3px 6px;font-size:11px;cursor:pointer;font-family:Inter,sans-serif;">📅</button>
   </div>`;
 }
+
+// тап по задаче в календаре = редактор; в режиме «🎯 Раскидать» тап ничего не открывает
+// (там карточки только перетаскиваются) — calendarSortMode недоступен из inline onclick,
+// поэтому проверка живёт здесь. Клик сразу после драга гасится глобально (calSuppressClick).
+function calTaskTap(id) {
+  if (calendarSortMode) return;
+  openEdit(id);
+}
+window.calTaskTap = calTaskTap;
 
 function renderCalendar() {
   const list = document.getElementById('calendar-list');
@@ -4035,7 +4153,23 @@ async function loadWishes() {
         }
       }
     }
+    // Порядок желаний: wishOrder задаёт ручное перетаскивание. Старым желаниям (без поля)
+    // присваиваем номера по createdAt — визуально ничего не меняется, записываем в базу
+    // лениво, при первом реальном перетаскивании.
+    const anyOrder = wishes.some(w => w.wishOrder != null);
+    if (!anyOrder) {
+      wishes.forEach((w, i) => { w.wishOrder = i + 1; });
+    } else {
+      let maxOrder = wishes.reduce((m, w) => Math.max(m, w.wishOrder || 0), 0);
+      wishes.forEach(w => { if (w.wishOrder == null) w.wishOrder = ++maxOrder; });
+    }
+    wishes.sort((a, b) => (a.wishOrder || 0) - (b.wishOrder || 0));
   } catch(e) { wishes = []; }
+}
+
+// новое желание — в конец списка (после максимального wishOrder)
+function nextWishOrder() {
+  return wishes.reduce((m, w) => Math.max(m, w.wishOrder || 0), 0) + 1;
 }
 
 // Категории — для цвета/иконки
@@ -4086,7 +4220,7 @@ function renderWishes() {
       ? `<div onclick="event.stopPropagation();retryWishMoodImage('${w.id}')" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:10px;color:rgba(255,255,255,0.55);background:rgba(0,0,0,0.25);cursor:pointer;text-align:center;padding:0 12px;">🎨 Не вышло — нажми, чтобы повторить</div>`
       : (w.moodImagePrompt ? '<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:10px;color:rgba(255,255,255,0.4);">🎨 Генерится картинка…</div>' : '');
     return `
-      <div class="note-card wish-card" onclick="openWishDetail('${w.id}')" style="padding:0;overflow:hidden;cursor:pointer;border:0.5px solid rgba(${w.state === 'done' ? '0,255,140' : '255,255,255'},0.15);${w.state === 'done' ? 'box-shadow:0 0 20px rgba(0,255,140,0.15);' : ''}">
+      <div class="note-card wish-card" data-id="${w.id}" onclick="wishTap('${w.id}')" style="padding:0;overflow:hidden;cursor:pointer;border:0.5px solid rgba(${w.state === 'done' ? '0,255,140' : '255,255,255'},0.15);${w.state === 'done' ? 'box-shadow:0 0 20px rgba(0,255,140,0.15);' : ''}">
         <div style="position:relative;height:140px;background:${hasMood ? `url('${w.moodImage}') center/cover` : gradient};">
           ${moodOverlay}
           <div style="position:absolute;top:8px;left:8px;font-size:22px;text-shadow:0 2px 8px rgba(0,0,0,0.8);">${w.icon || cat.icon}</div>
@@ -4098,12 +4232,20 @@ function renderWishes() {
             <span style="font-size:9px;color:rgba(255,255,255,0.9);font-weight:600;text-shadow:0 1px 2px rgba(0,0,0,0.8);">${doneMs}/${totalMs}</span>
           </div>` : ''}
         </div>
-        <div style="padding:10px 12px;">
-          <div class="note-text" style="${w.state === 'done' ? 'text-decoration:line-through;opacity:0.7;' : ''}font-size:13.5px;line-height:1.4;">${escHtml(w.text)}</div>
+        <div style="padding:10px 12px;display:flex;align-items:flex-start;gap:6px;">
+          <div class="wish-drag-handle" title="Перетащи — изменить порядок">⠿</div>
+          <div class="note-text" style="flex:1;min-width:0;${w.state === 'done' ? 'text-decoration:line-through;opacity:0.7;' : ''}font-size:13.5px;line-height:1.4;">${escHtml(w.text)}</div>
         </div>
       </div>`;
   }).join('');
 }
+
+// тап по желанию = детали; сразу после драга — не срабатывает
+function wishTap(id) {
+  if (Date.now() - (window.__wishDragEndTs || 0) < 400) return;
+  openWishDetail(id);
+}
+window.wishTap = wishTap;
 
 // Создание желания — с AI suggestion + красивой модалкой подтверждения
 document.getElementById('wish-add-btn').addEventListener('click', async () => {
@@ -4225,6 +4367,7 @@ async function confirmWishSuggestion() {
       icon, category, moodImagePrompt, shortTag,
       milestones,
       moodImage: null,
+      wishOrder: nextWishOrder(),
       createdAt: new Date().toISOString(),
     });
     // Создаём задачи в тудушке для каждого milestone
@@ -5170,7 +5313,6 @@ function renderFocusCard() {
         <span style="font-size:15px;flex-shrink:0;">🎯</span>
         <span class="focus-text">${escHtml(top.text)}</span>
         ${restCount > 0 ? `<span class="focus-next-hint">+${restCount}</span>` : ''}
-        <button class="focus-done-btn" onclick="openEdit('${top.id}');event.stopPropagation();" title="Редактировать" style="font-size:12px;">✏️</button>
         <button class="focus-done-btn" onclick="toggleDone('${top.id}', false)">✓</button>
         <div class="focus-swipe-hint">Следующая →</div>
       </div>`;
@@ -5526,6 +5668,7 @@ function initTodoDrag() {
     // Теперь reorderTodo мгновенно применяет новый порядок локально,
     // renderTodo заменит DOM целиком — карточка остаётся там, куда утащили.
     todoDragState = null;
+    window.__todoDragEndTs = Date.now(); // тап сразу после драга не должен открыть редактор
     reorderTodo(draggedId, finalIndex);
   }
 
@@ -5562,6 +5705,152 @@ async function reorderTodo(id, newIndex) {
     await Promise.all(updates.map(u => updateDoc(uDocRef('notes', u.id), { todoOrder: u.order })));
   } catch(e) { alert('Ошибка сортировки: ' + e.message); }
   await loadNotes(); // подтягиваем серверную правду после записи
+}
+
+// ── DRAG-N-DROP ДЛЯ ЖЕЛАНИЙ ──
+// Тащим за ручку "⠿" в тексте карточки — порядок сохраняется в wishOrder (как todoOrder
+// в тудушке). Механика та же: тач-драг с расталкиванием соседей + автоскролл у краёв.
+let wishDragState = null;
+
+function initWishDrag() {
+  const listEl = document.getElementById('wishes-list');
+  if (!listEl || listEl.dataset.wishDragInit) return;
+  listEl.dataset.wishDragInit = '1';
+
+  const EDGE = 60;
+  const MAX_SPEED = 14;
+
+  function updateWishDragVisual() {
+    if (!wishDragState) return;
+    const scrolled = listEl.scrollTop - wishDragState.startScrollTop;
+    const deltaY = wishDragState.lastClientY - wishDragState.startY + scrolled;
+    wishDragState.itemEl.style.transform = `translateY(${deltaY}px)`;
+    updateWishLiveShift(scrolled);
+  }
+
+  function updateWishLiveShift(scrolled) {
+    if (!wishDragState) return;
+    const { itemsSnapshot, id, startIndexAmongOthers, draggedHeight } = wishDragState;
+    const fingerY = wishDragState.lastClientY;
+    const others = itemsSnapshot.filter(s => s.id !== id);
+    let targetIndex = others.length;
+    for (let i = 0; i < others.length; i++) {
+      const adjMidY = others[i].midY - scrolled;
+      if (fingerY < adjMidY) { targetIndex = i; break; }
+    }
+    if (targetIndex === wishDragState.currentTargetIndex) return;
+    wishDragState.currentTargetIndex = targetIndex;
+    others.forEach((s, j) => {
+      const el = listEl.querySelector(`.wish-card[data-id="${s.id}"]`);
+      if (!el || el === wishDragState.itemEl) return;
+      let shift = 0;
+      if (startIndexAmongOthers < targetIndex && j >= startIndexAmongOthers && j < targetIndex) {
+        shift = -draggedHeight;
+      } else if (targetIndex < startIndexAmongOthers && j >= targetIndex && j < startIndexAmongOthers) {
+        shift = draggedHeight;
+      }
+      el.style.transition = 'transform 0.2s ease';
+      el.style.transform = shift ? `translateY(${shift}px)` : '';
+    });
+  }
+
+  function resetWishShifts() {
+    if (!wishDragState) return;
+    wishDragState.itemsSnapshot.forEach(s => {
+      if (s.id === wishDragState.id) return;
+      const el = listEl.querySelector(`.wish-card[data-id="${s.id}"]`);
+      if (el) { el.style.transition = ''; el.style.transform = ''; }
+    });
+  }
+
+  function wishAutoScrollTick() {
+    if (!wishDragState) return;
+    const rect = listEl.getBoundingClientRect();
+    const y = wishDragState.lastClientY;
+    let speed = 0;
+    if (y < rect.top + EDGE) {
+      speed = -MAX_SPEED * (1 - Math.max(0, (y - rect.top)) / EDGE);
+    } else if (y > rect.bottom - EDGE) {
+      speed = MAX_SPEED * (1 - Math.max(0, (rect.bottom - y)) / EDGE);
+    }
+    if (speed !== 0) {
+      listEl.scrollTop += speed;
+      updateWishDragVisual();
+    }
+    wishDragState.rafId = requestAnimationFrame(wishAutoScrollTick);
+  }
+
+  listEl.addEventListener('touchstart', (e) => {
+    const handle = e.target.closest('.wish-drag-handle');
+    if (!handle) return;
+    const card = handle.closest('.wish-card');
+    if (!card) return;
+    e.stopPropagation();
+    const touch = e.touches[0];
+    const items = Array.from(listEl.querySelectorAll('.wish-card'));
+    const itemsSnapshot = items.map(elm => {
+      const r = elm.getBoundingClientRect();
+      return { id: elm.dataset.id, midY: r.top + r.height / 2 };
+    });
+    const startFullIndex = itemsSnapshot.findIndex(s => s.id === card.dataset.id);
+    const cardRect = card.getBoundingClientRect();
+    wishDragState = {
+      id: card.dataset.id, startY: touch.clientY, lastClientY: touch.clientY,
+      itemEl: card, itemsSnapshot, startScrollTop: listEl.scrollTop,
+      startIndexAmongOthers: startFullIndex,
+      draggedHeight: cardRect.height + 8, // +8 = margin-bottom карточки
+      currentTargetIndex: startFullIndex
+    };
+    card.classList.add('wish-dragging');
+    wishDragState.rafId = requestAnimationFrame(wishAutoScrollTick);
+  }, { passive: true });
+
+  listEl.addEventListener('touchmove', (e) => {
+    if (!wishDragState) return;
+    e.preventDefault();
+    wishDragState.lastClientY = e.touches[0].clientY;
+    updateWishDragVisual();
+  }, { passive: false });
+
+  function finishWishDrag() {
+    if (!wishDragState) return;
+    cancelAnimationFrame(wishDragState.rafId);
+    const finalIndex = wishDragState.currentTargetIndex;
+    const draggedId = wishDragState.id;
+    wishDragState = null;
+    window.__wishDragEndTs = Date.now(); // тап сразу после драга не должен открыть детали
+    reorderWish(draggedId, finalIndex);
+  }
+
+  listEl.addEventListener('touchend', () => finishWishDrag());
+  listEl.addEventListener('touchcancel', () => {
+    if (!wishDragState) return;
+    cancelAnimationFrame(wishDragState.rafId);
+    resetWishShifts();
+    wishDragState.itemEl.style.transform = '';
+    wishDragState.itemEl.classList.remove('wish-dragging');
+    wishDragState = null;
+  });
+}
+
+async function reorderWish(id, newIndex) {
+  // Оптимистичный порядок — как reorderTodo: локальный state мутируем до await.
+  const dragged = wishes.find(w => w.id === id);
+  if (!dragged) return;
+  const rest = wishes.filter(w => w.id !== id);
+  rest.splice(newIndex, 0, dragged);
+  const updates = [];
+  rest.forEach((w, i) => {
+    const order = i + 1;
+    if ((w.wishOrder || 0) !== order) updates.push({ id: w.id, order });
+    w.wishOrder = order;
+  });
+  renderWishes(); // синхронный рендер до первого await
+  try {
+    await Promise.all(updates.map(u => updateDoc(uDocRef('wishes', u.id), { wishOrder: u.order })));
+  } catch(e) { alert('Ошибка сортировки: ' + e.message); }
+  await loadWishes(); // серверная правда
+  renderWishes();
 }
 
 // ── КАРТОЧКА ФОКУСА НА ГЛАВНОЙ: тап → открыть задачу, свайп вправо → в конец очереди ──
@@ -5700,7 +5989,7 @@ function renderTodo() {
     const whenStr = whenBadgeStr(n);
     const whenStyle = n.scheduledDate && n.scheduledDate < formatDateKey(new Date()) ? ' style="color:rgba(255,110,110,0.9);"' : '';
     return `
-    <div class="note-card" data-id="${n.id}" style="display:flex;gap:10px;align-items:flex-start;">
+    <div class="note-card" data-id="${n.id}" onclick="todoCardTap('${n.id}')" style="display:flex;gap:10px;align-items:flex-start;cursor:pointer;">
       <div class="todo-drag-handle">⠿</div>
       <div style="flex:1;min-width:0;">
         <div class="note-meta">
@@ -5709,15 +5998,19 @@ function renderTodo() {
         </div>
         <div class="note-text">${escHtml(n.text)}</div>
         <div class="note-actions">
-          <button class="note-btn note-done" onclick="toggleDone('${n.id}', false)">✓ Выполнено</button>
-          <button class="note-btn note-edit" onclick="openEdit('${n.id}')">✏️ Текст</button>
-          <button class="note-btn note-edit" onclick="openScheduleModal('${n.id}')">📅 Дата</button>
-          <button class="note-btn note-undone" onclick="toggleTodo('${n.id}', true)">✕ Убрать</button>
+          <button class="note-btn note-done" onclick="toggleDone('${n.id}', false);event.stopPropagation();">✓ Выполнено</button>
+          <button class="note-btn note-undone" onclick="toggleTodo('${n.id}', true);event.stopPropagation();">✕ Убрать</button>
         </div>
       </div>
     </div>
   `; }).join('');
 }
+// тап по карточке тудушки = редактор (сразу после драга не срабатывает — защита от синтетического клика)
+function todoCardTap(id) {
+  if (Date.now() - (window.__todoDragEndTs || 0) < 400) return;
+  openEdit(id);
+}
+window.todoCardTap = todoCardTap;
 
 // экспорт чата
 window.exportChat = async function() {
@@ -5765,12 +6058,12 @@ function goTo(screen) {
   }
   if (screen === 'calendar') {
     renderCalendar();
-    showHintOnce('calendar_intro2','📅 Тап на день — план дня. Свайп по календарю влево/вправо — листать месяцы. ✏️ на карточке — редактировать текст и срок. 🎯 Раскидать — конвейер: тяни верхнюю задачу на день. Долгое нажатие на задачу — перетащить.','calendar-hint', () => notes.filter(n => n.inTodo).length >= 1);
+    showHintOnce('calendar_intro2','📅 Тап на день — план дня. Свайп влево/вправо — листать месяцы. Тап по задаче — редактор: текст, тег, срок, удалить. 🎯 Раскидать — тяни задачу на день. Долгое нажатие — перетащить.','calendar-hint', () => notes.filter(n => n.inTodo).length >= 1);
   }
   if (screen === 'wishes') {
     renderWishes();
     // Подсказка про chat per wish — только если есть хотя бы 1 желание
-    showHintOnce('wishes_intro','У каждого желания свой отдельный чат с ИИ — 4 режима: Практик, Скептик, Мечтатель, Философ.','wishes-hint', () => wishes.length >= 1);
+    showHintOnce('wishes_intro','Тап на желание — детали и чат с ИИ. Ручка ⠿ — перетащи, чтобы поменять порядок.','wishes-hint', () => wishes.length >= 1);
     // Подсказка «тапни на карточку» — только при 1+ желании
     showHintOnce('first_wish','Тапни на карточку желания — откроются детали: mood-image, milestones, AI-наставники.','wishes-hint', () => wishes.length >= 1 && hintsShown.has('wishes_intro'));
   }
@@ -5806,19 +6099,38 @@ document.getElementById('cap-send').addEventListener('click', () => {
   saveNote(text, 'text');
 });
 
-// Голосовая запись — модель «нажал — говоришь — нажал — отправилось»:
-// первый клик включает запись, второй — останавливает и отправляет на распознавание.
-// Одинаково работает на главном экране (микрофон у поля + большая кнопка) и в чате с ИИ.
+// Голосовая запись — модель «держи и говори, отпустил — отправилось» (PUSH-TO-TALK):
+// нажатие (pointerdown) включает запись, отпускание (pointerup) — останавливает и отправляет.
+// Одинаково на главном экране (микрофон у поля + большая кнопка) и в чате с ИИ.
+// Долгое нажатие НЕ вызывает системное меню («скопировать картинку» и т.п.) —
+// гасим contextmenu и выключаем callout/выделение.
 function bindPressToRecord(el, isActive, onStart, onStop) {
+  if (!el) return;
   el.style.webkitTouchCallout = 'none';
   el.style.userSelect = 'none';
+  el.style.webkitUserSelect = 'none';
   el.style.touchAction = 'manipulation'; // без двойного тапа/зума между нажатиями
-  el.addEventListener('click', (e) => {
+  // картинка внутри кнопки (хаос-кнопка) не должна ловить собственное долгое нажатие
+  el.querySelectorAll('img').forEach(im => { im.style.pointerEvents = 'none'; im.style.webkitTouchCallout = 'none'; im.style.userSelect = 'none'; });
+  let pressed = false;
+  const down = (e) => {
     e.preventDefault();
     e.stopPropagation();
-    if (isActive()) onStop();
-    else onStart();
-  });
+    if (e.pointerId !== undefined) { try { el.setPointerCapture(e.pointerId); } catch(_){} }
+    pressed = true;
+    if (!isActive()) onStart();
+  };
+  const up = (e) => {
+    if (!pressed) return;
+    pressed = false;
+    e.preventDefault();
+    e.stopPropagation();
+    if (isActive()) onStop(); // отпустил палец — отправилось
+  };
+  el.addEventListener('pointerdown', down);
+  el.addEventListener('pointerup', up);
+  el.addEventListener('pointercancel', up); // систему забрала жест (скролл/звонок) — молча останавливаем
+  el.addEventListener('contextmenu', (e) => { e.preventDefault(); e.stopPropagation(); });
 }
 bindPressToRecord(document.getElementById('cap-mic'), () => isRecording, startRecording, stopRecording);
 
@@ -5829,6 +6141,15 @@ document.getElementById('cap-clear').addEventListener('click', () => {
 });
 
 bindPressToRecord(document.getElementById('chaos-btn'), () => isRecording, startRecording, stopRecording);
+
+// Глобальный запрет системного контекстного меню («Скопировать картинку» и т.п.) на всех
+// поверхностях, где долгое нажатие — это ЖЕСТ (микрофоны, ручки перетаскивания, карточки
+// с драгом и картинками желаний). Обычный текст записей не трогаем — там меню полезно.
+document.addEventListener('contextmenu', (e) => {
+  if (e.target && e.target.closest && e.target.closest(
+    '.cap-mic,.chat-mic-btn,#chaos-btn,.todo-drag-handle,.wish-drag-handle,[data-drag-note],.focus-card,.wish-card,.note-card,.todo-dragging'
+  )) e.preventDefault();
+});
 
 document.getElementById('cap-input').addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && !e.shiftKey) {
@@ -7750,7 +8071,7 @@ async function startChatRecording() {
   isChatRecording = true; // синхронно до await — фикс гонки быстрого тапа
   pendingStopChat = false;
   document.getElementById('chat-mic').classList.add('recording');
-  document.getElementById('chat-subtitle').textContent = '🎙️ Слушаю... нажми ещё раз — отправлю';
+  document.getElementById('chat-subtitle').textContent = '🎙️ Слушаю... отпусти палец — отправлю';
   try {
     chatActiveStream = await navigator.mediaDevices.getUserMedia({ audio: true });
   } catch(e) {
@@ -7917,6 +8238,7 @@ mainScreenEl.addEventListener('mouseup', (e) => { if (xMouseDown) { xMouseDown =
 mainScreenEl.addEventListener('mouseleave', (e) => { if (xMouseDown) { xMouseDown = false; xGestureEnd(e.pageX, e.pageY); } });
 
 initTodoDrag();
+initWishDrag();
 initFocusCardGestures();
 
 // ── АВТОРИЗАЦИЯ ──
@@ -8359,6 +8681,13 @@ window.__t = {
   renderCalendar,
   deleteDoc,
   uDocRef,
+  wishes: () => wishes,
+  loadWishes,
+  renderWishes,
+  reorderWish,
+  uCol,
+  addDoc,
+  updateDoc,
 };
 
 // ── REGISTER PROMPT — показываем после 10 заметок или 1 желания ──
