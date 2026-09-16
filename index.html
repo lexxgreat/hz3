@@ -948,27 +948,51 @@ body.cal-dragging,body.cal-dragging *{touch-action:none!important;user-select:no
       </div>
       <button class="chat-clear-btn" onclick="openAdminChat(true)" title="Обновить">↻</button>
     </div>
-    <div id="adminchat-rules-banner" style="display:none;margin:10px 16px 0;background:rgba(255,209,102,0.08);border:0.5px solid rgba(255,209,102,0.3);border-radius:12px;padding:10px 12px;">
-      <div style="font-size:11.5px;color:rgba(255,209,102,0.95);line-height:1.45;font-family:Inter,sans-serif;">⚠ Правила Firestore не обновлены: сообщения пользователей доходят, но твои ответы уйти не могут. Добавь в Rules (Console → Firestore → Rules) блок ниже и опубликуй.</div>
-      <pre id="adminchat-rules-snippet" style="margin:8px 0 0;padding:8px;background:rgba(0,0,0,0.35);border-radius:8px;font-size:9.5px;line-height:1.5;color:rgba(255,255,255,0.75);overflow-x:auto;white-space:pre;">match /feedback/{id} {
-  allow create: if request.auth != null
-    && request.resource.data.role in ['user','admin']
-    && request.resource.data.text.size() > 0
-    && request.resource.data.text.size() <= 4000
-    && ((request.resource.data.role == 'user' && request.resource.data.threadId == request.auth.uid)
-        || (request.resource.data.role == 'admin' && request.auth.token.email == 'lanterns@yandex.ru'));
-  allow read: if request.auth != null
-    && (resource.data.threadId == request.auth.uid
-        || request.auth.token.email == 'lanterns@yandex.ru');
-  allow update: if request.auth != null
-    && (request.auth.token.email == 'lanterns@yandex.ru'
-        || (resource.data.threadId == request.auth.uid
-            && resource.data.role == 'admin'
-            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['readByUser'])));
-  allow delete: if request.auth != null
-    && request.auth.token.email == 'lanterns@yandex.ru';
+    <div id="adminchat-rules-banner" style="display:none;position:relative;margin:10px 16px 0;background:rgba(255,209,102,0.08);border:0.5px solid rgba(255,209,102,0.3);border-radius:12px;padding:10px 12px;">
+      <button onclick="dismissAdminRulesBanner()" title="Скрыть" style="position:absolute;top:4px;right:4px;background:none;border:none;color:rgba(255,209,102,0.75);font-size:15px;line-height:1;cursor:pointer;padding:4px 7px;">✕</button>
+      <div style="font-size:11.5px;color:rgba(255,209,102,0.95);line-height:1.45;font-family:Inter,sans-serif;padding-right:24px;">⚠ Чтобы ответы уходили: нажми «Скопировать», открой Firebase Console → Firestore → Rules, выдели там всё (Ctrl+A), вставь этот файл целиком (Ctrl+V) и нажми «Опубликовать».</div>
+      <pre id="adminchat-rules-snippet" style="margin:8px 0 0;padding:8px;background:rgba(0,0,0,0.35);border-radius:8px;font-size:9.5px;line-height:1.5;color:rgba(255,255,255,0.75);overflow-x:auto;white-space:pre;">rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    match /users/{uid} {
+      allow read: if request.auth != null
+        && (request.auth.uid == uid
+            || request.auth.token.email == 'lanterns@yandex.ru');
+      allow write: if request.auth != null
+        && request.auth.uid == uid;
+
+      match /{sub=**} {
+        allow read, write: if request.auth != null
+          && request.auth.uid == uid;
+      }
+    }
+
+    match /feedback/{id} {
+      allow create: if request.auth != null
+        && request.resource.data.role in ['user','admin']
+        && request.resource.data.text.size() > 0
+        && request.resource.data.text.size() <= 4000
+        && ((request.resource.data.role == 'user' && request.resource.data.threadId == request.auth.uid)
+            || (request.resource.data.role == 'admin' && request.auth.token.email == 'lanterns@yandex.ru'));
+
+      allow read: if request.auth != null
+        && (resource.data.threadId == request.auth.uid
+            || request.auth.token.email == 'lanterns@yandex.ru');
+
+      allow update: if request.auth != null
+        && (request.auth.token.email == 'lanterns@yandex.ru'
+            || (resource.data.threadId == request.auth.uid
+                && resource.data.role == 'admin'
+                && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['readByUser'])));
+
+      allow delete: if request.auth != null
+        && request.auth.token.email == 'lanterns@yandex.ru';
+    }
+  }
 }</pre>
-      <button onclick="copyAdminRulesSnippet()" style="width:100%;margin-top:8px;background:rgba(255,209,102,0.12);border:0.5px solid rgba(255,209,102,0.4);border-radius:8px;padding:7px;color:rgba(255,209,102,0.95);font-size:11.5px;font-weight:600;cursor:pointer;font-family:Inter,sans-serif;">📋 Скопировать блок правил</button>
+      <button onclick="copyAdminRulesSnippet()" style="width:100%;margin-top:8px;background:rgba(255,209,102,0.12);border:0.5px solid rgba(255,209,102,0.4);border-radius:8px;padding:7px;color:rgba(255,209,102,0.95);font-size:11.5px;font-weight:600;cursor:pointer;font-family:Inter,sans-serif;">📋 Скопировать правила (замена целиком)</button>
     </div>
     <div class="hist-list" id="adminchat-list" style="padding:10px 16px 16px;overflow-y:auto;flex:1;"></div>
     <div id="adminchat-threads" style="display:none;flex-direction:column;flex:1;min-height:0;">
@@ -7748,14 +7772,14 @@ function clearLocalUserData() {
 // и без новых правил). Ответы владельца приходят с role:'admin' в тот же тред.
 // Тред = uid пользователя. Дедупликация по msgId (сообщение может жить в двух местах).
 const devChat = { local: [], remote: [], unsub: null, lastSend: 0 };
-const adminChat = { threads: [], current: null, fbDocs: [], profiles: [], fbDenied: false, unsub: null, loaded: false };
+const adminChat = { threads: [], current: null, fbDocs: [], profiles: [], fbDenied: false, rulesBannerDismissed: false, unsub: null, loaded: false };
 
 function resetDevChatState() {
   if (devChat.unsub) { try { devChat.unsub(); } catch (e) {} devChat.unsub = null; }
   if (adminChat.unsub) { try { adminChat.unsub(); } catch (e) {} adminChat.unsub = null; }
   devChat.local = []; devChat.remote = []; devChat.lastSend = 0;
   adminChat.threads = []; adminChat.current = null; adminChat.fbDocs = [];
-  adminChat.profiles = []; adminChat.fbDenied = false; adminChat.loaded = false;
+  adminChat.profiles = []; adminChat.fbDenied = false; adminChat.rulesBannerDismissed = false; adminChat.loaded = false;
   const dot = document.getElementById('devchat-dot'); if (dot) dot.style.display = 'none';
   const badge = document.getElementById('adminchat-badge'); if (badge) badge.style.display = 'none';
 }
@@ -7962,7 +7986,7 @@ function renderAdminList() {
   if (thrEl) thrEl.style.display = 'none';
   el.style.display = '';
   const banner = document.getElementById('adminchat-rules-banner');
-  if (banner) banner.style.display = adminChat.fbDenied ? 'block' : 'none';
+  if (banner) banner.style.display = (adminChat.fbDenied && !adminChat.rulesBannerDismissed) ? 'block' : 'none';
   if (!adminChat.threads.length) {
     el.innerHTML = '<div style="text-align:center;color:rgba(255,255,255,0.35);font-size:12.5px;padding:24px;line-height:1.6;">Пока никто не писал.<br>Сообщения из «Написать разработчику» появятся здесь.</div>';
     return;
@@ -8037,9 +8061,10 @@ async function sendAdminReply() {
     const code = String((e && e.code) || e);
     input.value = text; adminAutoResize();
     if (code.indexOf('permission-denied') >= 0) {
+      adminChat.rulesBannerDismissed = false; // баннер возвращается — без правил ответ не уйдёт
       const banner = document.getElementById('adminchat-rules-banner');
       if (banner) banner.style.display = 'block';
-      alert('Ответ не ушёл: нужны обновлённые правила Firestore — баннер сверху, скопируй блок и опубликуй в Console → Firestore → Rules.');
+      alert('Ответ не ушёл: нужны обновлённые правила Firestore — баннер сверху, скопируй файл целиком и замени в Console → Firestore → Rules.');
     } else {
       alert('Ответ не ушёл: ' + code);
     }
@@ -8052,7 +8077,7 @@ async function copyAdminRulesSnippet() {
   const txt = pre.textContent;
   try {
     await navigator.clipboard.writeText(txt);
-    alert('Скопировано. Вставь блок внутрь match /databases/{database}/documents { ... } и нажми «Опубликовать».');
+    alert('Скопировано. В Firebase Console → Firestore → Rules выдели всё (Ctrl+A), вставь этот файл (Ctrl+V) и нажми «Опубликовать».');
   } catch (e) {
     const r = document.createRange(); r.selectNodeContents(pre);
     const sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(r);
@@ -8062,6 +8087,13 @@ async function copyAdminRulesSnippet() {
 window.openAdminChat = openAdminChat;
 window.renderAdminList = renderAdminList;
 window.copyAdminRulesSnippet = copyAdminRulesSnippet;
+
+function dismissAdminRulesBanner() {
+  adminChat.rulesBannerDismissed = true;
+  const banner = document.getElementById('adminchat-rules-banner');
+  if (banner) banner.style.display = 'none';
+}
+window.dismissAdminRulesBanner = dismissAdminRulesBanner;
 
 // обработчики инпутов чатов с разработчиком
 document.getElementById('devchat-send').addEventListener('click', sendDevMessage);
