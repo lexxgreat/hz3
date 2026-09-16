@@ -869,6 +869,13 @@ body.cal-dragging,body.cal-dragging *{touch-action:none!important;user-select:no
         </div>
       </div>
     </div>
+    <!-- ── ЧАТ С РАЗРАБОТЧИКОМ: кнопка для всех ── -->
+    <div style="padding:12px 16px 0;">
+      <button onclick="goTo('devchat')" style="width:100%;background:rgba(0,212,255,0.06);border:0.5px solid rgba(0,212,255,0.22);border-radius:12px;padding:10px;color:rgba(160,225,255,0.92);font-size:12.5px;font-weight:500;cursor:pointer;font-family:'Inter',sans-serif;display:flex;align-items:center;justify-content:space-between;">
+        <span>✉️ Написать разработчику</span>
+        <span id="devchat-dot" style="display:none;width:8px;height:8px;border-radius:50%;background:#00D4FF;box-shadow:0 0 6px rgba(0,212,255,0.8);"></span>
+      </button>
+    </div>
     <!-- Account status / Register button -->
     <div id="account-widget" style="display:none;padding:12px 16px 0;">
       <button onclick="showAccountModal()" style="width:100%;background:rgba(108,71,255,0.08);border:0.5px solid rgba(108,71,255,0.35);border-radius:12px;padding:11px;color:#fff;font-size:12.5px;font-weight:600;cursor:pointer;font-family:Inter,sans-serif;display:flex;align-items:center;justify-content:space-between;">
@@ -884,6 +891,12 @@ body.cal-dragging,body.cal-dragging *{touch-action:none!important;user-select:no
       <span style="font-size:12.5px;color:rgba(255,255,255,0.55);">👥 Пользователей: <span id="users-count" style="color:rgba(139,92,246,0.95);font-weight:600;">—</span></span>
       <button onclick="refreshUsersCount()" style="background:none;border:none;color:rgba(255,255,255,0.35);font-size:14px;cursor:pointer;padding:4px;">↻</button>
     </div>
+    <div id="adminchat-widget" style="display:none;padding:12px 16px 0;">
+      <button onclick="goTo('adminchat')" style="width:100%;background:rgba(255,209,102,0.07);border:0.5px solid rgba(255,209,102,0.28);border-radius:12px;padding:10px;color:rgba(255,209,102,0.92);font-size:12.5px;font-weight:500;cursor:pointer;font-family:'Inter',sans-serif;display:flex;align-items:center;justify-content:space-between;">
+        <span>💬 Чат с пользователями <span id="adminchat-badge" style="display:none;background:#FFD166;color:#060918;border-radius:99px;padding:1px 7px;font-size:10.5px;font-weight:700;margin-left:4px;">0</span></span>
+        <span style="color:rgba(255,255,255,0.4);">→</span>
+      </button>
+    </div>
     <div style="padding:8px 16px 0;">
       <button id="pwa-install-btn" onclick="installFromSettings()" style="width:100%;background:rgba(108,71,255,0.1);border:0.5px solid rgba(108,71,255,0.35);border-radius:12px;padding:9px;color:rgba(160,130,255,0.95);font-size:12.5px;font-weight:500;cursor:pointer;font-family:'Inter',sans-serif;margin-bottom:8px;">📲 Установить приложение</button>
       <button onclick="logout()" style="width:100%;background:rgba(255,80,80,0.08);border:0.5px solid rgba(255,80,80,0.25);border-radius:12px;padding:9px;color:rgba(255,110,110,0.85);font-size:12.5px;font-weight:500;cursor:pointer;font-family:'Inter',sans-serif;">Выйти из аккаунта</button>
@@ -897,6 +910,82 @@ body.cal-dragging,body.cal-dragging *{touch-action:none!important;user-select:no
             <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2" fill="rgba(139,92,246,0.95)" stroke="none"/>
           </svg>
         </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── DEV CHAT SCREEN (Написать разработчику) ── -->
+  <div class="screen" id="screen-devchat">
+    <div class="chat-header">
+      <button class="chat-clear-btn" onclick="goTo('prompt')" title="Назад">←</button>
+      <div class="chat-avatar">🛠️</div>
+      <div class="chat-title-wrap">
+        <div class="chat-title">Разработчик</div>
+        <div class="chat-subtitle">Идея, баг, что-то не работает — пиши</div>
+      </div>
+    </div>
+    <div class="chat-messages" id="devchat-messages"></div>
+    <div class="chat-input-wrap">
+      <div class="chat-input-row">
+        <textarea class="chat-textarea" id="devchat-input" placeholder="Сообщение разработчику..." rows="1"></textarea>
+        <button class="chat-send-btn" id="devchat-send">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="rgba(139,92,246,0.95)" stroke-width="2" stroke-linecap="round">
+            <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2" fill="rgba(139,92,246,0.95)" stroke="none"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── ADMIN CHAT SCREEN (только владелец) ── -->
+  <div class="screen" id="screen-adminchat">
+    <div class="chat-header">
+      <button class="chat-clear-btn" onclick="goTo('prompt')" title="Назад">←</button>
+      <div class="chat-avatar">💬</div>
+      <div class="chat-title-wrap">
+        <div class="chat-title" id="adminchat-title">Чат с пользователями</div>
+        <div class="chat-subtitle" id="adminchat-subtitle">Обратная связь</div>
+      </div>
+      <button class="chat-clear-btn" onclick="openAdminChat(true)" title="Обновить">↻</button>
+    </div>
+    <div id="adminchat-rules-banner" style="display:none;margin:10px 16px 0;background:rgba(255,209,102,0.08);border:0.5px solid rgba(255,209,102,0.3);border-radius:12px;padding:10px 12px;">
+      <div style="font-size:11.5px;color:rgba(255,209,102,0.95);line-height:1.45;font-family:Inter,sans-serif;">⚠ Правила Firestore не обновлены: сообщения пользователей доходят, но твои ответы уйти не могут. Добавь в Rules (Console → Firestore → Rules) блок ниже и опубликуй.</div>
+      <pre id="adminchat-rules-snippet" style="margin:8px 0 0;padding:8px;background:rgba(0,0,0,0.35);border-radius:8px;font-size:9.5px;line-height:1.5;color:rgba(255,255,255,0.75);overflow-x:auto;white-space:pre;">match /feedback/{id} {
+  allow create: if request.auth != null
+    && request.resource.data.role in ['user','admin']
+    && request.resource.data.text.size() > 0
+    && request.resource.data.text.size() <= 4000
+    && ((request.resource.data.role == 'user' && request.resource.data.threadId == request.auth.uid)
+        || (request.resource.data.role == 'admin' && request.auth.token.email == 'lanterns@yandex.ru'));
+  allow read: if request.auth != null
+    && (resource.data.threadId == request.auth.uid
+        || request.auth.token.email == 'lanterns@yandex.ru');
+  allow update: if request.auth != null
+    && (request.auth.token.email == 'lanterns@yandex.ru'
+        || (resource.data.threadId == request.auth.uid
+            && resource.data.role == 'admin'
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['readByUser'])));
+  allow delete: if request.auth != null
+    && request.auth.token.email == 'lanterns@yandex.ru';
+}</pre>
+      <button onclick="copyAdminRulesSnippet()" style="width:100%;margin-top:8px;background:rgba(255,209,102,0.12);border:0.5px solid rgba(255,209,102,0.4);border-radius:8px;padding:7px;color:rgba(255,209,102,0.95);font-size:11.5px;font-weight:600;cursor:pointer;font-family:Inter,sans-serif;">📋 Скопировать блок правил</button>
+    </div>
+    <div class="hist-list" id="adminchat-list" style="padding:10px 16px 16px;overflow-y:auto;flex:1;"></div>
+    <div id="adminchat-threads" style="display:none;flex-direction:column;flex:1;min-height:0;">
+      <div style="padding:8px 16px;flex-shrink:0;">
+        <button onclick="renderAdminList()" style="background:rgba(255,255,255,0.05);border:0.5px solid rgba(255,255,255,0.12);border-radius:8px;padding:6px 12px;color:rgba(255,255,255,0.7);font-size:12px;cursor:pointer;font-family:Inter,sans-serif;">← Все диалоги</button>
+        <span id="adminchat-thread-label" style="font-size:12px;color:rgba(255,255,255,0.55);margin-left:8px;font-family:Inter,sans-serif;"></span>
+      </div>
+      <div class="chat-messages" id="adminchat-messages" style="flex:1;min-height:0;"></div>
+      <div class="chat-input-wrap">
+        <div class="chat-input-row">
+          <textarea class="chat-textarea" id="adminchat-input" placeholder="Ответ пользователю..." rows="1"></textarea>
+          <button class="chat-send-btn" id="adminchat-send">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="rgba(139,92,246,0.95)" stroke-width="2" stroke-linecap="round">
+              <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2" fill="rgba(139,92,246,0.95)" stroke="none"/>
+            </svg>
+          </button>
+        </div>
       </div>
     </div>
   </div>
@@ -1009,7 +1098,7 @@ body.cal-dragging,body.cal-dragging *{touch-action:none!important;user-select:no
 <!-- Firebase -->
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-import { getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, addDoc, getDocs, getDoc, updateDoc, deleteDoc, doc, orderBy, query, where, setDoc, serverTimestamp, getCountFromServer } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+import { getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, addDoc, getDocs, getDoc, updateDoc, deleteDoc, doc, orderBy, query, where, setDoc, serverTimestamp, getCountFromServer, onSnapshot, arrayUnion } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, signInAnonymously, linkWithCredential, EmailAuthProvider } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 
 const firebaseConfig = {
@@ -5432,7 +5521,9 @@ function goTo(screen) {
   }
   if (screen === 'todo') loadNotes();
   if (screen === 'chat') { renderChat(); checkRemindersOnOpen(); }
-  if (screen === 'prompt') { renderPromptRules(); updateOwnerPanel(); updateAccountWidget(); updatePwaInstallBtn(); }
+  if (screen === 'prompt') { renderPromptRules(); updateOwnerPanel(); updateAccountWidget(); updatePwaInstallBtn(); refreshDevDot(); }
+  if (screen === 'devchat') openDevChat();
+  if (screen === 'adminchat') openAdminChat();
   if (screen === 'tags') renderTagsScreen();
   if (screen === 'cloud') {
     renderWordCloud();
@@ -5615,7 +5706,9 @@ function updateOwnerPanel() {
   if (bw) bw.style.display = show ? 'flex' : 'none';
   const uw = document.getElementById('users-count-widget');
   if (uw) uw.style.display = show ? 'flex' : 'none';
-  if (show) { loadBalance(); refreshUsersCount(); }
+  const aw = document.getElementById('adminchat-widget');
+  if (aw) aw.style.display = show ? 'block' : 'none';
+  if (show) { loadBalance(); refreshUsersCount(); refreshAdminBadge(); }
 }
 window.updateOwnerPanel = updateOwnerPanel;
 const CHAT_MODEL = 'anthropic/claude-haiku-4.5';
@@ -7646,7 +7739,337 @@ window.logout = logout;
 
 function clearLocalUserData() {
   notes = []; tags = []; promptRules = []; chatHistory = [];
+  resetDevChatState();
 }
+
+// ── ЧАТ С РАЗРАБОТЧИКОМ ──────────────────────────────────────────────
+// Пользователь пишет в топ-коллекцию feedback (нужны правила) или — если правила
+// ещё не обновлены — фолбэк в свой профиль users/{uid}.fb (владелец читает профили
+// и без новых правил). Ответы владельца приходят с role:'admin' в тот же тред.
+// Тред = uid пользователя. Дедупликация по msgId (сообщение может жить в двух местах).
+const devChat = { local: [], remote: [], unsub: null, lastSend: 0 };
+const adminChat = { threads: [], current: null, fbDocs: [], profiles: [], fbDenied: false, unsub: null, loaded: false };
+
+function resetDevChatState() {
+  if (devChat.unsub) { try { devChat.unsub(); } catch (e) {} devChat.unsub = null; }
+  if (adminChat.unsub) { try { adminChat.unsub(); } catch (e) {} adminChat.unsub = null; }
+  devChat.local = []; devChat.remote = []; devChat.lastSend = 0;
+  adminChat.threads = []; adminChat.current = null; adminChat.fbDocs = [];
+  adminChat.profiles = []; adminChat.fbDenied = false; adminChat.loaded = false;
+  const dot = document.getElementById('devchat-dot'); if (dot) dot.style.display = 'none';
+  const badge = document.getElementById('adminchat-badge'); if (badge) badge.style.display = 'none';
+}
+
+function devSenderLabel() {
+  const u = auth.currentUser;
+  if (!u) return 'Гость';
+  if (u.email) return u.email.split('@')[0];
+  return 'Гость ·' + String(u.uid).slice(-4);
+}
+
+function devAutoResize() {
+  const ta = document.getElementById('devchat-input');
+  if (!ta) return;
+  ta.style.height = 'auto';
+  ta.style.height = Math.min(ta.scrollHeight, 120) + 'px';
+}
+
+function adminAutoResize() {
+  const ta = document.getElementById('adminchat-input');
+  if (!ta) return;
+  ta.style.height = 'auto';
+  ta.style.height = Math.min(ta.scrollHeight, 120) + 'px';
+}
+
+function devMergeMsgs() {
+  const seen = new Set();
+  const all = [];
+  for (const m of devChat.remote) { if (m && m.text && !seen.has(m.msgId)) { seen.add(m.msgId); all.push(m); } }
+  for (const m of devChat.local) { if (m && m.text && !seen.has(m.msgId)) { seen.add(m.msgId); all.push(m); } }
+  all.sort((a, b) => (a.ts || 0) - (b.ts || 0));
+  return all;
+}
+
+function renderDevChat() {
+  const el = document.getElementById('devchat-messages');
+  if (!el) return;
+  const msgs = devMergeMsgs();
+  el.innerHTML = msgs.length ? msgs.map(m => {
+    const isUser = m.role === 'user';
+    const time = m.ts ? new Date(m.ts).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }) : '';
+    return `<div class="chat-bubble ${isUser ? 'bubble-user' : 'bubble-ai'}">${escHtmlChat(m.text)}<div class="bubble-time">${time}</div></div>`;
+  }).join('') : '<div style="text-align:center;color:rgba(255,255,255,0.35);font-size:12.5px;padding:24px 20px;line-height:1.6;font-family:Inter,sans-serif;">Нашёл баг, есть идея или что-то не работает?<br>Напиши — сообщение придёт прямо разработчику.</div>';
+  el.scrollTop = el.scrollHeight;
+}
+
+async function markDevChatRead() {
+  const unread = devChat.remote.filter(m => m.role === 'admin' && !m.readByUser && m.id);
+  for (const m of unread) {
+    try { await updateDoc(doc(db, 'feedback', m.id), { readByUser: true }); } catch (e) {}
+  }
+  if (unread.length) {
+    devChat.remote = devChat.remote.map(m => m.role === 'admin' ? { ...m, readByUser: true } : m);
+    renderDevChat();
+  }
+  refreshDevDot();
+}
+
+async function openDevChat() {
+  if (!currentUid) return;
+  renderDevChat();
+  // История: топ-коллекция (если правила уже разрешают) + фолбэк-сообщения из своего профиля
+  try {
+    const snap = await getDocs(query(collection(db, 'feedback'), where('threadId', '==', currentUid)));
+    devChat.remote = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  } catch (e) { console.warn('[DevChat] history denied (правила не обновлены?)', e && e.code); }
+  try {
+    const ps = await getDoc(doc(db, 'users', currentUid));
+    devChat.local = (ps.exists() && Array.isArray(ps.data().fb)) ? ps.data().fb.filter(x => x && x.text) : [];
+  } catch (e) {}
+  renderDevChat();
+  markDevChatRead();
+  // live-подписка — ответы разработчика появляются сразу
+  if (devChat.unsub) { try { devChat.unsub(); } catch (e) {} devChat.unsub = null; }
+  try {
+    devChat.unsub = onSnapshot(query(collection(db, 'feedback'), where('threadId', '==', currentUid)), s => {
+      devChat.remote = s.docs.map(d => ({ id: d.id, ...d.data() }));
+      renderDevChat();
+      markDevChatRead();
+    }, err => { console.warn('[DevChat] snapshot denied', err && err.code); });
+  } catch (e) {}
+}
+
+async function sendDevMessage() {
+  const input = document.getElementById('devchat-input');
+  const text = (input.value || '').trim();
+  if (!text || !currentUid) return;
+  if (Date.now() - devChat.lastSend < 2000) return; // лёгкий антиспам
+  devChat.lastSend = Date.now();
+  const msg = {
+    msgId: 'm' + Date.now() + Math.random().toString(36).slice(2, 7),
+    threadId: currentUid, role: 'user',
+    text: text.slice(0, 4000), senderLabel: devSenderLabel(),
+    ts: Date.now(), readByAdmin: false, readByUser: true
+  };
+  input.value = ''; devAutoResize();
+  devChat.local.push(msg); renderDevChat(); // оптимистично
+  let sentRemote = false;
+  try {
+    await addDoc(collection(db, 'feedback'), { ...msg, createdAt: serverTimestamp() });
+    sentRemote = true;
+  } catch (e) { console.warn('[DevChat] remote write denied — fallback to profile', e && e.code); }
+  if (!sentRemote) {
+    // фолбэк: в свой профиль — владелец читает профили и без новых правил
+    try {
+      await updateDoc(doc(db, 'users', currentUid), { fb: arrayUnion({ msgId: msg.msgId, role: 'user', text: msg.text, ts: msg.ts, senderLabel: msg.senderLabel }) });
+    } catch (e2) {
+      input.value = msg.text; devAutoResize();
+      devChat.local = devChat.local.filter(m => m.msgId !== msg.msgId);
+      renderDevChat();
+      alert('Не отправилось: ' + ((e2 && e2.code) || e2));
+    }
+  }
+}
+
+// Точка «есть ответ разработчика» на кнопке в настройках
+async function refreshDevDot() {
+  const dot = document.getElementById('devchat-dot');
+  if (!dot || !currentUid) return;
+  try {
+    const snap = await getDocs(query(collection(db, 'feedback'), where('threadId', '==', currentUid)));
+    const has = snap.docs.some(d => { const v = d.data(); return v.role === 'admin' && !v.readByUser; });
+    dot.style.display = has ? 'block' : 'none';
+  } catch (e) { dot.style.display = 'none'; }
+}
+
+// ── АДМИН-ЧАТ (только владелец) ──────────────────────────────────────
+function adminLabelOf(profile, uid) {
+  if (profile && profile.email) return profile.email.split('@')[0];
+  return 'Гость ·' + String(uid).slice(-4);
+}
+
+function adminThreadMsgs(uid) {
+  const msgs = [];
+  const prof = (adminChat.profiles || []).find(p => p.uid === uid);
+  if (prof && Array.isArray(prof.fb)) for (const m of prof.fb) if (m && m.text) msgs.push({ ...m, fromProfile: true });
+  for (const m of adminChat.fbDocs) if (m.threadId === uid && m.text) msgs.push({ ...m });
+  msgs.sort((a, b) => (a.ts || 0) - (b.ts || 0));
+  const seen = new Set(); const out = [];
+  for (const m of msgs) { if (!seen.has(m.msgId)) { seen.add(m.msgId); out.push(m); } }
+  return out;
+}
+
+async function loadAdminThreads() {
+  if (!isOwner()) return;
+  let profiles = [];
+  try {
+    const s = await getDocs(collection(db, 'users'));
+    profiles = s.docs.map(d => ({ uid: d.id, ...d.data() }));
+  } catch (e) { console.warn('[AdminChat] profiles failed', e && e.code); }
+  adminChat.profiles = profiles;
+  try {
+    const s2 = await getDocs(collection(db, 'feedback'));
+    adminChat.fbDocs = s2.docs.map(d => ({ id: d.id, ...d.data() }));
+    adminChat.fbDenied = false;
+  } catch (e) { adminChat.fbDenied = true; }
+  const map = new Map();
+  const push = (uid, m) => { if (!m || !m.text) return; if (!map.has(uid)) map.set(uid, { uid, msgs: [] }); map.get(uid).msgs.push(m); };
+  for (const p of profiles) if (Array.isArray(p.fb)) for (const m of p.fb) push(p.uid, { ...m });
+  for (const m of adminChat.fbDocs) if (m.threadId) push(m.threadId, { ...m });
+  adminChat.threads = [...map.values()].map(t => {
+    t.msgs.sort((a, b) => (a.ts || 0) - (b.ts || 0));
+    const prof = profiles.find(p => p.uid === t.uid);
+    t.label = adminLabelOf(prof, t.uid);
+    const last = t.msgs[t.msgs.length - 1] || {};
+    t.lastText = last.text || '';
+    t.lastTs = last.ts || 0;
+    t.unread = t.msgs.filter(m => m.role === 'user' && !m.readByAdmin).length;
+    return t;
+  }).sort((a, b) => (b.lastTs || 0) - (a.lastTs || 0));
+  adminChat.loaded = true;
+}
+
+async function refreshAdminBadge() {
+  const badge = document.getElementById('adminchat-badge');
+  if (!badge || !isOwner()) return;
+  let n = 0;
+  try {
+    const snap = await getDocs(query(collection(db, 'feedback'), where('role', '==', 'user')));
+    n = snap.docs.filter(d => !d.data().readByAdmin).length;
+  } catch (e) { badge.style.display = 'none'; return; }
+  badge.textContent = String(n);
+  badge.style.display = n > 0 ? 'inline-block' : 'none';
+}
+
+async function openAdminChat() {
+  if (!isOwner()) return;
+  const el = document.getElementById('adminchat-list');
+  const thrEl = document.getElementById('adminchat-threads');
+  if (thrEl) thrEl.style.display = 'none';
+  if (el) { el.style.display = ''; el.innerHTML = '<div style="text-align:center;color:rgba(255,255,255,0.35);font-size:12.5px;padding:24px;">Загрузка...</div>'; }
+  document.getElementById('adminchat-title').textContent = 'Чат с пользователями';
+  document.getElementById('adminchat-subtitle').textContent = 'Обратная связь';
+  if (adminChat.unsub) { try { adminChat.unsub(); } catch (e) {} adminChat.unsub = null; }
+  adminChat.current = null;
+  await loadAdminThreads();
+  renderAdminList();
+}
+
+function renderAdminList() {
+  const el = document.getElementById('adminchat-list');
+  if (!el) return;
+  const thrEl = document.getElementById('adminchat-threads');
+  if (thrEl) thrEl.style.display = 'none';
+  el.style.display = '';
+  const banner = document.getElementById('adminchat-rules-banner');
+  if (banner) banner.style.display = adminChat.fbDenied ? 'block' : 'none';
+  if (!adminChat.threads.length) {
+    el.innerHTML = '<div style="text-align:center;color:rgba(255,255,255,0.35);font-size:12.5px;padding:24px;line-height:1.6;">Пока никто не писал.<br>Сообщения из «Написать разработчику» появятся здесь.</div>';
+    return;
+  }
+  el.innerHTML = adminChat.threads.map(t => {
+    const time = t.lastTs ? new Date(t.lastTs).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
+    return `<div onclick="openAdminThread('${t.uid}')" style="background:rgba(255,255,255,0.04);border:0.5px solid rgba(255,255,255,0.1);border-radius:12px;padding:11px 13px;margin-bottom:8px;cursor:pointer;">
+      <div style="display:flex;align-items:center;justify-content:space-between;">
+        <span style="font-size:13px;font-weight:600;color:rgba(255,255,255,0.85);font-family:Inter,sans-serif;">${escHtmlChat(t.label)}</span>
+        <span style="font-size:10.5px;color:rgba(255,255,255,0.35);font-family:Inter,sans-serif;">${time}</span>
+      </div>
+      <div style="font-size:12px;color:rgba(255,255,255,0.5);margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:Inter,sans-serif;">${escHtmlChat((t.lastText || '').slice(0, 90))}</div>
+      ${t.unread ? `<div style="margin-top:6px;"><span style="background:#FFD166;color:#060918;border-radius:99px;padding:1px 8px;font-size:10.5px;font-weight:700;font-family:Inter,sans-serif;">${t.unread} новых</span></div>` : ''}
+    </div>`;
+  }).join('');
+}
+
+window.openAdminThread = async function(uid) {
+  if (!isOwner() || !uid) return;
+  adminChat.current = uid;
+  document.getElementById('adminchat-list').style.display = 'none';
+  document.getElementById('adminchat-threads').style.display = 'flex';
+  document.getElementById('adminchat-title').textContent = 'Диалог';
+  const prof = (adminChat.profiles || []).find(p => p.uid === uid);
+  document.getElementById('adminchat-thread-label').textContent = adminLabelOf(prof, uid) + (prof && prof.email ? '' : ' · гость');
+  renderAdminThread();
+  // отметить прочитанным (только топ-коллекция — из профиля читать уже показываем)
+  for (const m of adminThreadMsgs(uid)) {
+    if (m.role === 'user' && !m.readByAdmin && m.id && !m.fromProfile) {
+      try { await updateDoc(doc(db, 'feedback', m.id), { readByAdmin: true }); m.readByAdmin = true; } catch (e) {}
+    }
+  }
+  refreshAdminBadge();
+  // live-подписка треда
+  if (adminChat.unsub) { try { adminChat.unsub(); } catch (e) {} adminChat.unsub = null; }
+  try {
+    adminChat.unsub = onSnapshot(query(collection(db, 'feedback'), where('threadId', '==', uid)), s => {
+      adminChat.fbDocs = s.docs.map(d => ({ id: d.id, ...d.data() }));
+      renderAdminThread();
+    }, err => { console.warn('[AdminChat] snapshot denied', err && err.code); });
+  } catch (e) {}
+};
+
+function renderAdminThread() {
+  const el = document.getElementById('adminchat-messages');
+  if (!el || !adminChat.current) return;
+  const msgs = adminThreadMsgs(adminChat.current);
+  el.innerHTML = msgs.length ? msgs.map(m => {
+    const mine = m.role === 'admin';
+    const time = m.ts ? new Date(m.ts).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }) : '';
+    return `<div class="chat-bubble ${mine ? 'bubble-user' : 'bubble-ai'}">${escHtmlChat(m.text)}<div class="bubble-time">${time}</div></div>`;
+  }).join('') : '<div style="text-align:center;color:rgba(255,255,255,0.35);font-size:12.5px;padding:24px;">Диалог пуст</div>';
+  el.scrollTop = el.scrollHeight;
+}
+
+async function sendAdminReply() {
+  const input = document.getElementById('adminchat-input');
+  const text = (input.value || '').trim();
+  if (!text || !adminChat.current || !isOwner()) return;
+  const msg = {
+    msgId: 'm' + Date.now() + Math.random().toString(36).slice(2, 7),
+    threadId: adminChat.current, role: 'admin',
+    text: text.slice(0, 4000), senderLabel: 'Разработчик',
+    ts: Date.now(), readByAdmin: true, readByUser: false
+  };
+  input.value = ''; adminAutoResize();
+  try {
+    await addDoc(collection(db, 'feedback'), { ...msg, createdAt: serverTimestamp() });
+    adminChat.fbDocs.push({ id: 'local_' + msg.msgId, ...msg }); // локально до снапшота
+    renderAdminThread();
+  } catch (e) {
+    const code = String((e && e.code) || e);
+    input.value = text; adminAutoResize();
+    if (code.indexOf('permission-denied') >= 0) {
+      const banner = document.getElementById('adminchat-rules-banner');
+      if (banner) banner.style.display = 'block';
+      alert('Ответ не ушёл: нужны обновлённые правила Firestore — баннер сверху, скопируй блок и опубликуй в Console → Firestore → Rules.');
+    } else {
+      alert('Ответ не ушёл: ' + code);
+    }
+  }
+}
+
+async function copyAdminRulesSnippet() {
+  const pre = document.getElementById('adminchat-rules-snippet');
+  if (!pre) return;
+  const txt = pre.textContent;
+  try {
+    await navigator.clipboard.writeText(txt);
+    alert('Скопировано. Вставь блок внутрь match /databases/{database}/documents { ... } и нажми «Опубликовать».');
+  } catch (e) {
+    const r = document.createRange(); r.selectNodeContents(pre);
+    const sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(r);
+    alert('Автокопирование не сработало — текст выделен, скопируй вручную (Ctrl+C).');
+  }
+}
+window.openAdminChat = openAdminChat;
+window.renderAdminList = renderAdminList;
+window.copyAdminRulesSnippet = copyAdminRulesSnippet;
+
+// обработчики инпутов чатов с разработчиком
+document.getElementById('devchat-send').addEventListener('click', sendDevMessage);
+document.getElementById('devchat-input').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendDevMessage(); } });
+document.getElementById('devchat-input').addEventListener('input', devAutoResize);
+document.getElementById('adminchat-send').addEventListener('click', sendAdminReply);
+document.getElementById('adminchat-input').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendAdminReply(); } });
+document.getElementById('adminchat-input').addEventListener('input', adminAutoResize);
 
 // ── REGISTER PROMPT — показываем после 10 заметок или 1 желания ──
 // Пользователь остаётся анонимом, но мягко предлагаем зарегистрироваться
