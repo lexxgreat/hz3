@@ -1781,6 +1781,8 @@ async function transcribeAudio(blob) {
   formData.append('file', blob, 'audio.' + ext);
   formData.append('model', WHISPER_MODEL);
   formData.append('language', 'ru');
+  // prompt-подсказка: баесит модель в сторону пунктуационного стиля (проверено: API принимает)
+  formData.append('prompt', 'Заметка с аккуратной пунктуацией: Привет. Как дела? Я был на работе, потом зашёл в магазин, купил хлеб и молоко.');
   // temperature не передаём — API Polza отклоняет запрос с этим параметром (ошибка валидации),
   // защита от галлюцинаций реализована на нашей стороне через isWhisperHallucination()
   const res = await fetch(POLZA_TRANSCRIBE_URL, {
@@ -1795,6 +1797,60 @@ async function transcribeAudio(blob) {
     return text;
   }
   throw new Error(data.error?.message || 'Пустой ответ от сервиса распознавания');
+}
+
+// ════ ЗНАКИ ПРЕПИНАНИЯ В ДИКТОВКЕ (v70) ════
+// STT-бэкенд стал возвращать «сырой» текст без пунктуации — наводим её сами в два слоя:
+// 1) локальная косметика (пробелы вокруг знаков, заглавные, конечная точка) — мгновенно и всегда;
+// 2) ИИ-восстановление запятых/точек (haiku, ~1-2с) со строгой проверкой «слова не тронуты»
+//    и мягким откатом на локальный вариант при любой ошибке/таймауте.
+function polishTranscript(text) {
+  if (!text) return text;
+  let t = text.replace(/\s+/g, ' ').trim();
+  if (!t) return t;
+  t = t.replace(/\s+([,.!?…:;)»])/g, '$1'); // пробел ПЕРЕД знаком — убрать
+  t = t.replace(/([«(])\s+/g, '$1'); // пробел после открывающей кавычки/скобки — убрать
+  t = t.replace(/([,.!?…:;)»])(?=[^\s,.!?…:;)»0-9])/g, '$1 '); // ПОСЛЕ знака — пробел (кроме 1.5 и конца)
+  t = t.replace(/(^|[.!?…]\s+|[.!?…])([a-zа-яё])/g, (m, p, c) => p + c.toUpperCase()); // заглавные предложений
+  if (!/[.!?…»"-]$/.test(t)) t = t + '.'; // конечная точка, если её нет
+  return t;
+}
+
+// счётчик подряд неудач ИИ-пунктуации: после 3 неудач функция спит до перезагрузки страницы,
+// чтобы каждая диктовка не ждала таймаут впустую
+let punctFailStreak = 0;
+const PUNCT_FAIL_LIMIT = 3;
+
+async function restorePunctuationAI(text) {
+  try {
+    // __punctAIHook — тестовый хук: эмулирует ОТВЕТ ИИ и проходит ту же валидацию, что и настоящий
+    const raw = (typeof window.__punctAIHook === 'function')
+      ? await window.__punctAIHook(text)
+      : await callPolzaAI([
+          { role: 'system', content: 'Ты корректор русских диктовок. Тебе дают текст, распознанный из речи, в котором потерялись знаки препинания. Верни ТОТ ЖЕ текст, расставив точки, запятые, вопросительные и восклицательные знаки. Строгие правила: не меняй, не добавляй и не удаляй ни одного слова; не исправляй слова и не перефразируй; сохраняй все числа и имена; заглавная буква — только в начале предложений и в именах собственных. Ответ — только готовый текст, без пояснений и кавычек.' },
+          { role: 'user', content: text }
+        ], { max_tokens: 600, temperature: 0, timeoutMs: 9000 });
+    const out = (raw || '').trim().replace(/^["«]|["»]$/g, '').trim();
+    if (!out) return null;
+    // отбраковка: ИИ имеет право только на пунктуацию/регистр — состав и порядок слов обязан совпасть
+    const wordsOf = (s) => s.toLowerCase().replace(/[^a-zа-яё0-9\s-]/gi, ' ').split(/\s+/).filter(Boolean);
+    if (JSON.stringify(wordsOf(out)) !== JSON.stringify(wordsOf(text))) return null;
+    return out;
+  } catch (e) {
+    return null; // таймаут/сеть/баланс — тихо используем локальный вариант
+  }
+}
+
+// общий вход: локальная косметика + (если фраза достаточно длинная) ИИ-восстановление
+// statusFn — куда показать «Расставляю знаки…» (статус главного экрана / subtitle чата)
+async function ensurePunctuation(text, statusFn) {
+  let t = polishTranscript(text);
+  if (!t || t.length < 18 || punctFailStreak >= PUNCT_FAIL_LIMIT) return t; // коротким («купи хлеб») хватает локального
+  if (statusFn) { try { statusFn('✨ Расставляю знаки...'); } catch (_) {} }
+  const ai = await restorePunctuationAI(t);
+  if (ai) { punctFailStreak = 0; return ai; }
+  punctFailStreak++;
+  return t;
 }
 
 // начать запись (первое нажатие) — isRecording ставим СИНХРОННО до await,
@@ -1876,8 +1932,9 @@ async function handleRecordedAudio(blob, recorder) {
     if (!text) {
       if (fresh()) { setStatus('🤔 Не расслышал, попробуй ещё раз'); setTimeout(() => setStatus(''), 2000); }
     } else {
-      await saveNote(text, 'voice');
-      if (fresh()) { setStatus('✅ Добавлено: «' + (text.length > 40 ? text.slice(0,40)+'…' : text) + '»'); setTimeout(() => setStatus(''), 2200); }
+      const finalText = await ensurePunctuation(text, setStatus);
+      await saveNote(finalText, 'voice');
+      if (fresh()) { setStatus('✅ Добавлено: «' + (finalText.length > 40 ? finalText.slice(0,40)+'…' : finalText) + '»'); setTimeout(() => setStatus(''), 2200); }
     }
   } catch(e) {
     if (fresh()) { setStatus('⚠️ Ошибка распознавания: ' + e.message); setTimeout(() => setStatus(''), 2500); }
@@ -8914,7 +8971,8 @@ async function handleChatRecordedAudio(blob, recorder) {
         setTimeout(() => { document.getElementById('chat-subtitle').textContent = CHAT_SUBTITLE_DEFAULT; }, 2000);
       }
     } else {
-      await sendChatMessage(text); // распознанное сразу уходит в чат как обычное сообщение
+      const finalText = await ensurePunctuation(text, (s) => { if (fresh()) document.getElementById('chat-subtitle').textContent = s; });
+      await sendChatMessage(finalText); // распознанное сразу уходит в чат как обычное сообщение
     }
   } catch(e) {
     if (fresh()) {
@@ -9459,6 +9517,8 @@ window.__t = {
   stripSchedulingPhrases,
   sanitizeSchedule,
   formatDateKey,
+  polishTranscript,
+  ensurePunctuation,
   notes: () => notes,
   calendar: () => ({ offset: calendarMonthOffset, sel: calendarSelectedKey }),
   setCalendarSel: (k) => { calendarSelectedKey = k; },
