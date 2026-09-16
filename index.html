@@ -333,12 +333,12 @@ body{background:#060918;font-family:'Inter',sans-serif;display:flex;justify-cont
 }
 .note-meta{display:flex;justify-content:space-between;align-items:center;margin-bottom:7px}
 .note-date{font-size:10px;color:rgba(255,255,255,0.28);font-weight:500}
-.note-type{font-size:9px;padding:2px 7px;border-radius:99px;font-weight:600}
 .note-copy-btn{background:none;border:none;cursor:pointer;font-size:13px;padding:0 2px;opacity:0.4;transition:opacity 0.15s,transform 0.1s;line-height:1;flex-shrink:0}
 .note-copy-btn:hover{opacity:0.85}
 .note-copy-btn:active{opacity:1;transform:scale(0.88)}
-.type-voice{background:rgba(0,212,255,0.1);color:rgba(0,212,255,0.8);border:0.5px solid rgba(0,212,255,0.2)}
-.type-text{background:rgba(108,71,255,0.1);color:rgba(139,92,246,0.8);border:0.5px solid rgba(108,71,255,0.2)}
+/* Залежавшаяся задача — висит больше 10 дней и не ждёт будущего срока */
+.note-card.note-stale{background:rgba(255,209,102,0.05);border-color:rgba(255,209,102,0.28)}
+.note-card.note-stale::before{background:linear-gradient(to bottom,#FFD166,#FF9F43);opacity:0.95}
 .note-text{font-size:13.5px;color:rgba(255,255,255,0.72);line-height:1.5;word-break:break-word}
 .note-actions{display:flex;gap:8px;margin-top:10px;opacity:1;flex-wrap:wrap;}
 
@@ -388,6 +388,7 @@ body{background:#060918;font-family:'Inter',sans-serif;display:flex;justify-cont
 .modal{
   background:#0F1228;border:0.5px solid rgba(108,71,255,0.3);
   border-radius:24px;padding:20px;width:100%;
+  max-height:100%;overflow-y:auto;-webkit-overflow-scrolling:touch;
   box-shadow:0 0 60px rgba(108,71,255,0.15);
 }
 .modal-title{font-size:16px;font-weight:600;color:rgba(255,255,255,0.88);margin-bottom:14px}
@@ -430,16 +431,21 @@ body{background:#060918;font-family:'Inter',sans-serif;display:flex;justify-cont
   display: flex !important;
 }
 .dock-item{
-  display:flex;flex-direction:column;align-items:center;gap:4px;
-  cursor:pointer;padding:7px 10px;border-radius:16px;
+  display:flex;flex-direction:column;align-items:center;gap:3px;
+  cursor:pointer;padding:7px 3px;border-radius:16px;
   background:transparent;border:none;font-family:'Inter',sans-serif;
   position:relative;transition:all 0.2s;
+  flex:1 1 0;min-width:0;
 }
-.dock-item svg{width:24px;height:24px;color:rgba(255,255,255,0.28);transition:all 0.2s}
-.dock-item span{font-size:10px;color:rgba(255,255,255,0.22);font-weight:500;transition:all 0.2s}
+.dock-item svg{width:23px;height:23px;color:rgba(255,255,255,0.28);transition:all 0.2s;flex-shrink:0}
+.dock-item span{font-size:9.5px;color:rgba(255,255,255,0.22);font-weight:500;transition:all 0.2s;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
 .dock-item.active svg{color:#8B5CF6;filter:drop-shadow(0 0 6px rgba(108,71,255,0.8))}
 .dock-item.active span{color:rgba(139,92,246,0.75)}
 .dock-item.active::after{content:'';position:absolute;bottom:2px;width:4px;height:4px;border-radius:50%;background:#6C47FF;box-shadow:0 0 6px #6C47FF}
+/* Желания — золотая вкладка (идентичность раздела) */
+#dock-wishes.active svg{color:#FFD166;filter:drop-shadow(0 0 6px rgba(255,209,102,0.75))}
+#dock-wishes.active span{color:rgba(255,209,102,0.85)}
+#dock-wishes.active::after{background:#FFD166;box-shadow:0 0 6px #FFD166}
 
 /* ── CHAT SCREEN ── */
 .chat-header{padding:16px 20px 10px;flex-shrink:0;display:flex;align-items:center;gap:10px}
@@ -593,7 +599,7 @@ body.cal-dragging,body.cal-dragging *{touch-action:none!important;user-select:no
     <div style="display:flex;align-items:center;gap:6px;padding:0 16px;">
       <div class="qtags" id="qtags-list" style="flex:1;padding:10px 0 0;justify-content:flex-start;"></div>
       <button onclick="goTo('prompt')" title="Настройки" style="background:none;border:none;color:rgba(255,255,255,0.25);font-size:15px;cursor:pointer;padding:4px;flex-shrink:0;">⚙️</button>
-      <button onclick="goTo('wishes')" title="Желания" style="background:none;border:none;color:rgba(255,215,0,0.6);font-size:16px;cursor:pointer;padding:4px;flex-shrink:0;">🌠</button>
+      <button onclick="goTo('wishes')" title="Желания" style="background:rgba(255,209,102,0.1);border:0.5px solid rgba(255,209,102,0.35);color:rgba(255,215,102,0.95);font-size:11.5px;font-weight:600;cursor:pointer;padding:4px 11px;border-radius:99px;flex-shrink:0;font-family:Inter,sans-serif;">🌠 Желания</button>
     </div>
 
     <!-- Big chaos button -->
@@ -718,7 +724,7 @@ body.cal-dragging,body.cal-dragging *{touch-action:none!important;user-select:no
   <div class="screen" id="screen-wishes">
     <div class="hist-header">
       <div style="display:flex;justify-content:space-between;align-items:center">
-        <div><div class="hist-title">🌠 Желания</div><div class="hist-sub" id="wishes-count">твои мечты</div></div>
+        <div><div class="hist-title" style="color:rgba(255,215,102,0.95);text-shadow:0 0 18px rgba(255,209,102,0.3);">🌠 Желания</div><div class="hist-sub" id="wishes-count">твои мечты</div></div>
       </div>
     </div>
     <div id="wishes-hint" style="padding:0 16px;"></div>
@@ -852,6 +858,8 @@ body.cal-dragging,body.cal-dragging *{touch-action:none!important;user-select:no
         <div class="chat-subtitle" id="prompt-count">0 правил</div>
       </div>
     </div>
+    <!-- Один скролл на всё содержимое: виджеты + список правил (иначе на низких экранах низ обрезается) -->
+    <div id="prompt-scroll" style="flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;">
     <div style="padding:12px 16px 0;">
       <button onclick="goTo('tags')" style="width:100%;background:rgba(255,255,255,0.04);border:0.5px solid rgba(255,255,255,0.1);border-radius:12px;padding:9px;color:rgba(255,255,255,0.7);font-size:12.5px;font-weight:500;cursor:pointer;font-family:'Inter',sans-serif;">🏷️ Управление тегами</button>
     </div>
@@ -909,7 +917,8 @@ body.cal-dragging,body.cal-dragging *{touch-action:none!important;user-select:no
       <button id="pwa-install-btn" onclick="installFromSettings()" style="width:100%;background:rgba(108,71,255,0.1);border:0.5px solid rgba(108,71,255,0.35);border-radius:12px;padding:9px;color:rgba(160,130,255,0.95);font-size:12.5px;font-weight:500;cursor:pointer;font-family:'Inter',sans-serif;margin-bottom:8px;">📲 Установить приложение</button>
       <button onclick="logout()" style="width:100%;background:rgba(255,80,80,0.08);border:0.5px solid rgba(255,80,80,0.25);border-radius:12px;padding:9px;color:rgba(255,110,110,0.85);font-size:12.5px;font-weight:500;cursor:pointer;font-family:'Inter',sans-serif;">Выйти из аккаунта</button>
     </div>
-    <div class="hist-list" id="prompt-list" style="padding:16px;overflow-y:auto;flex:1;"></div>
+    <div id="prompt-list" style="padding:12px 16px 16px;"></div>
+    </div>
     <div class="chat-input-wrap">
       <div class="chat-input-row">
         <textarea class="chat-textarea" id="prompt-input" placeholder="Новое правило для ИИ..." rows="1"></textarea>
@@ -1074,11 +1083,6 @@ service cloud.firestore {
       <div id="modal-tag-picker" style="display:flex;flex-wrap:wrap;gap:6px;margin:10px 0;"></div>
       <!-- Действия над записью: выполнить, тудушка, копия, дубликат, удалить -->
       <div id="modal-actions" style="display:flex;gap:6px;flex-wrap:wrap;margin:2px 0 10px;"></div>
-      <!-- AI-связи — появляются после openEdit, когда links загрузятся -->
-      <div id="modal-links-section" style="display:none;margin-top:14px;padding-top:14px;border-top:0.5px solid rgba(255,255,255,0.08);">
-        <div style="font-size:11px;color:rgba(255,255,255,0.5);margin-bottom:8px;letter-spacing:0.5px;text-transform:uppercase;font-weight:600;">🔗 Похожие записи</div>
-        <div id="modal-links-list" style="display:flex;flex-direction:column;gap:6px;max-height:200px;overflow-y:auto;"></div>
-      </div>
       <div class="modal-btns">
         <button class="modal-cancel" onclick="closeModal()">Отмена</button>
         <button class="modal-save" onclick="saveEdit()">Сохранить</button>
@@ -1148,6 +1152,12 @@ service cloud.firestore {
         <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
       </svg>
       <span>Чат ИИ</span>
+    </button>
+    <button class="dock-item" id="dock-wishes" onclick="goTo('wishes')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+      </svg>
+      <span>Желания</span>
     </button>
   </div>
 </div>
@@ -1906,15 +1916,15 @@ function renderNotes(list) {
     const doneBtn = `<button class="note-btn ${isDone ? 'note-undone' : 'note-done'}" onclick="toggleDone('${n.id}', ${isDone});event.stopPropagation();">${isDone ? '↩ Открыть' : '✓ Выполнено'}</button>`;
     const isInTodo = n.inTodo === true;
     const todoBtn = `<button class="note-btn ${isInTodo ? 'note-undone' : 'note-edit'}" onclick="toggleTodo('${n.id}', ${isInTodo});event.stopPropagation();">${isInTodo ? '✕ Убрать из тудулиста' : '➜ В тудулист'}</button>`;
+    const staleCls = isStaleNote(n) ? ' note-stale' : '';
     return `
-      <div class="note-card" ${cardClick}>
+      <div class="note-card${staleCls}" ${cardClick}>
         <div style="display:flex;gap:10px;align-items:flex-start;">
           ${checkbox}
           <div style="flex:1;min-width:0;">
             <div class="note-meta">
               <span class="note-date">${date} · ${time}${n.tag ? ' · ' + n.tag : ''}${doneAtStr}${schedStr ? ' · ' + schedStr : ''}</span>
               <span style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
-                <span class="note-type ${n.type === 'voice' ? 'type-voice' : 'type-text'}">${n.type === 'voice' ? '🎤 Голос' : '✏️ Текст'}</span>
                 ${selectionMode ? '' : `<button class="note-copy-btn" title="Скопировать текст" onclick="copyNoteText('${n.id}');event.stopPropagation();">📋</button>`}
               </span>
             </div>
@@ -2172,7 +2182,7 @@ function openEdit(id) {
     const parts = [];
     if (n.createdAt) {
       const cd = new Date(new Date(n.createdAt).getTime() + 3*60*60*1000);
-      parts.push('Добавлено: ' + cd.toLocaleDateString('ru-RU', { day:'numeric', month:'short', timeZone:'UTC' }) + ' в ' + cd.toLocaleTimeString('ru-RU', { hour:'2-digit', minute:'2-digit', timeZone:'UTC' }) + (n.type === 'voice' ? ' · 🎤 голос' : ' · ⌨️ текст'));
+      parts.push('Добавлено: ' + cd.toLocaleDateString('ru-RU', { day:'numeric', month:'short', timeZone:'UTC' }) + ' в ' + cd.toLocaleTimeString('ru-RU', { hour:'2-digit', minute:'2-digit', timeZone:'UTC' }));
     }
     if (n.done && n.doneAt) {
       const dd = new Date(new Date(n.doneAt).getTime() + 3*60*60*1000);
@@ -2182,8 +2192,6 @@ function openEdit(id) {
     metaEl.style.display = parts.length ? 'block' : 'none';
   }
   renderModalActions(n);
-  // Загружаем AI-связи для этой заметки
-  renderModalLinks(id);
   document.getElementById('modal').classList.add('open');
 }
 
@@ -2275,49 +2283,6 @@ function clearModalSchedule() {
 }
 window.clearModalSchedule = clearModalSchedule;
 
-async function renderModalLinks(noteId) {
-  const section = document.getElementById('modal-links-section');
-  const list = document.getElementById('modal-links-list');
-  if (!section || !list) return;
-  section.style.display = 'none';
-  list.innerHTML = '<div style="font-size:11px;color:rgba(255,255,255,0.4);">Загрузка…</div>';
-  section.style.display = 'block';
-  try {
-    const links = await loadLinksForNote(noteId);
-    if (!links.length) {
-      section.style.display = 'none';
-      return;
-    }
-    list.innerHTML = '';
-    for (const link of links) {
-      const otherNoteId = link.noteA === noteId ? link.noteB : link.noteA;
-      const otherNote = notes.find(n => n.id === otherNoteId);
-      if (!otherNote) continue;
-      const item = document.createElement('div');
-      item.style.cssText = 'display:flex;flex-direction:column;gap:2px;padding:8px;border-radius:8px;background:rgba(108,71,255,0.06);border:0.5px solid rgba(108,71,255,0.2);cursor:pointer;transition:background 0.15s;';
-      item.onmouseenter = () => item.style.background = 'rgba(108,71,255,0.12)';
-      item.onmouseleave = () => item.style.background = 'rgba(108,71,255,0.06)';
-      item.onclick = () => { closeModal(); setTimeout(() => openEdit(otherNoteId), 100); };
-
-      const textEl = document.createElement('div');
-      textEl.style.cssText = 'font-size:12px;color:rgba(255,255,255,0.85);line-height:1.4;word-break:break-word;';
-      textEl.textContent = otherNote.text.length > 120 ? otherNote.text.slice(0, 120) + '…' : otherNote.text;
-
-      const metaEl = document.createElement('div');
-      metaEl.style.cssText = 'font-size:10px;color:rgba(0,212,255,0.7);';
-      const score = Math.round((link.score || 0) * 100);
-      metaEl.textContent = `${link.reason || ''} · ${score}% совпадение${otherNote.tag ? ' · #' + otherNote.tag : ''}`;
-
-      item.appendChild(textEl);
-      item.appendChild(metaEl);
-      list.appendChild(item);
-    }
-    section.style.display = 'block';
-  } catch(e) {
-    section.style.display = 'none';
-    console.warn('[Modal-links] load failed', e);
-  }
-}
 window.openEdit = openEdit;
 
 function closeModal() {
@@ -5967,6 +5932,17 @@ function initFocusCardGestures() {
 }
 
 // бейдж запланированной даты/времени (общий для тудушки и истории) — синхронизация с календарём
+// Залежавшаяся: добавлена больше 10 дней назад, ещё не выполнена и не ждёт будущего срока.
+// Будущий срок снимает подсветку — задача "назначена", не залежалась.
+function isStaleNote(n) {
+  if (!n || n.done === true || !n.createdAt) return false;
+  const created = new Date(n.createdAt).getTime();
+  if (!isFinite(created)) return false;
+  if (Date.now() - created <= 10 * 86400000) return false;
+  if (n.scheduledDate && n.scheduledDate > formatDateKey(new Date())) return false;
+  return true;
+}
+
 function whenBadgeStr(n) {
   if (!n.scheduledDate) return '';
   const dd = parseDayKey(n.scheduledDate);
@@ -5988,8 +5964,10 @@ function renderTodo() {
   el.innerHTML = queue.map((n, i) => {
     const whenStr = whenBadgeStr(n);
     const whenStyle = n.scheduledDate && n.scheduledDate < formatDateKey(new Date()) ? ' style="color:rgba(255,110,110,0.9);"' : '';
+    const stale = isStaleNote(n);
+    const staleTitle = stale ? ` title="Висит уже ${Math.floor((Date.now() - new Date(n.createdAt).getTime()) / 86400000)} дн."` : '';
     return `
-    <div class="note-card" data-id="${n.id}" onclick="todoCardTap('${n.id}')" style="display:flex;gap:10px;align-items:flex-start;cursor:pointer;">
+    <div class="note-card${stale ? ' note-stale' : ''}" data-id="${n.id}"${staleTitle} onclick="todoCardTap('${n.id}')" style="display:flex;gap:10px;align-items:flex-start;cursor:pointer;">
       <div class="todo-drag-handle">⠿</div>
       <div style="flex:1;min-width:0;">
         <div class="note-meta">
@@ -6070,6 +6048,8 @@ function goTo(screen) {
   if (screen === 'todo') {
     // Подсказка про перетаскивание — только если есть 2+ задач (иначе тащить нечего)
     showHintOnce('todo_drag','Тащи за ⠿ чтобы поменять порядок — соседи подвинутся сами.','todo-hint', () => notes.filter(n => n.inTodo && !n.done).length >= 2);
+    // Подсказка про янтарную подсветку залежавшихся — только когда такая задача есть
+    showHintOnce('stale_tasks','🟡 Янтарным подсвечены задачи, которые висят больше 10 дней. Пора сделать — или поставь будущий срок, и подсветка уйдёт.','todo-hint', () => notes.some(isStaleNote));
   }
 }
 window.goTo = goTo;
@@ -7096,23 +7076,9 @@ ${candidatesText}
 }
 window.findAndSaveLinksForNote = findAndSaveLinksForNote;
 
-// Загружаем все линки пользователя (для отображения в модалке)
-async function loadLinksForNote(noteId) {
-  if (!currentUid) return [];
-  try {
-    // Запрашиваем линки где noteA = noteId ИЛИ noteB = noteId
-    const q1 = query(linksCol(), orderBy('score', 'desc'));
-    const snap = await getDocs(q1);
-    return snap.docs
-      .map(d => d.data())
-      .filter(l => l.noteA === noteId || l.noteB === noteId)
-      .slice(0, 10);  // максимум 10 связей показываем
-  } catch(e) {
-    console.error('[Auto-link] load error', e);
-    return [];
-  }
-}
-window.loadLinksForNote = loadLinksForNote;
+// Линки заметок (users/{uid}/links) нигде в карточках НЕ показываем — по решению:
+// связи видны только на Графе. Функции findAndSaveLinksForNote/migrateFindLinks
+// продолжают собирать связи для графа.
 
 // ── MIGRATION — найти связи для всех старых заметок (без ломания существующего) ──
 // Для каждой заметки, у которой ещё нет связей, вызываем findAndSaveLinksForNote
@@ -8685,6 +8651,7 @@ window.__t = {
   loadWishes,
   renderWishes,
   reorderWish,
+  isStaleNote,
   uCol,
   addDoc,
   updateDoc,
