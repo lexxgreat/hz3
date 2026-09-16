@@ -327,6 +327,11 @@ body{background:#060918;font-family:'Inter',sans-serif;display:flex;justify-cont
   position:relative;overflow:hidden;cursor:pointer;
   transition:all 0.2s;
 }
+/* параллакс-глубина: орбы плывут при наклоне телефона (translate отдельно от transform-анимации orbF) */
+.orb{
+  translate:calc(var(--px,0)*var(--dpx,26px)) calc(var(--py,0)*var(--dpy,20px));
+  transition:translate 0.9s cubic-bezier(0.22,0.61,0.36,1);
+}
 .note-card:hover{background:rgba(255,255,255,0.05);border-color:rgba(108,71,255,0.2)}
 .note-card::before{
   content:'';position:absolute;left:0;top:0;bottom:0;width:3px;
@@ -334,14 +339,14 @@ body{background:#060918;font-family:'Inter',sans-serif;display:flex;justify-cont
   opacity:0.6;
 }
 .note-meta{display:flex;justify-content:space-between;align-items:center;margin-bottom:7px}
-.note-date{font-size:10px;color:rgba(255,255,255,0.28);font-weight:500}
+.note-date{font-size:10px;color:rgba(255,255,255,0.4);font-weight:500}
 .note-copy-btn{background:none;border:none;cursor:pointer;font-size:13px;padding:0 2px;opacity:0.4;transition:opacity 0.15s,transform 0.1s;line-height:1;flex-shrink:0}
 .note-copy-btn:hover{opacity:0.85}
 .note-copy-btn:active{opacity:1;transform:scale(0.88)}
 /* Залежавшаяся задача — висит больше 10 дней и не ждёт будущего срока */
-.note-card.note-stale{background:rgba(255,209,102,0.05);border-color:rgba(255,209,102,0.28)}
+.note-card.note-stale{background:linear-gradient(155deg,rgba(56,47,24,0.97),rgba(40,34,20,0.97));border-color:rgba(255,209,102,0.35)}
 .note-card.note-stale::before{background:linear-gradient(to bottom,#FFD166,#FF9F43);opacity:0.95}
-.note-text{font-size:13.5px;color:rgba(255,255,255,0.72);line-height:1.5;word-break:break-word}
+.note-text{font-size:13.5px;color:rgba(255,255,255,0.82);line-height:1.5;word-break:break-word}
 .note-actions{display:flex;gap:8px;margin-top:10px;opacity:1;flex-wrap:wrap;}
 
 .note-btn{
@@ -535,10 +540,14 @@ body.cal-dragging,body.cal-dragging *{touch-action:none!important;user-select:no
 }
 @keyframes auroraPulse{0%{opacity:.62}100%{opacity:.9}}
 
-/* ── Glassmorphism ── */
+/* ── Glassmorphism ──
+   v68: карточки заметок — плотные и чётко читаемые (по фидбеку): глубокий
+   почти непрозрачный фон + заметная граница + мягкая тень. Стекло остаётся
+   на доках/вводе/пузырях чата, где прозрачность уместна. */
 .note-card,.focus-card{
-  background:linear-gradient(155deg,rgba(255,255,255,0.075),rgba(255,255,255,0.028));
-  border-color:rgba(255,255,255,0.1);
+  background:linear-gradient(155deg,rgba(25,28,56,0.97),rgba(15,18,40,0.97));
+  border-color:rgba(255,255,255,0.14);
+  box-shadow:0 5px 22px rgba(0,0,0,0.38);
   backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
 }
 .bubble-user,.bubble-ai{backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
@@ -560,7 +569,7 @@ body.cal-dragging,body.cal-dragging *{touch-action:none!important;user-select:no
 /* ── Панель фильтров Истории (стекло, кнопка в шапке) ── */
 #hist-filter-panel{
   display:none;margin:2px 16px 10px;padding:12px 14px;border-radius:16px;
-  background:rgba(13,16,38,0.62);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);
+  background:rgba(16,19,44,0.88);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);
   border:0.5px solid rgba(108,71,255,0.28);box-shadow:0 14px 40px rgba(0,0,0,0.45),0 0 0 1px rgba(255,255,255,0.03) inset;
   animation:fpIn .22s ease;
 }
@@ -600,6 +609,164 @@ body.cal-dragging,body.cal-dragging *{touch-action:none!important;user-select:no
 }
 .ai-ring{width:14px;height:14px;border-radius:50%;border:1.5px solid transparent;border-top-color:#00D4FF;border-right-color:rgba(108,71,255,0.6);animation:aiSpin 0.9s linear infinite;flex-shrink:0}
 @keyframes aiSpin{to{transform:rotate(360deg)}}
+
+/* ══════════ v68: ТЕМЫ + ВОЛНЫ ОТ КНОПКИ + ЗВЁЗДЫ ══════════ */
+
+/* ── Полноэкранные волны при диктовке: расходятся кольцами от кнопки записи ── */
+#rec-waves{
+  position:absolute;inset:0;width:100%;height:100%;z-index:1;
+  pointer-events:none;opacity:0;transition:opacity .45s ease;
+}
+#rec-waves.on{opacity:1}
+
+/* ── Звёздное небо (тема «Мечтательная») ── */
+#theme-stars{
+  position:absolute;inset:0;width:100%;height:100%;z-index:0;
+  pointer-events:none;display:none;opacity:0;transition:opacity .8s ease;
+}
+#theme-stars.on{display:block;opacity:1}
+
+/* ── Кнопка записи в темах: галактика (dream) и сфера (business) ── */
+.galaxy-core,.sphere-core{position:absolute;inset:0;border-radius:50%;display:none;pointer-events:none}
+body[data-theme="dream"] .chaos-img,
+body[data-theme="business"] .chaos-img{opacity:0}
+body[data-theme="dream"] .chaos-img-wrap,
+body[data-theme="business"] .chaos-img-wrap{
+  animation:chaosBreathe 4.6s ease-in-out infinite;
+  box-shadow:0 0 34px rgba(240,120,220,0.4),0 0 80px rgba(168,85,247,0.25);
+  border:1px solid rgba(255,255,255,0.18);
+}
+body[data-theme="business"] .chaos-img-wrap{
+  box-shadow:0 2px 18px rgba(0,0,0,0.5);
+  border:1px solid rgba(255,255,255,0.14);
+  animation:sphereBreathe 4.6s ease-in-out infinite;
+}
+@keyframes sphereBreathe{0%,100%{transform:scale(1)}50%{transform:scale(1.035)}}
+body[data-theme="dream"] .chaos-petals,
+body[data-theme="business"] .chaos-petals{opacity:0}
+body[data-theme="dream"] .chaos-glow{
+  background:radial-gradient(circle,rgba(240,120,220,0.24) 0%,rgba(168,85,247,0.1) 55%,transparent 70%);
+}
+body[data-theme="business"] .chaos-glow{opacity:0}
+
+/* Галактика: ядро + вращающаяся спираль из conic-градиента + 2 «луны» */
+body[data-theme="dream"] .galaxy-core{display:block;overflow:hidden}
+body[data-theme="dream"] .galaxy-core::before{
+  content:'';position:absolute;inset:6%;border-radius:50%;
+  background:radial-gradient(circle at 42% 40%, #FFF7E0 0%, #FFD9F2 18%, #C084FC 42%, #6D28D9 72%, #1E1145 100%);
+  box-shadow:0 0 26px rgba(240,140,230,0.55),inset 0 0 34px rgba(20,8,50,0.65);
+  animation:galaxySpin 9s linear infinite;
+}
+body[data-theme="dream"] .galaxy-core::after{
+  content:'';position:absolute;inset:-9%;border-radius:50%;
+  background:conic-gradient(from 0deg, transparent 0deg, rgba(255,150,225,0.5) 42deg, transparent 88deg, rgba(140,90,255,0.42) 168deg, transparent 212deg, rgba(255,209,102,0.34) 288deg, transparent 330deg);
+  filter:blur(3px);
+  animation:galaxySpin 6s linear infinite reverse;
+}
+@keyframes galaxySpin{to{transform:rotate(360deg)}}
+
+/* Сфера: строгий стальной шар с бегающим бликом и тонким кольцом */
+body[data-theme="business"] .sphere-core{display:block;overflow:hidden}
+body[data-theme="business"] .sphere-core::before{
+  content:'';position:absolute;inset:4%;border-radius:50%;
+  background:radial-gradient(circle at 34% 28%, #3E4552 0%, #23272F 46%, #101216 78%, #0A0C0F 100%);
+  border:1px solid rgba(255,255,255,0.1);
+}
+body[data-theme="business"] .sphere-core::after{
+  content:'';position:absolute;inset:4%;border-radius:50%;
+  background:conic-gradient(from 0deg, transparent 0deg, rgba(255,255,255,0.14) 26deg, transparent 62deg, transparent 300deg, rgba(255,255,255,0.05) 330deg, transparent 360deg);
+  animation:sphereSpin 7s linear infinite;
+}
+@keyframes sphereSpin{to{transform:rotate(360deg)}}
+
+/* ── Карточка выбора темы в настройках ── */
+.theme-grid{display:flex;gap:8px;margin-top:10px}
+.theme-tile{
+  flex:1;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.1);
+  border-radius:14px;padding:10px 6px 9px;cursor:pointer;text-align:center;
+  transition:all .2s;font-family:Inter,sans-serif;position:relative;
+}
+.theme-tile:active{transform:scale(0.96)}
+.theme-tile.active{border-color:rgba(108,71,255,0.65);background:rgba(108,71,255,0.12);box-shadow:0 0 16px rgba(108,71,255,0.18)}
+.theme-tile.active .theme-check{opacity:1;transform:scale(1)}
+.theme-check{
+  position:absolute;top:5px;right:6px;width:15px;height:15px;border-radius:50%;
+  background:linear-gradient(135deg,#00D4FF,#6C47FF);color:#fff;font-size:9px;line-height:15px;
+  font-weight:700;opacity:0;transform:scale(0.4);transition:all .2s;pointer-events:none;
+}
+.theme-swatch{width:34px;height:34px;border-radius:50%;margin:0 auto 7px;border:1px solid rgba(255,255,255,0.18);position:relative;overflow:hidden}
+.theme-swatch::after{content:'';position:absolute;inset:0;border-radius:50%;background:linear-gradient(140deg,rgba(255,255,255,0.32),transparent 55%)}
+.theme-name{font-size:11.5px;font-weight:600;color:rgba(255,255,255,0.85)}
+.theme-desc{font-size:9px;color:rgba(255,255,255,0.38);margin-top:2px;letter-spacing:.2px}
+
+/* ═══ Тема «Мечтательная»: ночная туманность, звёзды, розово-золотые акценты ═══ */
+body[data-theme="dream"]{--acc:236,150,235;--acc2:255,209,102}
+body[data-theme="dream"] .phone{background:linear-gradient(180deg,#170D33 0%,#0C0722 55%,#0A0620 100%)}
+body[data-theme="dream"] .orb{opacity:.5}
+body[data-theme="dream"] #aurora{
+  background:
+    radial-gradient(55% 42% at calc(28% + var(--px,0)*8%) calc(16% + var(--py,0)*8%), rgba(236,120,220,0.2), transparent 68%),
+    radial-gradient(48% 38% at calc(76% - var(--px,0)*7%) calc(42% - var(--py,0)*7%), rgba(168,85,247,0.17), transparent 66%),
+    radial-gradient(58% 46% at calc(48% + var(--px,0)*6%) calc(90% + var(--py,0)*6%), rgba(255,209,102,0.1), transparent 70%),
+    radial-gradient(40% 30% at calc(60% - var(--px,0)*9%) calc(8% + var(--py,0)*5%), rgba(96,165,250,0.13), transparent 70%);
+}
+body[data-theme="dream"] .note-card,body[data-theme="dream"] .focus-card{
+  background:linear-gradient(155deg,rgba(40,26,72,0.97),rgba(24,15,48,0.97));
+  border-color:rgba(203,166,247,0.22);
+  box-shadow:0 5px 22px rgba(8,3,24,0.5);
+}
+body[data-theme="dream"] .note-card:hover{border-color:rgba(236,150,235,0.45)}
+body[data-theme="dream"] .note-card::before{background:linear-gradient(to bottom,#E879F9,#F0ABFC)}
+body[data-theme="dream"] .bubble-user{background:rgba(217,70,239,0.24)}
+body[data-theme="dream"] .bubble-ai{background:rgba(255,255,255,0.06)}
+body[data-theme="dream"] .dock{background:rgba(15,9,36,0.8)}
+body[data-theme="dream"] .chat-input-wrap,body[data-theme="dream"] .wish-input-zone{background:rgba(14,9,34,0.62)}
+body[data-theme="dream"] #hist-filter-panel{background:rgba(26,16,52,0.9);border-color:rgba(217,70,239,0.3)}
+body[data-theme="dream"] .hist-filter-btn.active,body[data-theme="dream"] .theme-tile.active{background:rgba(217,70,239,0.16);border-color:rgba(240,150,235,0.55)}
+body[data-theme="dream"] .modal{background:#160E30;border-color:rgba(217,70,239,0.35);box-shadow:0 0 60px rgba(217,70,239,0.14)}
+body[data-theme="dream"] .chaos-hint-voice{color:#F0ABFC}
+body[data-theme="dream"] .main-logo{color:rgba(240,171,252,0.65)}
+body[data-theme="dream"] .typing-dot{background:linear-gradient(135deg,#F0ABFC,#C084FC);box-shadow:0 0 8px rgba(240,171,252,0.7),0 0 16px rgba(192,132,252,0.4)}
+body[data-theme="dream"] #wish-fireflies{opacity:.9}
+body[data-theme="dream"] .hist-filter-badge,body[data-theme="dream"] #hist-filter-badge{background:linear-gradient(135deg,#F0ABFC,#C084FC);box-shadow:0 0 8px rgba(240,171,252,0.5)}
+
+/* ═══ Тема «Деловая»: графит, монохром, тонкие линии, никаких свечений ═══ */
+body[data-theme="business"]{--acc:91,141,239;--acc2:120,130,148}
+body[data-theme="business"] .phone{background:linear-gradient(180deg,#14171C 0%,#0D0F13 100%)}
+body[data-theme="business"] .orb{display:none}
+body[data-theme="business"] #aurora{animation:none;opacity:.5;background:
+    radial-gradient(60% 40% at 50% 0%, rgba(91,141,239,0.07), transparent 70%),
+    radial-gradient(50% 36% at 50% 100%, rgba(91,141,239,0.05), transparent 70%)}
+body[data-theme="business"] .note-card,body[data-theme="business"] .focus-card{
+  background:#171A20;border:1px solid #2A2F38;border-radius:12px;
+  box-shadow:none;backdrop-filter:none;-webkit-backdrop-filter:none;
+}
+body[data-theme="business"] .note-card:hover{background:#1B1F26;border-color:#39404C}
+body[data-theme="business"] .note-card::before{background:#5B8DEF;opacity:.9;width:2.5px;border-radius:0}
+body[data-theme="business"] .note-card.note-stale{background:#1D1B14;border-color:rgba(255,209,102,0.4)}
+body[data-theme="business"] .note-card.note-stale::before{background:#D9B45C}
+body[data-theme="business"] .focus-card{background:#171A20;border:1px solid #2A2F38;border-left:2.5px solid #5B8DEF}
+body[data-theme="business"] .bubble-user{background:rgba(91,141,239,0.15);border:1px solid rgba(91,141,239,0.25)}
+body[data-theme="business"] .bubble-ai{background:#191D24;border:1px solid #262B34}
+body[data-theme="business"] .dock{background:#101216;border-top:1px solid #24272E}
+body[data-theme="business"] .chat-input-wrap,body[data-theme="business"] .wish-input-zone{background:#12151A;border-top:1px solid #24272E}
+body[data-theme="business"] #hist-filter-panel{background:#15181E;border:1px solid #2A2F38;box-shadow:0 8px 28px rgba(0,0,0,0.5)}
+body[data-theme="business"] .hist-filter-btn{background:#171A20;border:1px solid #2A2F38}
+body[data-theme="business"] .hist-filter-btn.active{background:rgba(91,141,239,0.14);border-color:rgba(91,141,239,0.5);color:rgba(140,175,250,0.95)}
+body[data-theme="business"] .hist-mode-btn{background:#171A20;border:1px solid #2A2F38}
+body[data-theme="business"] .modal{background:#15181E;border:1px solid #2A2F38;box-shadow:0 0 50px rgba(0,0,0,0.6)}
+body[data-theme="business"] .chaos-hint-voice{color:#8CB0FA}
+body[data-theme="business"] .main-logo{color:rgba(140,176,250,0.7)}
+body[data-theme="business"] .typing-dot{background:#8CB0FA;box-shadow:none}
+body[data-theme="business"] .ai-ring{border-top-color:#8CB0FA;border-right-color:rgba(91,141,239,0.5)}
+body[data-theme="business"] #wish-fireflies{display:none}
+body[data-theme="business"] #theme-stars{display:none}
+body[data-theme="business"] .wish-plaque{background:linear-gradient(135deg,#171A20,#12141A) !important;border:1px solid rgba(255,209,102,0.35) !important;box-shadow:none !important}
+body[data-theme="business"] #hist-filter-badge{background:#5B8DEF;box-shadow:none}
+
+/* Тема применяется и к стилю скроллбаров чата — мелочь, но единообразно */
+body[data-theme="business"] .cap-mic.recording{box-shadow:0 0 10px rgba(140,176,250,0.4);animation:micPulseBiz 1.2s ease-in-out infinite}
+@keyframes micPulseBiz{0%,100%{box-shadow:0 0 10px rgba(140,176,250,0.35)}50%{box-shadow:0 0 18px rgba(140,176,250,0.55)}}
 </style>
 </head>
 <body>
@@ -607,6 +774,9 @@ body.cal-dragging,body.cal-dragging *{touch-action:none!important;user-select:no
 <div class="phone" id="phone">
   <!-- динамический градиентный фон (аврора, параллакс --px/--py) -->
   <div id="aurora" aria-hidden="true"></div>
+  <!-- звёздное небо (тема «Мечтательная») и полноэкранные волны диктовки -->
+  <canvas id="theme-stars" aria-hidden="true"></canvas>
+  <canvas id="rec-waves" aria-hidden="true"></canvas>
 
   <!-- REC VIZ: волновая визуализация при записи голоса (все экраны) -->
   <div id="rec-viz-wrap" aria-hidden="true">
@@ -616,9 +786,9 @@ body.cal-dragging,body.cal-dragging *{touch-action:none!important;user-select:no
   </div>
 
   <!-- orbs -->
-  <div class="orb" style="width:300px;height:300px;background:rgba(108,71,255,0.2);top:-90px;left:-80px;animation-delay:0s"></div>
-  <div class="orb" style="width:240px;height:240px;background:rgba(0,212,255,0.11);top:280px;right:-80px;animation-delay:-4s"></div>
-  <div class="orb" style="width:190px;height:190px;background:rgba(168,85,247,0.14);bottom:140px;left:-20px;animation-delay:-6.5s"></div>
+  <div class="orb" style="width:300px;height:300px;background:rgba(108,71,255,0.2);top:-90px;left:-80px;animation-delay:0s;--dpx:30px;--dpy:22px"></div>
+  <div class="orb" style="width:240px;height:240px;background:rgba(0,212,255,0.11);top:280px;right:-80px;animation-delay:-4s;--dpx:-22px;--dpy:16px"></div>
+  <div class="orb" style="width:190px;height:190px;background:rgba(168,85,247,0.14);bottom:140px;left:-20px;animation-delay:-6.5s;--dpx:18px;--dpy:-14px"></div>
 
   <!-- ── SPLASH (нейтральный экран, пока проверяем сессию) ── -->
   <div class="screen active" id="screen-splash" style="justify-content:center;align-items:center;">
@@ -688,7 +858,7 @@ body.cal-dragging,body.cal-dragging *{touch-action:none!important;user-select:no
 
     <!-- Wishes plaque — дизайнерская, под полем ввода -->
     <div style="padding:10px 16px 0;">
-      <button onclick="goTo('wishes')" aria-label="Открыть Желания" style="width:100%;position:relative;overflow:hidden;display:flex;align-items:center;gap:12px;text-align:left;background:linear-gradient(115deg,rgba(255,209,102,0.15),rgba(108,71,255,0.10) 55%,rgba(255,209,102,0.04));border:0.5px solid rgba(255,209,102,0.38);border-radius:18px;padding:11px 14px;cursor:pointer;font-family:Inter,sans-serif;box-shadow:0 6px 20px rgba(255,209,102,0.07),inset 0 0 22px rgba(255,209,102,0.04);">
+      <button class="wish-plaque" onclick="goTo('wishes')" aria-label="Открыть Желания" style="width:100%;position:relative;overflow:hidden;display:flex;align-items:center;gap:12px;text-align:left;background:linear-gradient(115deg,rgba(255,209,102,0.15),rgba(108,71,255,0.10) 55%,rgba(255,209,102,0.04));border:0.5px solid rgba(255,209,102,0.38);border-radius:18px;padding:11px 14px;cursor:pointer;font-family:Inter,sans-serif;box-shadow:0 6px 20px rgba(255,209,102,0.07),inset 0 0 22px rgba(255,209,102,0.04);">
         <span aria-hidden="true" style="position:absolute;top:-12px;right:26px;font-size:24px;opacity:.2;animation:wishTwinkle 3.2s ease-in-out infinite;">✦</span>
         <span aria-hidden="true" style="position:absolute;bottom:-14px;right:74px;font-size:28px;opacity:.13;animation:wishTwinkle 3.2s ease-in-out 1.4s infinite;">✦</span>
         <span style="flex-shrink:0;width:40px;height:40px;border-radius:13px;background:linear-gradient(135deg,#FFD166,#FF9F43);display:flex;align-items:center;justify-content:center;box-shadow:0 0 16px rgba(255,209,102,0.4),inset 0 -4px 8px rgba(160,80,10,0.25);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="rgba(30,20,5,0.9)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 5.8a2 2 0 0 0 1.3 1.3L21 12l-5.8 1.9a2 2 0 0 0-1.3 1.3L12 21l-1.9-5.8a2 2 0 0 0-1.3-1.3L3 12l5.8-1.9a2 2 0 0 0 1.3-1.3z"/><path d="M19 3v4M21 5h-4"/></svg></span>
@@ -726,6 +896,9 @@ body.cal-dragging,body.cal-dragging *{touch-action:none!important;user-select:no
         <div class="chaos-img-wrap">
           <img class="chaos-img" src="chaos.webp" alt="">
         </div>
+        <!-- ядра кнопки для тем (показываются только в своей теме) -->
+        <div class="galaxy-core" aria-hidden="true"></div>
+        <div class="sphere-core" aria-hidden="true"></div>
       </button>
 
       <div class="chaos-hint">
@@ -964,6 +1137,32 @@ body.cal-dragging,body.cal-dragging *{touch-action:none!important;user-select:no
     </div>
     <!-- Один скролл на всё содержимое: виджеты + список правил (иначе на низких экранах низ обрезается) -->
     <div id="prompt-scroll" style="flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;">
+    <!-- ── ТЕМА ОФОРМЛЕНИЯ: стандарт / мечтательная / деловая ── -->
+    <div style="padding:12px 16px 0;">
+      <div style="background:rgba(255,255,255,0.04);border:0.5px solid rgba(255,255,255,0.1);border-radius:12px;padding:12px 14px;">
+        <div style="display:flex;align-items:center;gap:7px;font-size:12.5px;font-weight:600;color:rgba(255,255,255,0.8);font-family:Inter,sans-serif;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 0 0 18"/><path d="M12 3v18"/></svg>Тема оформления</div>
+        <div class="theme-grid" id="theme-grid">
+          <div class="theme-tile" data-theme-opt="standard" onclick="setTheme('standard')" role="button" tabindex="0">
+            <span class="theme-check">✓</span>
+            <div class="theme-swatch" style="background:linear-gradient(135deg,#6C47FF,#00D4FF)"></div>
+            <div class="theme-name">Стандарт</div>
+            <div class="theme-desc">аврора · неон</div>
+          </div>
+          <div class="theme-tile" data-theme-opt="dream" onclick="setTheme('dream')" role="button" tabindex="0">
+            <span class="theme-check">✓</span>
+            <div class="theme-swatch" style="background:linear-gradient(135deg,#E879F9,#7C3AED 55%,#FFD166)"></div>
+            <div class="theme-name">Мечтательная</div>
+            <div class="theme-desc">звёзды · магия</div>
+          </div>
+          <div class="theme-tile" data-theme-opt="business" onclick="setTheme('business')" role="button" tabindex="0">
+            <span class="theme-check">✓</span>
+            <div class="theme-swatch" style="background:linear-gradient(135deg,#3E4552,#101216 70%,#5B8DEF)"></div>
+            <div class="theme-name">Деловая</div>
+            <div class="theme-desc">графит · минимализм</div>
+          </div>
+        </div>
+      </div>
+    </div>
     <div style="padding:12px 16px 0;">
       <button onclick="goTo('tags')" style="width:100%;display:inline-flex;align-items:center;justify-content:center;gap:7px;background:rgba(255,255,255,0.04);border:0.5px solid rgba(255,255,255,0.1);border-radius:12px;padding:9px;color:rgba(255,255,255,0.7);font-size:12.5px;font-weight:500;cursor:pointer;font-family:'Inter',sans-serif;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12.6 2.9a2 2 0 0 0-1.4-.6H4a2 2 0 0 0-2 2v7.2a2 2 0 0 0 .6 1.4l7.6 7.6a2 2 0 0 0 2.8 0l6.4-6.4a2 2 0 0 0 0-2.8z"/><circle cx="7.5" cy="7.5" r="1.3"/></svg>Управление тегами</button>
     </div>
@@ -1637,6 +1836,7 @@ async function startRecording() {
   };
   activeRecorder.start();
   startWaveform(activeStream); // неоновая волновая визуализация голоса
+  startRecWaves(recSourceEl); // полноэкранные волны от кнопки записи
 }
 
 // закончить запись (второе нажатие) — дальше распознавание и сохранение идёт само
@@ -1680,9 +1880,13 @@ async function handleRecordedAudio(blob) {
 function setMicState(on) {
   const mic = document.getElementById('cap-mic');
   const chaos = document.getElementById('chaos-btn');
+  const t = document.body.dataset.theme;
+  const glowCol = t === 'dream' ? 'rgba(240,140,230,0.9)'
+    : t === 'business' ? 'rgba(140,176,250,0.65)'
+    : 'rgba(0,212,255,0.9)';
   if (on) {
     mic.classList.add('recording');
-    chaos.style.filter = 'drop-shadow(0 0 20px rgba(0,212,255,0.9))';
+    chaos.style.filter = 'drop-shadow(0 0 20px ' + glowCol + ')';
   } else {
     mic.classList.remove('recording');
     chaos.style.filter = '';
@@ -1711,6 +1915,217 @@ function setMicState(on) {
   })();
 })();
 
+// ── ВОЛНЫ ДИКТОВКИ: кольца расходятся от кнопки записи на весь экран ──
+// Использует общий vizAnalyser (из startWaveform) — громкость голоса усиливает волны.
+const recWaves = { raf: null, rings: [], cx: 0, cy: 0, maxR: 0, lastSpawn: 0, levelAvg: 0.12 };
+let recSourceEl = null; // кнопка, с которой началась текущая запись (волны идут от неё)
+function wavePalette(){
+  const t = document.body.dataset.theme;
+  if (t === 'dream') return ['255,150,225', '168,85,247', '255,209,102'];
+  if (t === 'business') return ['255,255,255'];
+  return ['0,212,255', '108,71,255'];
+}
+function startRecWaves(sourceEl){
+  const cv = document.getElementById('rec-waves');
+  if (!cv || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  stopRecWaves();
+  const phone = document.getElementById('phone');
+  const pr = phone.getBoundingClientRect();
+  let src = sourceEl || document.getElementById('chaos-btn') || document.getElementById('cap-mic');
+  if (src && !src.isConnected) src = document.getElementById('chaos-btn');
+  let cx = pr.width / 2, cy = pr.height / 2;
+  if (src) {
+    const r = src.getBoundingClientRect();
+    cx = r.left + r.width / 2 - pr.left;
+    cy = r.top + r.height / 2 - pr.top;
+  }
+  recWaves.cx = cx; recWaves.cy = cy;
+  recWaves.maxR = Math.hypot(Math.max(cx, pr.width - cx), Math.max(cy, pr.height - cy)) + 30;
+  recWaves.rings = [];
+  recWaves.lastSpawn = 0;
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  cv.width = pr.width * dpr; cv.height = pr.height * dpr;
+  const ctx = cv.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  cv.classList.add('on');
+  recWaves.raf = requestAnimationFrame(drawRecWaves);
+}
+function drawRecWaves(ts){
+  const cv = document.getElementById('rec-waves');
+  if (!cv || !cv.classList.contains('on')) { recWaves.raf = null; return; }
+  const ctx = cv.getContext('2d');
+  const W = cv.clientWidth, H = cv.clientHeight;
+  const pal = wavePalette();
+  // уровень голоса из общего анализатора (или мягкое «дыхание» в тишине)
+  let level = 0.1 + 0.05 * Math.sin(ts / 320);
+  if (vizAnalyser) {
+    const data = new Uint8Array(vizAnalyser.frequencyBinCount);
+    vizAnalyser.getByteFrequencyData(data);
+    let sum = 0; for (let i = 2; i < 40; i++) sum += data[i];
+    level = Math.min(1, (sum / 38 / 255) * 1.9);
+  }
+  recWaves.levelAvg += (level - recWaves.levelAvg) * 0.08;
+  // спавн колец: ритмичный + всплеск на пиках голоса
+  const gap = 620 - level * 340;
+  if (ts - recWaves.lastSpawn > gap) {
+    recWaves.lastSpawn = ts;
+    const peak = level > recWaves.levelAvg * 1.35 && level > 0.22;
+    recWaves.rings.push({
+      r: 26, a: peak ? 0.5 + level * 0.3 : 0.34,
+      w: peak ? 2.2 : 1.3,
+      col: pal[Math.floor(Math.random() * pal.length)],
+      boost: peak ? 1.5 : 1
+    });
+    if (recWaves.rings.length > 9) recWaves.rings.shift();
+  }
+  ctx.clearRect(0, 0, W, H);
+  // мягкое свечение у самой кнопки, дышит вместе с голосом
+  const glowR = 52 + recWaves.levelAvg * 66;
+  const g = ctx.createRadialGradient(recWaves.cx, recWaves.cy, 8, recWaves.cx, recWaves.cy, glowR);
+  g.addColorStop(0, 'rgba(' + pal[0] + ',' + (0.16 + recWaves.levelAvg * 0.2).toFixed(3) + ')');
+  g.addColorStop(1, 'rgba(' + pal[0] + ',0)');
+  ctx.fillStyle = g;
+  ctx.beginPath(); ctx.arc(recWaves.cx, recWaves.cy, glowR, 0, 6.2832); ctx.fill();
+  // кольца: растут, гаснут по мере удаления — волны «на весь экран», контент не мешают
+  ctx.lineWidth = 1.3;
+  for (const ring of recWaves.rings) {
+    ring.r += (2.6 + recWaves.levelAvg * 3.4) * ring.boost;
+    const p = ring.r / recWaves.maxR;
+    if (p >= 1) continue;
+    const alpha = ring.a * (1 - p) * (1 - p);
+    if (alpha <= 0.004) continue;
+    ctx.strokeStyle = 'rgba(' + ring.col + ',' + alpha.toFixed(3) + ')';
+    ctx.lineWidth = ring.w * (1 - p * 0.6);
+    ctx.beginPath(); ctx.arc(recWaves.cx, recWaves.cy, ring.r, 0, 6.2832); ctx.stroke();
+  }
+  recWaves.rings = recWaves.rings.filter(r => r.r < recWaves.maxR);
+  recWaves.raf = requestAnimationFrame(drawRecWaves);
+}
+function stopRecWaves(){
+  if (recWaves.raf) { cancelAnimationFrame(recWaves.raf); recWaves.raf = null; }
+  const cv = document.getElementById('rec-waves');
+  if (cv) cv.classList.remove('on');
+  recWaves.rings = [];
+}
+
+// ── ТЕМЫ ОФОРМЛЕНИЯ: стандарт / мечтательная / деловая ──
+const THEME_NAMES = ['standard', 'dream', 'business'];
+function setTheme(t){
+  if (!THEME_NAMES.includes(t)) t = 'standard';
+  document.body.dataset.theme = t;
+  try { localStorage.setItem('hz3-theme', t); } catch (e) {}
+  document.querySelectorAll('.theme-tile').forEach(el => {
+    el.classList.toggle('active', el.dataset.themeOpt === t);
+  });
+  if (t === 'dream') initThemeStars(); else stopThemeStars();
+}
+function getTheme(){ return document.body.dataset.theme || 'standard'; }
+
+// ── Звёздное небо с падающими звёздами (тема «Мечтательная») ──
+const themeStars = { pts: [], shoot: null, nextShoot: 0, raf: null, inited: false };
+function initThemeStars(){
+  const cv = document.getElementById('theme-stars');
+  if (!cv) return;
+  if (document.body.dataset.theme !== 'dream') return;
+  cv.classList.add('on');
+  if (!themeStars.inited) {
+    themeStars.inited = true;
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    const resize = () => {
+      const phone = document.getElementById('phone');
+      const r = phone.getBoundingClientRect();
+      cv.width = r.width * dpr; cv.height = r.height * dpr;
+      const ctx = cv.getContext('2d');
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      seedStars(r.width, r.height);
+    };
+    const seedStars = (w, h) => {
+      themeStars.pts = [];
+      const n = 95;
+      for (let i = 0; i < n; i++) {
+        themeStars.pts.push({
+          x: Math.random() * w, y: Math.random() * h * 0.85,
+          r: (Math.random() < 0.85 ? 0.5 + Math.random() * 0.9 : 1.3 + Math.random() * 0.9),
+          ph: Math.random() * 6.28, spd: 0.5 + Math.random() * 1.3,
+          depth: 0.35 + Math.random() * 0.65, // глубина для параллакса наклона
+          warm: Math.random() < 0.22 // часть звёзд тёплые золотистые
+        });
+      }
+    };
+    resize();
+    window.addEventListener('resize', resize);
+    const loop = (ts) => {
+      themeStars.raf = requestAnimationFrame(loop);
+      const theme = document.body.dataset.theme;
+      const on = cv.classList.contains('on');
+      if (theme !== 'dream' || !on) {
+        if (theme !== 'dream' && on) cv.classList.remove('on');
+        return; // тема сменилась — гаснем, цикл держим фоном (дешевле пересоздания)
+      }
+      const ctx = cv.getContext('2d');
+      const W = cv.clientWidth, H = cv.clientHeight;
+      ctx.clearRect(0, 0, W, H);
+      // звёзды мерцают + чуть плывут при наклоне (--px/--py от initParallax)
+      const px = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--px')) || 0;
+      const py = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--py')) || 0;
+      for (const s of themeStars.pts) {
+        const tw = 0.45 + 0.55 * (0.5 + 0.5 * Math.sin(ts / 1000 * s.spd + s.ph));
+        const sx = s.x + px * 16 * s.depth, sy = s.y + py * 12 * s.depth;
+        ctx.globalAlpha = tw * (0.3 + s.depth * 0.65);
+        ctx.fillStyle = s.warm ? '255,214,140' : '235,238,255';
+        ctx.beginPath(); ctx.arc(sx, sy, s.r, 0, 6.2832); ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+      // падающая звезда раз в 4–8 секунд
+      if (!themeStars.shoot && ts > themeStars.nextShoot) {
+        const fromLeft = Math.random() < 0.5;
+        themeStars.shoot = {
+          x: fromLeft ? -30 : W * (0.3 + Math.random() * 0.7),
+          y: Math.random() * H * 0.3,
+          vx: (fromLeft ? 1 : -1) * (5.5 + Math.random() * 3),
+          vy: 2.4 + Math.random() * 1.6,
+          life: 1
+        };
+      }
+      const sh = themeStars.shoot;
+      if (sh) {
+        sh.x += sh.vx; sh.y += sh.vy; sh.life -= 0.012;
+        if (sh.life <= 0 || sh.x < -60 || sh.x > W + 60) {
+          themeStars.shoot = null;
+          themeStars.nextShoot = ts + 4000 + Math.random() * 4000;
+        } else {
+          const grd = ctx.createLinearGradient(sh.x, sh.y, sh.x - sh.vx * 9, sh.y - sh.vy * 9);
+          grd.addColorStop(0, 'rgba(255,240,220,' + (0.85 * sh.life).toFixed(3) + ')');
+          grd.addColorStop(1, 'rgba(255,240,220,0)');
+          ctx.strokeStyle = grd; ctx.lineWidth = 1.6; ctx.lineCap = 'round';
+          ctx.beginPath(); ctx.moveTo(sh.x, sh.y); ctx.lineTo(sh.x - sh.vx * 9, sh.y - sh.vy * 9); ctx.stroke();
+        }
+      }
+    };
+    themeStars.raf = requestAnimationFrame(loop);
+  } else {
+    cv.classList.add('on');
+  }
+}
+function stopThemeStars(){
+  const cv = document.getElementById('theme-stars');
+  if (cv) cv.classList.remove('on');
+}
+
+// восстановление темы при старте (localStorage живёт на устройстве)
+(function initThemeBoot(){
+  let t = 'standard';
+  try { t = localStorage.getItem('hz3-theme') || 'standard'; } catch (e) {}
+  document.body.dataset.theme = t;
+  document.querySelectorAll('.theme-tile').forEach(el => {
+    el.classList.toggle('active', el.dataset.themeOpt === t);
+  });
+  if (t === 'dream') initThemeStars();
+})();
+window.setTheme = setTheme;
+window.getTheme = getTheme;
+window.wavePalette = wavePalette;
+
 // ── Светлячки: плавающие частицы на экране Желаний (реагируют на курсор/палец) ──
 const fireflies = { pts: [], inited: false };
 function initFireflies(){
@@ -1730,13 +2145,17 @@ function initFireflies(){
   }, { passive: true });
   scr.addEventListener('pointerleave', () => { pointer.x = -9999; pointer.y = -9999; });
   const N = 26;
+  // палитра светлячков зависит от темы: стандарт — золото+голубой, мечтательная — розовый+золото
+  const dreamMode = (document.body.dataset.theme === 'dream');
   for (let i = 0; i < N; i++) {
     fireflies.pts.push({
       x: Math.random() * cv.width, y: Math.random() * cv.height,
       vx: (Math.random() - 0.5) * 0.3 * dpr, vy: (Math.random() - 0.5) * 0.3 * dpr,
       r: (0.9 + Math.random() * 1.5) * dpr,
       ph: Math.random() * 6.28, spd: 0.6 + Math.random() * 0.9,
-      hue: Math.random() < 0.82 ? '255,214,110' : '120,220,255' // золотые + редкие голубые
+      hue: dreamMode
+        ? (Math.random() < 0.72 ? '255,170,230' : '255,214,130') // розовые + золотые
+        : (Math.random() < 0.82 ? '255,214,110' : '120,220,255') // золотые + редкие голубые
     });
   }
   const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -1830,6 +2249,8 @@ function stopWaveform(){
   if (wrap) { wrap.classList.remove('on'); wrap.style.display = 'none'; }
   if (vizAudioCtx) { try { vizAudioCtx.close(); } catch (e) {} vizAudioCtx = null; }
   vizAnalyser = null;
+  stopRecWaves(); // гасим и полноэкранные волны (вызывается из обоих рекордеров)
+  recSourceEl = null;
 }
 
 // ── UI ──
@@ -6455,6 +6876,7 @@ function bindPressToRecord(el, isActive, onStart, onStop) {
     e.stopPropagation();
     if (e.pointerId !== undefined) { try { el.setPointerCapture(e.pointerId); } catch(_){} }
     pressed = true;
+    recSourceEl = el; // запоминаем кнопку — от неё пойдут полноэкранные волны
     if (!isActive()) onStart();
   };
   const up = (e) => {
@@ -8431,6 +8853,7 @@ async function startChatRecording() {
   };
   chatActiveRecorder.start();
   startWaveform(chatActiveStream); // неоновая волновая визуализация голоса
+  startRecWaves(document.getElementById('chat-mic')); // волны от микрофона чата
 }
 
 function stopChatRecording() {
