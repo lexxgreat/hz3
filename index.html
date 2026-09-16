@@ -197,19 +197,19 @@ body{background:#060918;font-family:'Inter',sans-serif;display:flex;justify-cont
 /* status text under field */
 .cap-status{font-size:11px;color:rgba(0,212,255,0.7);text-align:center;margin-top:7px;min-height:16px;transition:opacity 0.3s}
 
-/* quick tags */
-.qtags{display:flex;gap:8px;justify-content:center;padding:10px 16px 0;flex-shrink:0;flex-wrap:wrap}
+/* quick tags: сетка 6 в ряд */
+.qtags{display:grid;grid-template-columns:repeat(6,1fr);gap:5px;flex-shrink:0}
 .qtag{
-  display:flex;flex-direction:column;align-items:center;gap:6px;
-  padding:12px 14px;border-radius:16px;
+  display:flex;flex-direction:column;align-items:center;gap:3px;
+  padding:7px 2px;border-radius:12px;
   border:0.5px solid rgba(255,255,255,0.08);
   background:rgba(255,255,255,0.03);
-  cursor:pointer;transition:all 0.2s;min-width:72px;
+  cursor:pointer;transition:all 0.2s;min-width:0;
   font-family:'Inter',sans-serif;
 }
 .qtag:hover{background:rgba(108,71,255,0.08);border-color:rgba(108,71,255,0.2)}
-.qtag-icon{font-size:20px}
-.qtag-label{font-size:10px;color:rgba(255,255,255,0.4);font-weight:500}
+.qtag-icon{font-size:15px}
+.qtag-label{font-size:8.5px;color:rgba(255,255,255,0.4);font-weight:500;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
 /* big chaos button */
 .chaos-zone{
@@ -595,12 +595,16 @@ body.cal-dragging,body.cal-dragging *{touch-action:none!important;user-select:no
       <div class="cap-status" id="cap-status"></div>
     </div>
 
-    <!-- Quick tags -->
-    <div style="display:flex;align-items:center;gap:6px;padding:0 16px;">
-      <div class="qtags" id="qtags-list" style="flex:1;padding:10px 0 0;justify-content:flex-start;"></div>
-      <button onclick="goTo('prompt')" title="Настройки" style="background:none;border:none;color:rgba(255,255,255,0.25);font-size:15px;cursor:pointer;padding:4px;flex-shrink:0;">⚙️</button>
-      <button onclick="goTo('wishes')" title="Желания" style="background:rgba(255,209,102,0.1);border:0.5px solid rgba(255,209,102,0.35);color:rgba(255,215,102,0.95);font-size:11.5px;font-weight:600;cursor:pointer;padding:4px 11px;border-radius:99px;flex-shrink:0;font-family:Inter,sans-serif;">🌠 Желания</button>
+    <!-- Wishes plaque — под полем ввода, золотая -->
+    <div style="padding:9px 16px 0;">
+      <button onclick="goTo('wishes')" style="width:100%;display:flex;align-items:center;justify-content:space-between;gap:8px;background:linear-gradient(135deg,rgba(255,209,102,0.14),rgba(255,209,102,0.04));border:0.5px solid rgba(255,209,102,0.35);border-radius:14px;padding:10px 14px;color:rgba(255,215,102,0.95);font-size:12.5px;font-weight:600;cursor:pointer;font-family:Inter,sans-serif;">
+        <span>🌠 Желания</span>
+        <span id="wishes-plaque-count" style="font-size:11px;font-weight:500;color:rgba(255,209,102,0.65);">твои мечты →</span>
+      </button>
     </div>
+
+    <!-- Quick tags: 6 в ряд, без кнопок настроек/желаний -->
+    <div class="qtags" id="qtags-list" style="padding:9px 16px 0;"></div>
 
     <!-- Big chaos button -->
     <div class="chaos-zone">
@@ -826,7 +830,7 @@ body.cal-dragging,body.cal-dragging *{touch-action:none!important;user-select:no
         <div class="chat-subtitle" id="chat-subtitle">Готов помочь</div>
       </div>
       <button class="chat-clear-btn" onclick="openDailySummaryManual()" title="Итог дня">📊</button>
-      <button class="chat-clear-btn" onclick="goTo('prompt')" title="Промпт">⚙️</button>
+      <button class="chat-clear-btn" onclick="goTo('prompt')" title="Настройки">⚙️</button>
       <button class="chat-clear-btn" onclick="exportChat()">⬇ Экспорт</button>
     </div>
     <div class="chat-messages" id="chat-messages"></div>
@@ -1817,7 +1821,7 @@ async function classifyAndRouteNote(note) {
   const mskTimeStr = String(nowMsk.getUTCHours()).padStart(2,'0') + ':' + String(nowMsk.getUTCMinutes()).padStart(2,'0');
   try {
     const resp = await callPolzaAI([
-      { role: 'system', content: 'Ты — классификатор записей пользователя. Ответь ТОЛЬКО валидным JSON без markdown: {"task": true/false, "date": "YYYY-MM-DD" или null, "time": "HH:MM" или null}. task: true — если запись это конкретное действие, которое предстоит сделать и потом можно поставить галочку (купить, позвонить, записаться, отправить, сделать, не забыть); false — мысль, факт, идея без действия, дневниковая запись, справка. Сомневаешься — true: лучше поставить в тудушку, чем потерять дело. Все даты/времена — в московском поясе (МСК = UTC+3), СЕЙЧАС ' + mskTimeStr + ' МСК. date: если задача привязана ко дню — вычисли точную дату от СЕГОДНЯ (сегодня=' + todayKey + ', завтра=' + tomorrowKey + '; «через неделю» = +7 дней; «на следующей неделе» = ближайший понедельник; названный день недели = ближайший будущий). time: если названо время («в 15:00», «утром» = 09:00, «вечером» = 18:00) — HH:MM; «через N минут/часов» = текущее время ' + mskTimeStr + ' + N (НИКОГДА не ставь время раньше текущего). Если это не задача или срок не назван — date/time = null.' },
+      { role: 'system', content: 'Ты — классификатор записей пользователя. Ответь ТОЛЬКО валидным JSON без markdown: {"task": true/false, "date": "YYYY-MM-DD" или null, "time": "HH:MM" или null}. task: true — если запись это конкретное действие, которое предстоит сделать и потом можно поставить галочку (купить, позвонить, записаться, отправить, сделать, не забыть); false — мысль, факт, идея без действия, дневниковая запись, справка. Сомневаешься — true: лучше поставить в тудушку, чем потерять дело. Все даты/времена — в московском поясе (МСК = UTC+3), СЕЙЧАС ' + mskTimeStr + ' МСК. date: ТОЛЬКО если в тексте ЯВНО назван день или срок («сегодня», «завтра», «в пятницу», «через неделю») — вычисли точную дату от СЕГОДНЯ (сегодня=' + todayKey + ', завтра=' + tomorrowKey + '; «через неделю» = +7 дней; «на следующей неделе» = ближайший понедельник; названный день недели = ближайший будущий). День/срок НЕ назван — date: null и time: null: задача без срока просто ляжет в тудушку, её раскидают по календарю позже. ЗАПРЕЩЕНО ставить «сегодня» по умолчанию или «для порядка». time: если названо время («в 15:00», «утром» = 09:00, «вечером» = 18:00) — HH:MM; «через N минут/часов» = текущее время ' + mskTimeStr + ' + N (НИКОГДА не ставь время раньше текущего).' },
       { role: 'user', content: note.text.slice(0, 300) }
     ], { max_tokens: 60, temperature: 0 });
     const m = resp && resp.match(/\{[\s\S]*\}/);
@@ -4164,6 +4168,8 @@ function renderWishes() {
   const wn = wishes.length;
   const wPl = (wn % 10 === 1 && wn % 100 !== 11) ? 'желание' : ([2,3,4].includes(wn % 10) && !(wn % 100 >= 12 && wn % 100 <= 14)) ? 'желания' : 'желаний';
   document.getElementById('wishes-count').textContent = wn > 0 ? (wn + ' ' + wPl) : 'твои мечты';
+  const plc = document.getElementById('wishes-plaque-count'); // счётчик на золотой плашке на главном
+  if (plc) plc.textContent = wn > 0 ? (wn + ' ' + wPl + ' →') : 'твои мечты →';
   if (!wishes.length) {
     el.innerHTML = '<div class="hist-empty"><div class="hist-empty-icon">🌠</div>Пока нет желаний</div>';
     return;
@@ -5227,18 +5233,21 @@ document.getElementById('wishchat-input').addEventListener('keydown', e => { if(
 
 // ── ПРОГРЕССИВНЫЕ ПОДСКАЗКИ (показываются один раз при выполнении условия) ──
 let hintsShown = new Set();
+let hintsLoaded = false; // до загрузки hintsShown из Firestore ничего не показываем (иначе повтор)
 async function loadHints() {
   try { const snap = await getDocs(uCol('meta')); const d = snap.docs.find(x=>x.id==='hints_shown'); hintsShown = new Set(d ? (d.data().ids||[]) : []); } catch(e) {}
+  hintsLoaded = true;
 }
 // id — уникальный идентификатор подсказки
 // text — текст (с эмодзи)
 // elId — id контейнера куда вставлять
 // condition — optional функция, возвращает true если контекст подходящий
+// возвращает true, если подсказка реально показана (для цепочек)
 function showHintOnce(id, text, elId, condition = null) {
-  if (hintsShown.has(id)) return;
-  if (condition && typeof condition === 'function' && !condition()) return;  // контекст не подходит
+  if (hintsShown.has(id)) return false;
+  if (condition && typeof condition === 'function' && !condition()) return false;  // контекст не подходит
   const el = document.getElementById(elId);
-  if (!el) return;
+  if (!el) return false;
   el.innerHTML = `<div class="note-card" style="border-color:rgba(139,92,246,0.4);background:rgba(108,71,255,0.08);"><div class="note-text">💡 ${text}</div><div class="note-actions"><button class="note-btn note-undone" onclick="dismissHint('${id}')">Понял</button></div></div>`;
   // Подсказка не висит вечно: через 7с гасим сами и запоминаем флаг
   setTimeout(() => {
@@ -5248,6 +5257,7 @@ function showHintOnce(id, text, elId, condition = null) {
     hintsShown.add(id);
     try { setDoc(uDocRef('meta','hints_shown'), { ids:[...hintsShown] }).catch(() => {}); } catch(e) {}
   }, 7000);
+  return true;
 }
 async function dismissHint(id) {
   hintsShown.add(id);
@@ -5259,6 +5269,30 @@ async function dismissHint(id) {
   try { await setDoc(uDocRef('meta','hints_shown'), { ids:[...hintsShown] }); } catch(e) {}
 }
 window.dismissHint = dismissHint;
+
+// Цепочка подсказок: показываем ПЕРВУЮ непоказанную, чей контекст подошёл — по одной за раз.
+// Следующая вылезет при следующем заходе на экран (по мере освоения приложения).
+function hintChain(list) {
+  for (const [id, text, elId, cond] of list) {
+    if (showHintOnce(id, text, elId, cond)) return;
+  }
+}
+
+// Обучение на главном: приветствие → история → тудушка → жесты → календарь → желания → настройки
+function showMainHints() {
+  if (!hintsLoaded) return;
+  hintChain([
+    ['onb_1_add', '👋 Привет! Это твоё личное пространство. Добавь первую заметку: напиши в поле сверху и нажми ➤ — или нажми 🎤 и говори.', 'main-hint', () => notes.length === 0],
+    ['onb_2_hist', '✅ Первая запись есть! Все записи живут в Истории — вкладка 🕐 в доке внизу.', 'main-hint', () => notes.length >= 1],
+    ['onb_4_todo', '📋 Теперь держи дела в Тудушке — вкладка ☑️ внизу. ИИ сам понимает из текста, что это задача.', 'main-hint', () => notes.length >= 2],
+    ['main_x', 'Перечеркни весь экран крест-накрест («Х») — отметит текущую задачу выполненной.', 'main-hint', () => notes.filter(n => n.inTodo && !n.done).length >= 1],
+    ['focus_gestures', '🎯 Тапни на карточку задачи — откроется целиком. Смахни вправо — отложится в конец очереди.', 'focus-hint', () => notes.filter(n => n.inTodo && !n.done).length >= 1],
+    ['onb_6_calendar', '📅 Планируй по дням в Календаре — вкладка внизу. Кнопка «🎯 Раскидать» разложит задачи по дням сама.', 'main-hint', () => notes.some(n => n.inTodo)],
+    ['onb_7_wishes', '🌠 Мечтай масштабно: золотая плашка «Желания» под полем ввода — цель, шаги и настроение.', 'main-hint', () => notes.length >= 4],
+    ['onb_8_settings', '⚙️ Настройки, теги и правила для ИИ — в чате с ИИ, иконка ⚙️ в шапке.', 'main-hint', () => notes.length >= 4]
+  ]);
+}
+window.showMainHints = showMainHints;
 
 function getTodoQueue() {
   return notes.filter(n => n.inTodo === true && !n.done).sort((a,b) => (a.todoOrder||0) - (b.todoOrder||0));
@@ -6012,16 +6046,16 @@ function goTo(screen) {
   document.getElementById('screen-' + screen).classList.add('active');
   const dockBtn = document.getElementById('dock-' + screen);
   if (dockBtn) dockBtn.classList.add('active');
+  if (screen === 'main') showMainHints();
   if (screen === 'hist') {
     loadNotes();
-    // Подсказка после 1-й записи
-    showHintOnce('first_note','✨ Отлично! Это твоя первая запись. Используй поиск сверху, чтобы быстро найти её позже.','hist-hint', () => notes.length >= 1);
-    // Подсказка после 5 записей — про теги
-    showHintOnce('use_tags','🏷 Добавляй теги к записям на главном экране — потом сможешь фильтровать по ним в Истории.','hist-hint', () => notes.length >= 5 && hintsShown.has('first_note'));
-    // Подсказка после 30 записей — про граф
-    showHintOnce('notes_30','📊 Уже 30+ записей! Загляни в 🌌 Граф — увидишь свои сферы жизни, желания и связи между записями.','hist-hint', () => notes.length >= 30);
-    // Подсказка после 100 записей
-    showHintOnce('notes_100','🏆 100 записей! Не забудь сделать экспорт — бэкап своих данных.','hist-hint', () => notes.length >= 100);
+    // Обучение в Истории: что это → теги → юбилеи
+    hintChain([
+      ['onb_3_hist_here', '📚 Это История — все записи по порядку. Поиск сверху, тап по карточке — редактор.', 'hist-hint', () => notes.length >= 1],
+      ['use_tags', '🏷 Теги: выбери сферу под полем ввода на главном — прикрепится к следующей записи. Новые теги: ⚙️ в чате ИИ → «Управление тегами».', 'hist-hint', () => notes.length >= 3],
+      ['notes_30', '📊 Уже 30+ записей! Загляни в 🌌 Граф — увидишь свои сферы жизни, желания и связи между записями.', 'hist-hint', () => notes.length >= 30],
+      ['notes_100', '🏆 100 записей! Не забудь сделать экспорт — бэкап своих данных.', 'hist-hint', () => notes.length >= 100]
+    ]);
   }
   if (screen === 'todo') loadNotes();
   if (screen === 'chat') { renderChat(); checkRemindersOnOpen(); }
@@ -6046,10 +6080,12 @@ function goTo(screen) {
     showHintOnce('first_wish','Тапни на карточку желания — откроются детали: mood-image, milestones, AI-наставники.','wishes-hint', () => wishes.length >= 1 && hintsShown.has('wishes_intro'));
   }
   if (screen === 'todo') {
-    // Подсказка про перетаскивание — только если есть 2+ задач (иначе тащить нечего)
-    showHintOnce('todo_drag','Тащи за ⠿ чтобы поменять порядок — соседи подвинутся сами.','todo-hint', () => notes.filter(n => n.inTodo && !n.done).length >= 2);
-    // Подсказка про янтарную подсветку залежавшихся — только когда такая задача есть
-    showHintOnce('stale_tasks','🟡 Янтарным подсвечены задачи, которые висят больше 10 дней. Пора сделать — или поставь будущий срок, и подсветка уйдёт.','todo-hint', () => notes.some(isStaleNote));
+    // Обучение в Тудушке: что это → перетаскивание → залежавшиеся
+    hintChain([
+      ['onb_5_todo_here', '☑️ Это Тудушка — задачи на каждый день. Тап по карточке — редактор, ✓ — выполнить.', 'todo-hint', () => notes.filter(n => n.inTodo && !n.done).length >= 1],
+      ['todo_drag', 'Тащи за ⠿ чтобы поменять порядок — соседи подвинутся сами.', 'todo-hint', () => notes.filter(n => n.inTodo && !n.done).length >= 2],
+      ['stale_tasks', '🟡 Янтарным подсвечены задачи, которые висят больше 10 дней. Пора сделать — или поставь будущий срок, и подсветка уйдёт.', 'todo-hint', () => notes.some(isStaleNote)]
+    ]);
   }
 }
 window.goTo = goTo;
@@ -6253,7 +6289,7 @@ function buildChatTools() {
           tag: { type: 'string', enum: tagLabels, description: 'Сфера жизни, к которой относится запись' },
           wish: { type: 'string', description: 'shortTag желания из раздела ЖЕЛАНИЯ — копируй ТОЧНО как в [квадратных скобках], не переводи и не транслитерируй. Заполняй, если запись относится к желанию — запись привяжется к нему и получит его тег автоматически' },
           to_todo: { type: 'boolean', description: 'true — это ЗАДАЧА: конкретное действие, которое предстоит сделать (купить, позвонить, отправить, записаться, сделать) — сохранится сразу и попадёт в тудушку автоматически. false или пропуск — это ЗАМЕТКА: мысль, факт, идея, дневниковая запись — добавится после подтверждения пользователя' },
-          date: { type: 'string', description: 'Дата выполнения задачи YYYY-MM-DD, если из слов пользователя ясно когда (сегодня, завтра, через неделю, в пятницу, на следующей неделе). Вычисли точную дату от текущей даты (см. СЕГОДНЯ в контексте). «На следующей неделе» = ближайший понедельник. «Через N минут/часов» = сегодняшняя дата. Если срок не назван — не заполняй' },
+          date: { type: 'string', description: 'Дата выполнения задачи YYYY-MM-DD — ТОЛЬКО если из слов пользователя ясно когда (сегодня, завтра, через неделю, в пятницу, на следующей неделе). Вычисли точную дату от текущей даты (см. СЕГОДНЯ в контексте). «На следующей неделе» = ближайший понедельник. «Через N минут/часов» = сегодняшняя дата. Срок НЕ назван — оставь пустым: никаких дат по умолчанию, «сегодня» без упоминания запрещено' },
           time: { type: 'string', description: 'Время выполнения HH:MM в московском поясе, если пользователь назвал время («в 15:00», «в три часа дня») или сказал «через N минут/часов» — тогда считай от строки «Сейчас» в контексте. НИКОГДА не ставь время в прошлом. Если время не названо — не заполняй' }
         },
         required: ['text','tag']
@@ -7224,6 +7260,7 @@ function getBaseInstructions() {
 - Сомневаешься — выбирай ЗАДАЧУ: лучше поставить в тудушку, чем потерять дело
 
 ДАТЫ ЗАДАЧ (поля date и time у propose_note):
+- ГЛАВНОЕ ПРАВИЛО: дата ставится ТОЛЬКО когда пользователь САМ назвал день/срок или время. Никаких дат «по умолчанию», «на всякий случай», «для порядка». Срок не назван — date и time остаются пустыми: задача ляжет в тудушку без срока, а пользователь позже раскидает её по календарю кнопкой «Раскидать» или назначит день в редакторе карточки. «Сегодня» без упоминания — ЗАПРЕЩЕНО
 - Все даты/времена — московский пояс (МСК = UTC+3); текущее время указано в строке «Сейчас» в начале контекста
 - Пользователь назвал срок («сегодня», «завтра», «через неделю», «в пятницу», «на следующей неделе») — вычисли точную дату от СЕГОДНЯ (см. контекст выше) и передай в поле date в формате YYYY-MM-DD
 - Правила пересчёта: «сегодня» → сегодня; «завтра» → +1 день; «послезавтра» → +2; «через N дней» → +N; «через неделю» → +7; «через месяц» → +30; «в понедельник…воскресенье» → ближайший будущий такой день недели; «на следующей неделе» → ближайший понедельник (пользователь потом перенесёт, если что); «25 числа» → ближайшее будущее 25-е число
@@ -8828,8 +8865,7 @@ onAuthStateChanged(auth, async (user) => {
     // Подсказки грузим в фоне: showHintOnce вызываем только после загрузки hintsShown,
     // иначе уже скрытые ранее подсказки могли бы мелькнуть повторно. UI при этом не блокируется.
     loadHints().then(() => {
-      showHintOnce('main_x','Перечеркни весь экран крест-накрест («Х») — отметит текущую задачу выполненной.','main-hint', () => notes.filter(n => n.inTodo && !n.done).length >= 1);
-      showHintOnce('focus_gestures','🎯 Тапни на карточку задачи — откроется целиком. Смахни вправо — отложится в конец очереди.','focus-hint', () => notes.filter(n => n.inTodo && !n.done).length >= 1 && hintsShown.has('main_x'));
+      showMainHints(); // цепочка обучения главного экрана (только после загрузки hintsShown)
     });
     // Daily summary — проверяем, был ли итог за сегодня (генерируется в фоне, не блокируя UI)
     setTimeout(() => checkAndGenerateDailySummary(), 2000);
