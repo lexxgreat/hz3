@@ -1675,7 +1675,10 @@ function parseRelativeDateRu(text, baseDate) {
       if (mExtra) addMin += parseInt(mExtra[1], 10);
     }
     const target = new Date(now.getTime() + addMin * 60000);
-    return { date: formatDateKey(target), time: String(target.getHours()).padStart(2,'0') + ':' + String(target.getMinutes()).padStart(2,'0'), relAt: true };
+    // время отдаём в поясной конвенции приложения (МСК = UTC+3), как formatDateKey и напоминания —
+    // иначе на устройстве с другим поясом «через 10 минут» уедет от календаря на пару часов
+    const tmsk = new Date(target.getTime() + 3 * 3600000);
+    return { date: formatDateKey(target), time: String(tmsk.getUTCHours()).padStart(2,'0') + ':' + String(tmsk.getUTCMinutes()).padStart(2,'0'), relAt: true };
   }
   if (/сегодня/.test(t)) date = new Date(base);
   else if (/послезавтра/.test(t)) date = new Date(base.getTime() + 2 * dayMs);
