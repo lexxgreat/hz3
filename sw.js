@@ -1,5 +1,5 @@
 // Service Worker for Хэзэнштейн PWA
-const CACHE_NAME = 'hazenstein-hz3-v59';
+const CACHE_NAME = 'hazenstein-hz3-v60';
 const ASSETS = [
   './',
   './index.html',

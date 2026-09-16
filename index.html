@@ -564,7 +564,7 @@ body.cal-dragging,body.cal-dragging *{touch-action:none!important;user-select:no
         </svg>
         <textarea class="cap-input" id="cap-input" placeholder="Ввод текстом" rows="1"></textarea>
         <button class="cap-clear" id="cap-clear" title="Очистить">✕</button>
-        <button class="cap-mic" id="cap-mic" title="Голосовой ввод">
+        <button class="cap-mic" id="cap-mic" title="Нажми и говори — нажми ещё раз, отправится">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.6)" stroke-width="1.7" stroke-linecap="round">
             <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
             <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
@@ -613,8 +613,8 @@ body.cal-dragging,body.cal-dragging *{touch-action:none!important;user-select:no
       </button>
 
       <div class="chaos-hint">
-        <div class="chaos-hint-tap">Зажми и говори</div>
-        <div class="chaos-hint-voice">Отпусти — чтобы отправить</div>
+        <div class="chaos-hint-tap">Нажми и говори</div>
+        <div class="chaos-hint-voice">Нажми ещё раз — отправится</div>
       </div>
 
       <div class="save-flash" id="save-flash">✓ Сохранено</div>
@@ -692,7 +692,6 @@ body.cal-dragging,body.cal-dragging *{touch-action:none!important;user-select:no
           <div class="hist-title">📅 Календарь</div>
           <div class="hist-sub" id="calendar-sub">План на неделю</div>
         </div>
-        <button onclick="goTo('hist')" style="background:none;border:none;color:rgba(255,255,255,0.4);font-size:22px;cursor:pointer;">←</button>
       </div>
     </div>
     <div style="display:flex;gap:6px;padding:8px 16px;align-items:center;border-bottom:0.5px solid rgba(255,255,255,0.06);">
@@ -819,7 +818,7 @@ body.cal-dragging,body.cal-dragging *{touch-action:none!important;user-select:no
     <div class="chat-input-wrap">
       <div class="chat-input-row">
         <textarea class="chat-textarea" id="chat-input" placeholder="Спросите что угодно..." rows="1"></textarea>
-        <button class="chat-mic-btn" id="chat-mic" title="Голос">
+        <button class="chat-mic-btn" id="chat-mic" title="Нажми и говори — нажми ещё раз, отправится">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.6)" stroke-width="1.7" stroke-linecap="round">
             <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
             <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
@@ -1046,6 +1045,17 @@ service cloud.firestore {
     <div class="modal">
       <div class="modal-title">Редактировать запись</div>
       <textarea class="modal-textarea" id="modal-text"></textarea>
+      <div id="modal-schedule-row" style="display:flex;gap:6px;margin:10px 0;align-items:flex-end;">
+        <div style="flex:1.4;">
+          <div style="font-size:9.5px;color:rgba(255,255,255,0.45);margin-bottom:4px;text-transform:uppercase;letter-spacing:1px;font-family:Inter,sans-serif;">📅 Срок (в календарь)</div>
+          <input type="date" id="modal-date" style="width:100%;background:rgba(255,255,255,0.04);border:0.5px solid rgba(108,71,255,0.3);border-radius:8px;padding:8px;color:#fff;font-size:13px;font-family:Inter,sans-serif;outline:none;color-scheme:dark;">
+        </div>
+        <div style="flex:1;">
+          <div style="font-size:9.5px;color:rgba(255,255,255,0.45);margin-bottom:4px;text-transform:uppercase;letter-spacing:1px;font-family:Inter,sans-serif;">⏰ Время</div>
+          <select id="modal-time" style="width:100%;background:rgba(255,255,255,0.04);border:0.5px solid rgba(108,71,255,0.3);border-radius:8px;padding:8px;color:#fff;font-size:13px;font-family:Inter,sans-serif;outline:none;color-scheme:dark;"></select>
+        </div>
+        <button onclick="clearModalSchedule()" title="Убрать срок" style="flex-shrink:0;background:rgba(255,80,80,0.1);border:0.5px solid rgba(255,80,80,0.3);color:rgba(255,110,110,0.9);border-radius:8px;padding:8px 10px;font-size:12px;cursor:pointer;font-family:Inter,sans-serif;">✕</button>
+      </div>
       <div id="modal-tag-picker" style="display:flex;flex-wrap:wrap;gap:6px;margin:10px 0;"></div>
       <!-- AI-связи — появляются после openEdit, когда links загрузятся -->
       <div id="modal-links-section" style="display:none;margin-top:14px;padding-top:14px;border-top:0.5px solid rgba(255,255,255,0.08);">
@@ -1103,6 +1113,12 @@ service cloud.firestore {
         <path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
       </svg>
       <span>Тудушка</span>
+    </button>
+    <button class="dock-item" id="dock-calendar" onclick="goTo('calendar')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+        <rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
+      </svg>
+      <span>Календарь</span>
     </button>
     <button class="dock-item" id="dock-hist" onclick="goTo('hist')">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
@@ -1386,13 +1402,15 @@ function renderTagsScreen() {
 
 // ── РЕЧЬ ──
 // ── ГОЛОСОВАЯ ЗАПИСЬ ЧЕРЕЗ WHISPER (Polza) ──
-// Модель удержания: нажал/зажал — идёт запись, отпустил — распознаётся и сохраняется автоматически.
+// Модель «нажал — говоришь — нажал — отправилось»: первый клик включает запись,
+// второй — останавливает и отправляет на распознавание. Одинаково на главном экране и в чате с ИИ.
 const POLZA_TRANSCRIBE_URL = 'https://polza.ai/api/v1/audio/transcriptions';
 const WHISPER_MODEL = 'openai/whisper-large-v3';
 
-let isRecording = false; // true всё время между "нажал" и "отпустил" (включая обработку после)
+let isRecording = false; // true = запись включена пользователем (между 1-м и 2-м нажатием)
 let activeRecorder = null;
 let activeStream = null;
+let pendingStopRecording = false; // «отправить» нажали, пока микрофон ещё договаривался (getUserMedia)
 
 // известные фразы-галлюцинации Whisper на тишине/шуме (обучен на субтитрах YouTube — при отсутствии
 // реальной речи модель вместо признания "тишина" выдаёт одну из этих типовых концовок роликов)
@@ -1443,18 +1461,31 @@ async function transcribeAudio(blob) {
   throw new Error(data.error?.message || 'Пустой ответ от сервиса распознавания');
 }
 
-// начать запись (вызывается при нажатии/удержании кнопки)
+// начать запись (первое нажатие) — isRecording ставим СИНХРОННО до await,
+// чтобы быстрое второе нажатие не потерялось (старый баг: тап во время getUserMedia = застрявшая запись)
 async function startRecording() {
   if (isRecording) return;
+  isRecording = true;
+  pendingStopRecording = false;
+  setMicState(true);
+  setStatus('🎙️ Слушаю... нажми ещё раз — отправлю');
   try {
     activeStream = await navigator.mediaDevices.getUserMedia({ audio: true });
   } catch(e) {
+    isRecording = false;
+    setMicState(false);
     setStatus('⚠️ Нет доступа к микрофону');
     return;
   }
-  isRecording = true;
-  setMicState(true);
-  setStatus('🎙️ Слушаю...');
+  if (!isRecording || pendingStopRecording) {
+    // пока запрашивали микрофон, пользователь уже нажал «отправить» — молча гасим
+    activeStream.getTracks().forEach(t => t.stop());
+    activeStream = null;
+    pendingStopRecording = false;
+    isRecording = false;
+    setMicState(false);
+    return;
+  }
   const mimeType = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : '';
   activeRecorder = mimeType ? new MediaRecorder(activeStream, { mimeType }) : new MediaRecorder(activeStream);
   const chunks = [];
@@ -1469,9 +1500,14 @@ async function startRecording() {
   activeRecorder.start();
 }
 
-// закончить запись (вызывается при отпускании кнопки) — дальше распознавание и сохранение идёт само
+// закончить запись (второе нажатие) — дальше распознавание и сохранение идёт само
 function stopRecording() {
-  if (!activeRecorder || activeRecorder.state === 'inactive') { isRecording = false; setMicState(false); return; }
+  if (!isRecording) return;
+  if (!activeRecorder || activeRecorder.state === 'inactive') {
+    pendingStopRecording = true; // микрофон ещё готовится — остановимся сразу после старта
+    return;
+  }
+  isRecording = false;
   setMicState(false);
   setStatus('⏳ Распознаю...');
   activeRecorder.stop(); // onstop асинхронно вызовет handleRecordedAudio
@@ -1610,15 +1646,37 @@ function isValidTimeStr(s) {
 // фолбэк-парсер русских относительных дат (когда ИИ недоступен; baseDate — для тестов)
 // «сегодня/завтра/послезавтра», «через N дней/неделю/две недели/месяц», «в пятницу»,
 // «на следующей неделе» → ближайший понедельник; время «15:00», «в 3 часа дня», «утром/днём/вечером»
+// «через N минут/часов» — считается ЛОКАЛЬНО от реальных часов (relAt: true) — ИИ ошибается с поясами
 function parseRelativeDateRu(text, baseDate) {
   let t = ' ' + String(text || '').toLowerCase() + ' ';
   const base = baseDate ? new Date(baseDate) : new Date();
   base.setHours(0,0,0,0);
   const dayMs = 86400000;
-  let date = null, time = null;
+  let date = null, time = null, relAt = false;
   // числительные словами → цифры («в три часа дня» → «в 3 часа дня»)
   const numWords = { 'один':1,'одну':1,'два':2,'две':2,'три':3,'четыре':4,'пять':5,'шесть':6,'семь':7,'восемь':8,'девять':9,'десять':10,'одиннадцать':11,'двенадцать':12 };
   for (const [w, n] of Object.entries(numWords)) t = t.replace(new RegExp(' ' + w + ' ', 'g'), ' ' + n + ' ');
+  // «через N минут/часов», «через полчаса», «через пару часов» — привязка к РЕАЛЬНОМУ текущему моменту:
+  // считаем только здесь (локальные часы), потому что ИИ/сервер живут в другом поясе и опаздывают/спешат.
+  // ВАЖНО: \b в JS не знает кириллицу — границы слов проверяем через (?![а-яё])
+  const mMin = t.match(/через\s+(\d{1,3}|пару)\s*мин(?:ут[а-яё]*)?(?![а-яё])/);
+  const mHour = t.match(/через\s+(\d{1,2}|пару)\s*час[а-яё]*(?![а-яё])/);
+  const mHalf = /через\s+пол-?\s*час(?:ик)?[а-яё]*(?![а-яё])/.test(t); // строго «полчаса», не «через час»
+  const mHourBare = !mHour && /через\s+час(?:ик)?[а-яё]*(?![а-яё])/.test(t); // «через час» без числа
+  if (mMin || mHour || mHalf || mHourBare) {
+    const now = new Date();
+    let addMin = 30;
+    if (mMin) addMin = mMin[1] === 'пару' ? 2 : parseInt(mMin[1], 10);
+    else if (mHour) addMin = (mHour[1] === 'пару' ? 2 : parseInt(mHour[1], 10)) * 60;
+    else if (mHalf) addMin = 30;
+    else if (mHourBare) addMin = 60;
+    if (mHour && /и\s+\d{1,2}\s*мин/.test(t)) { // «через 1 час 20 минут»
+      const mExtra = t.match(/и\s+(\d{1,2})\s*мин/);
+      if (mExtra) addMin += parseInt(mExtra[1], 10);
+    }
+    const target = new Date(now.getTime() + addMin * 60000);
+    return { date: formatDateKey(target), time: String(target.getHours()).padStart(2,'0') + ':' + String(target.getMinutes()).padStart(2,'0'), relAt: true };
+  }
   if (/сегодня/.test(t)) date = new Date(base);
   else if (/послезавтра/.test(t)) date = new Date(base.getTime() + 2 * dayMs);
   else if (/завтра/.test(t)) date = new Date(base.getTime() + dayMs);
@@ -1657,7 +1715,66 @@ function parseRelativeDateRu(text, baseDate) {
     else if (/дн(ё|е)м/.test(t)) time = '13:00';
     else if (/вечером/.test(t)) time = '18:00';
   }
-  return { date: date ? formatDateKey(date) : null, time: time && isValidTimeStr(time) ? time : null };
+  return { date: date ? formatDateKey(date) : null, time: time && isValidTimeStr(time) ? time : null, relAt: false };
+}
+
+// ── ЗАЩИТА ОТ ПРОШЛОГО (тайзоны): план от ИИ не может быть «уже полчаса назад» ──
+// Если дата+время получились в прошлом больше чем на 15 минут — переносим на завтра в то же время
+// (пользователь сказал «в 15:00», а уже 16:00 — значит на завтра в 15:00). Все эпохи — МСК (UTC+3).
+function sanitizeSchedule(dateKey, timeStr) {
+  if (!dateKey) return { date: null, time: null };
+  if (!timeStr) return { date: dateKey, time: null };
+  const epoch = new Date(dateKey + 'T' + timeStr + ':00+03:00').getTime();
+  if (!isNaN(epoch) && epoch < Date.now() - 15 * 60000) {
+    const d = parseDayKey(dateKey);
+    d.setDate(d.getDate() + 1);
+    return { date: formatDateKey(d), time: timeStr };
+  }
+  return { date: dateKey, time: timeStr };
+}
+
+// ── ЧИСТКА ТЕКСТА ЗАДАЧИ ОТ ФРАЗ СРОКА ──
+// Задача с датой/временем попадает в календарь (бейдж + свой день) — дублировать
+// «завтра в 15:00» / «через 10 минут» в самом тексте не нужно (просьба пользователя).
+// Чистим только однозначные фразы срока и только когда срок реально распознан.
+function stripSchedulingPhrases(text) {
+  const src = String(text || '').trim();
+  if (!src) return src;
+  let t;
+  try {
+    // границы слов вручную: \b в JS не знает кириллицу
+    const B = '(?<![а-яёa-zA-ZА-ЯЁ])', E = '(?![а-яёa-zA-ZА-ЯЁ])';
+    const patterns = [
+      // дни: сегодня / завтра / послезавтра
+      new RegExp('\\s*' + B + '(сегодня|сего\\s+дня|завтра|послезавтра)' + E, 'gi'),
+      // «через N минут/часов/дней», «через неделю/две недели/месяц», «через полчаса», «через пару часов»
+      // (\w не знает кириллицу — хвосты слов жрём через [а-яё])
+      new RegExp('\\s*' + B + 'через\\s+(?:пол-?\\s*час[а-яё]*|пару\\s+[а-яё]+|\\d+\\s*[а-яё]+|недел[а-яё]*|месяц[а-яё]*)' + E, 'gi'),
+      // «на следующей неделе»
+      new RegExp('\\s*' + B + 'на\\s+следующ(ей|ую)\\s+недел[а-яё]*' + E, 'gi'),
+      // «в пятницу/во вторник/в среду…» (винительный + именительный)
+      new RegExp('\\s*' + B + '(?:в|во)\\s+(понедельник|вторник|среду|среда|четверг|пятницу|пятница|субботу|суббота|воскресенье)' + E, 'gi'),
+      // «в 15:00», «к 15:00»
+      new RegExp('\\s*(?:в|к)\\s*\\d{1,2}:\\d{2}', 'gi'),
+      // «в 3 часа дня», «в 15 часов», «к 9 утра»
+      new RegExp('\\s*(?:в|во|к)\\s+\\d{1,2}\\s+(?:час(?:ов|а|ам)?)\\s*(?:утра|дня|вечера|ночи)?', 'gi'),
+      // «утром/днём/вечером/ночью»
+      new RegExp('\\s*' + B + '(утром|дн[её]м|вечером|ночью)' + E, 'gi'),
+    ];
+    t = src;
+    for (const re of patterns) t = t.replace(re, ' ');
+  } catch(e) { return src; } // старый WebView без lookbehind — оставляем текст как есть
+  t = t
+    .replace(/\s{2,}/g, ' ')
+    .replace(/\s+([,.!?;:])/g, '$1')
+    .replace(/[\s,;-]+$/g, '')
+    .replace(/^\s*[,,;-]\s*/g, '')
+    .trim();
+  // висячий предлог/союз в конце («позвонить маме в» → «позвонить маме»)
+  t = t.replace(/\s+(?:в|во|к|на|по|для|и|а|о|об|от|до|за|у)\s*$/i, '').trim();
+  if (!t || t.length < 2) return src; // почти всё вычистили — оставим оригинал
+  if (t === src) return src;
+  return t.charAt(0).toUpperCase() + t.slice(1);
 }
 
 async function classifyAndRouteNote(note) {
@@ -1666,9 +1783,11 @@ async function classifyAndRouteNote(note) {
   const todayKey = formatDateKey(new Date());
   const tomorrowKey = formatDateKey(new Date(Date.now() + 86400000));
   let isTask = null, aiDate = null, aiTime = null;
+  const nowMsk = new Date(Date.now() + 3 * 60 * 60 * 1000);
+  const mskTimeStr = String(nowMsk.getUTCHours()).padStart(2,'0') + ':' + String(nowMsk.getUTCMinutes()).padStart(2,'0');
   try {
     const resp = await callPolzaAI([
-      { role: 'system', content: 'Ты — классификатор записей пользователя. Ответь ТОЛЬКО валидным JSON без markdown: {"task": true/false, "date": "YYYY-MM-DD" или null, "time": "HH:MM" или null}. task: true — если запись это конкретное действие, которое предстоит сделать и потом можно поставить галочку (купить, позвонить, записаться, отправить, сделать, не забыть); false — мысль, факт, идея без действия, дневниковая запись, справка. Сомневаешься — true: лучше поставить в тудушку, чем потерять дело. date: если задача привязана ко дню — вычисли точную дату от СЕГОДНЯ (сегодня=' + todayKey + ', завтра=' + tomorrowKey + '; «через неделю» = +7 дней; «на следующей неделе» = ближайший понедельник; названный день недели = ближайший будущий). time: если названо время («в 15:00», «утром» = 09:00, «вечером» = 18:00) — HH:MM. Если это не задача или срок не назван — date/time = null.' },
+      { role: 'system', content: 'Ты — классификатор записей пользователя. Ответь ТОЛЬКО валидным JSON без markdown: {"task": true/false, "date": "YYYY-MM-DD" или null, "time": "HH:MM" или null}. task: true — если запись это конкретное действие, которое предстоит сделать и потом можно поставить галочку (купить, позвонить, записаться, отправить, сделать, не забыть); false — мысль, факт, идея без действия, дневниковая запись, справка. Сомневаешься — true: лучше поставить в тудушку, чем потерять дело. Все даты/времена — в московском поясе (МСК = UTC+3), СЕЙЧАС ' + mskTimeStr + ' МСК. date: если задача привязана ко дню — вычисли точную дату от СЕГОДНЯ (сегодня=' + todayKey + ', завтра=' + tomorrowKey + '; «через неделю» = +7 дней; «на следующей неделе» = ближайший понедельник; названный день недели = ближайший будущий). time: если названо время («в 15:00», «утром» = 09:00, «вечером» = 18:00) — HH:MM; «через N минут/часов» = текущее время ' + mskTimeStr + ' + N (НИКОГДА не ставь время раньше текущего). Если это не задача или срок не назван — date/time = null.' },
       { role: 'user', content: note.text.slice(0, 300) }
     ], { max_tokens: 60, temperature: 0 });
     const m = resp && resp.match(/\{[\s\S]*\}/);
@@ -1683,14 +1802,23 @@ async function classifyAndRouteNote(note) {
   } catch(e) { console.warn('[Classify] AI failed, fallback to heuristic:', e); }
   if (isTask === null) isTask = heuristicIsTask(note.text); // фолбэк без ИИ
   if (!isTask) return; // заметка — остаётся в истории, ничего не делаем
-  // дата/время: от ИИ, иначе — локальный фолбэк-парсер относительных дат
+  // дата/время: «через N минут/часов» — ТОЛЬКО локальный расчёт (ИИ ошибается с поясами);
+  // иначе — от ИИ, с локальным фолбэком относительных дат
+  const heur = parseRelativeDateRu(note.text);
   let scheduledDate = aiDate, scheduledTime = aiTime;
-  if (scheduledDate && !scheduledTime || !scheduledDate) {
-    const heur = parseRelativeDateRu(note.text);
-    if (!scheduledDate && heur.date) scheduledDate = heur.date;
-    if (scheduledDate && !scheduledTime && heur.time) scheduledTime = heur.time;
+  if (heur.relAt) {
+    scheduledDate = heur.date;
+    scheduledTime = heur.time;
+  } else {
+    if (scheduledDate && !scheduledTime || !scheduledDate) {
+      if (!scheduledDate && heur.date) scheduledDate = heur.date;
+      if (scheduledDate && !scheduledTime && heur.time) scheduledTime = heur.time;
+    }
   }
   if (!scheduledDate) scheduledTime = null;
+  // защита от прошлого: ИИ насчитал «уже прошло» → переносим на завтра в то же время
+  const sane = sanitizeSchedule(scheduledDate, scheduledTime);
+  scheduledDate = sane.date; scheduledTime = sane.time;
   // перепроверка актуального состояния (могли изменить с другого устройства пока думали)
   const fresh = notes.find(n => n.id === note.id);
   if (!fresh || fresh.inTodo === true || fresh.done) return;
@@ -1700,10 +1828,16 @@ async function classifyAndRouteNote(note) {
     const patch = { inTodo: true, todoOrder };
     if (scheduledDate) patch.scheduledDate = scheduledDate; // задача с датой → в календарь
     if (scheduledTime) patch.scheduledTime = scheduledTime;
+    // текст чистим от фраз срока («завтра в 15:00») — срок уже виден в бейдже/календаре
+    if (scheduledDate || scheduledTime) {
+      const cleaned = stripSchedulingPhrases(note.text);
+      if (cleaned && cleaned !== note.text) patch.text = cleaned;
+    }
     await updateDoc(uDocRef('notes', note.id), patch);
     await loadNotes();
     renderCalendar(); // календарь видит задачу с датой сразу
-    const short = note.text.length > 30 ? note.text.slice(0, 30) + '…' : note.text;
+    const finalText = patch.text || note.text;
+    const short = finalText.length > 30 ? finalText.slice(0, 30) + '…' : finalText;
     const when = scheduledDate ? ' на ' + scheduledDate.slice(8,10) + '.' + scheduledDate.slice(5,7) + (scheduledTime ? ' ' + scheduledTime : '') : '';
     setStatus('✅ Определил как задачу — поставил в тудушку: «' + short + '»' + when, 4000);
   } catch(e) { console.warn('[Classify] failed to add to todo:', e); }
@@ -1997,10 +2131,35 @@ function openEdit(id) {
   document.getElementById('modal-text').value = n.text;
   editingSelectedTag = n.tag || null;
   renderModalTagPicker();
+  // срок — универсальное редактирование из любого раздела (история/тудушка/календарь/фокус)
+  const dateInp = document.getElementById('modal-date');
+  const timeSel = document.getElementById('modal-time');
+  if (dateInp && timeSel) {
+    dateInp.value = n.scheduledDate ? n.scheduledDate.slice(0, 10) : '';
+    const st = n.scheduledTime || '';
+    let opts = '<option value="">Без времени</option>';
+    let matched = false;
+    for (let h = 0; h < 24; h++) {
+      const hh = String(h).padStart(2, '0') + ':00';
+      const sel = st === hh;
+      if (sel) matched = true;
+      opts += `<option value="${hh}" ${sel ? 'selected' : ''}>${hh}</option>`;
+    }
+    if (st && !matched) opts += `<option value="${st}" selected>${st.slice(0, 5)}</option>`; // нестандартное время (HH:MM)
+    timeSel.innerHTML = opts;
+  }
   // Загружаем AI-связи для этой заметки
   renderModalLinks(id);
   document.getElementById('modal').classList.add('open');
 }
+
+function clearModalSchedule() {
+  const d = document.getElementById('modal-date');
+  const t = document.getElementById('modal-time');
+  if (d) d.value = '';
+  if (t) t.value = '';
+}
+window.clearModalSchedule = clearModalSchedule;
 
 async function renderModalLinks(noteId) {
   const section = document.getElementById('modal-links-section');
@@ -2057,10 +2216,21 @@ window.closeModal = closeModal;
 async function saveEdit() {
   const text = document.getElementById('modal-text').value.trim();
   if (!text || !editingId) return;
+  const dateInp = document.getElementById('modal-date');
+  const timeSel = document.getElementById('modal-time');
+  let dateVal = dateInp && dateInp.value ? dateInp.value : null;
+  let timeVal = timeSel && timeSel.value ? timeSel.value : null;
+  if (!dateVal) timeVal = null; // время без даты не храним — как весь календарь приложения
   try {
-    await updateDoc(uDocRef('notes', editingId), { text, tag: editingSelectedTag });
+    await updateDoc(uDocRef('notes', editingId), {
+      text,
+      tag: editingSelectedTag,
+      scheduledDate: dateVal,
+      scheduledTime: timeVal
+    });
     closeModal();
     await loadNotes();
+    renderCalendar(); // срок мог измениться — календарь сразу перерисуется
   } catch(e) { alert('Ошибка: ' + e.message); }
 }
 window.saveEdit = saveEdit;
@@ -2388,8 +2558,11 @@ function getMonthDate(offset = 0) {
 }
 
 function changeCalendarMonth(direction) {
-  if (direction === 0) calendarMonthOffset = 0;
-  else calendarMonthOffset += direction;
+  if (direction === 0) {
+    calendarMonthOffset = 0;
+    // «Сегодня» — не просто вернуть месяц, а реально выбрать сегодняшний день
+    calendarSelectedKey = formatDateKey(new Date());
+  } else calendarMonthOffset += direction;
   renderCalendar();
 }
 window.changeCalendarMonth = changeCalendarMonth;
@@ -2439,7 +2612,8 @@ function calTaskCard(t, opts = {}) {
       <div style="font-size:12.5px;color:rgba(255,255,255,0.9);line-height:1.4;word-break:break-word;font-family:Inter,sans-serif;">${escHtml(t.text)}${tagBadge}</div>
     </div>
     ${whenBadge}
-    <button onclick="openScheduleModal('${t.id}')" title="Дата и время" style="flex-shrink:0;background:rgba(255,200,50,0.1);border:0.5px solid rgba(255,200,50,0.25);color:rgba(255,210,80,0.85);border-radius:6px;padding:3px 6px;font-size:11px;cursor:pointer;font-family:Inter,sans-serif;">📅</button>
+    <button onclick="openEdit('${t.id}');event.stopPropagation();" title="Редактировать" style="flex-shrink:0;background:rgba(255,255,255,0.05);border:0.5px solid rgba(255,255,255,0.12);color:rgba(255,255,255,0.75);border-radius:6px;padding:3px 6px;font-size:11px;cursor:pointer;font-family:Inter,sans-serif;">✏️</button>
+    <button onclick="openScheduleModal('${t.id}');event.stopPropagation();" title="Дата и время" style="flex-shrink:0;background:rgba(255,200,50,0.1);border:0.5px solid rgba(255,200,50,0.25);color:rgba(255,210,80,0.85);border-radius:6px;padding:3px 6px;font-size:11px;cursor:pointer;font-family:Inter,sans-serif;">📅</button>
   </div>`;
 }
 
@@ -2520,6 +2694,7 @@ function renderCalendar() {
     ? 'Тяни верхнюю задачу из очереди на день — очередь сдвинется сама'
     : `${tasks.length} задач · ${tasks.filter(t => scheduledOf(t)).length} распределено`;
   bindCalDrag();
+  bindCalSwipe();
 }
 
 function calHourChipsHtml() {
@@ -2577,6 +2752,34 @@ function onCalPointerDown(e) {
   };
 }
 
+// ── Свайп месяцев: проводи пальцем по календарю влево/вправо — месяц листается ──
+// Не путается с драгом задач (long-press) и вертикальным скроллом: свайп = быстрый горизонтальный жест.
+let calSwipe = null;
+let calLastDragEnd = 0; // только что бросили карточку — не считать отпускание свайпом
+
+function bindCalSwipe() {
+  const list = document.getElementById('calendar-list');
+  if (!list || list.dataset.swipeBound) return;
+  list.dataset.swipeBound = '1';
+  list.addEventListener('touchstart', (e) => {
+    if (e.touches.length !== 1) { calSwipe = null; return; }
+    const t = e.touches[0];
+    calSwipe = { x: t.clientX, y: t.clientY, time: Date.now() };
+  }, { passive: true });
+  list.addEventListener('touchend', (e) => {
+    if (!calSwipe) return;
+    const s = calSwipe;
+    calSwipe = null;
+    if (calDrag && calDrag.started) return; // это был перетаскивание задачи
+    if (Date.now() - calLastDragEnd < 400) return; // только что завершили драг — не путаем
+    const t = e.changedTouches[0];
+    const dx = t.clientX - s.x, dy = t.clientY - s.y;
+    const adx = Math.abs(dx), ady = Math.abs(dy);
+    if (adx < 60 || adx < ady * 1.5 || Date.now() - s.time > 900) return; // это скролл/тап, не свайп
+    changeCalendarMonth(dx < 0 ? 1 : -1); // влево — следующий месяц, вправо — предыдущий
+  });
+}
+
 function startCalDrag() {
   if (!calDrag) return;
   calDrag.started = true;
@@ -2616,6 +2819,7 @@ async function onCalPointerUp(e) {
   const d = calDrag;
   calDrag = null;
   if (d.started) {
+    calLastDragEnd = Date.now(); // свайп-детектор не спутает отпускание карточки с жестом
     calSuppressClick = true;
     setTimeout(() => { calSuppressClick = false; }, 350);
     const el = document.elementFromPoint(e.clientX, e.clientY);
@@ -4963,6 +5167,7 @@ function renderFocusCard() {
         <span style="font-size:15px;flex-shrink:0;">🎯</span>
         <span class="focus-text">${escHtml(top.text)}</span>
         ${restCount > 0 ? `<span class="focus-next-hint">+${restCount}</span>` : ''}
+        <button class="focus-done-btn" onclick="openEdit('${top.id}');event.stopPropagation();" title="Редактировать" style="font-size:12px;">✏️</button>
         <button class="focus-done-btn" onclick="toggleDone('${top.id}', false)">✓</button>
         <div class="focus-swipe-hint">Следующая →</div>
       </div>`;
@@ -5502,6 +5707,7 @@ function renderTodo() {
         <div class="note-text">${escHtml(n.text)}</div>
         <div class="note-actions">
           <button class="note-btn note-done" onclick="toggleDone('${n.id}', false)">✓ Выполнено</button>
+          <button class="note-btn note-edit" onclick="openEdit('${n.id}')">✏️ Текст</button>
           <button class="note-btn note-edit" onclick="openScheduleModal('${n.id}')">📅 Дата</button>
           <button class="note-btn note-undone" onclick="toggleTodo('${n.id}', true)">✕ Убрать</button>
         </div>
@@ -5556,7 +5762,7 @@ function goTo(screen) {
   }
   if (screen === 'calendar') {
     renderCalendar();
-    showHintOnce('calendar_intro','📅 Тап на день — план дня. 🎯 Раскидать — очередь конвейером: тяни верхнюю на день. Долгое нажатие на задачу — перетащить на день или час.','calendar-hint', () => notes.filter(n => n.inTodo).length >= 1);
+    showHintOnce('calendar_intro2','📅 Тап на день — план дня. Свайп по календарю влево/вправо — листать месяцы. ✏️ на карточке — редактировать текст и срок. 🎯 Раскидать — конвейер: тяни верхнюю задачу на день. Долгое нажатие на задачу — перетащить.','calendar-hint', () => notes.filter(n => n.inTodo).length >= 1);
   }
   if (screen === 'wishes') {
     renderWishes();
@@ -5597,32 +5803,21 @@ document.getElementById('cap-send').addEventListener('click', () => {
   saveNote(text, 'text');
 });
 
-// Голосовая запись — по удержанию: нажал/зажал = идёт запись, отпустил = распознаётся и сохраняется само.
-// Реагируем и на touch (телефон), и на mouse (для теста в браузере на компьютере).
-function bindHoldToRecord(el, onStart, onStop) {
-  let pressed = false;
-  const onDown = (e) => {
-    if (pressed) return;
-    pressed = true;
-    e.preventDefault();
-    e.stopPropagation();
-    onStart();
-  };
-  const onUp = () => {
-    if (!pressed) return;
-    pressed = false;
-    onStop();
-  };
-  el.addEventListener('touchstart', onDown, { passive: false });
-  el.addEventListener('touchend', onUp);
-  el.addEventListener('touchcancel', onUp);
-  el.addEventListener('mousedown', onDown);
-  el.addEventListener('mouseup', onUp);
-  el.addEventListener('mouseleave', onUp); // увели палец/курсор — считаем что отпустили
+// Голосовая запись — модель «нажал — говоришь — нажал — отправилось»:
+// первый клик включает запись, второй — останавливает и отправляет на распознавание.
+// Одинаково работает на главном экране (микрофон у поля + большая кнопка) и в чате с ИИ.
+function bindPressToRecord(el, isActive, onStart, onStop) {
   el.style.webkitTouchCallout = 'none';
   el.style.userSelect = 'none';
+  el.style.touchAction = 'manipulation'; // без двойного тапа/зума между нажатиями
+  el.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (isActive()) onStop();
+    else onStart();
+  });
 }
-bindHoldToRecord(document.getElementById('cap-mic'), startRecording, stopRecording);
+bindPressToRecord(document.getElementById('cap-mic'), () => isRecording, startRecording, stopRecording);
 
 document.getElementById('cap-clear').addEventListener('click', () => {
   document.getElementById('cap-input').value = '';
@@ -5630,7 +5825,7 @@ document.getElementById('cap-clear').addEventListener('click', () => {
   showClear();
 });
 
-bindHoldToRecord(document.getElementById('chaos-btn'), startRecording, stopRecording);
+bindPressToRecord(document.getElementById('chaos-btn'), () => isRecording, startRecording, stopRecording);
 
 document.getElementById('cap-input').addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && !e.shiftKey) {
@@ -5750,12 +5945,12 @@ function buildChatTools() {
       parameters: {
         type: 'object',
         properties: {
-          text: { type: 'string', description: 'Текст записи, который увидит пользователь и который сохранится в базу' },
+          text: { type: 'string', description: 'Текст записи, который увидит пользователь и который сохранится в базу. Для задач с датой/временем — БЕЗ слов о сроке (не пиши «завтра», «в 15:00», «через 10 минут»): срок передаётся полями date/time' },
           tag: { type: 'string', enum: tagLabels, description: 'Сфера жизни, к которой относится запись' },
           wish: { type: 'string', description: 'shortTag желания из раздела ЖЕЛАНИЯ — копируй ТОЧНО как в [квадратных скобках], не переводи и не транслитерируй. Заполняй, если запись относится к желанию — запись привяжется к нему и получит его тег автоматически' },
           to_todo: { type: 'boolean', description: 'true — это ЗАДАЧА: конкретное действие, которое предстоит сделать (купить, позвонить, отправить, записаться, сделать) — сохранится сразу и попадёт в тудушку автоматически. false или пропуск — это ЗАМЕТКА: мысль, факт, идея, дневниковая запись — добавится после подтверждения пользователя' },
-          date: { type: 'string', description: 'Дата выполнения задачи YYYY-MM-DD, если из слов пользователя ясно когда (сегодня, завтра, через неделю, в пятницу, на следующей неделе). Вычисли точную дату от текущей даты (см. СЕГОДНЯ в контексте). «На следующей неделе» = ближайший понедельник. Если срок не назван — не заполняй' },
-          time: { type: 'string', description: 'Время выполнения HH:MM, если пользователь назвал время («в 15:00», «в три часа дня»). Если время не названо — не заполняй' }
+          date: { type: 'string', description: 'Дата выполнения задачи YYYY-MM-DD, если из слов пользователя ясно когда (сегодня, завтра, через неделю, в пятницу, на следующей неделе). Вычисли точную дату от текущей даты (см. СЕГОДНЯ в контексте). «На следующей неделе» = ближайший понедельник. «Через N минут/часов» = сегодняшняя дата. Если срок не назван — не заполняй' },
+          time: { type: 'string', description: 'Время выполнения HH:MM в московском поясе, если пользователь назвал время («в 15:00», «в три часа дня») или сказал «через N минут/часов» — тогда считай от строки «Сейчас» в контексте. НИКОГДА не ставь время в прошлом. Если время не названо — не заполняй' }
         },
         required: ['text','tag']
       }
@@ -6739,10 +6934,13 @@ function getBaseInstructions() {
 - Сомневаешься — выбирай ЗАДАЧУ: лучше поставить в тудушку, чем потерять дело
 
 ДАТЫ ЗАДАЧ (поля date и time у propose_note):
+- Все даты/времена — московский пояс (МСК = UTC+3); текущее время указано в строке «Сейчас» в начале контекста
 - Пользователь назвал срок («сегодня», «завтра», «через неделю», «в пятницу», «на следующей неделе») — вычисли точную дату от СЕГОДНЯ (см. контекст выше) и передай в поле date в формате YYYY-MM-DD
 - Правила пересчёта: «сегодня» → сегодня; «завтра» → +1 день; «послезавтра» → +2; «через N дней» → +N; «через неделю» → +7; «через месяц» → +30; «в понедельник…воскресенье» → ближайший будущий такой день недели; «на следующей неделе» → ближайший понедельник (пользователь потом перенесёт, если что); «25 числа» → ближайшее будущее 25-е число
-- Время («в 15:00», «в три часа дня», «утром», «вечером») — в поле time в формате HH:MM (утром → 09:00, днём → 13:00, вечером → 18:00). Не названо — не заполняй
+- ОТНОСИТЕЛЬНОЕ ВРЕМЯ («через 10 минут», «через 2 часа», «через полчаса») — считай от строки «Сейчас» (МСК): «через 10 минут» при 14:05 → время 14:15 того же дня. НИКОГДА не ставь время раньше текущего
+- Время («в 15:00», «в три часа дня», «утром», «вечером») — в поле time в формате HH:MM (утром → 09:00, днём → 13:00, вечером → 18:00). Не названо — не заполняй. Если названное время сегодня уже прошло — поставь на завтра в это же время
 - Если посчитанная дата уже в прошлом — возьми ближайшую будущую (следующий такой день)
+- ТЕКСТ ЗАДАЧИ — БЕЗ даты и времени: не пиши в тексте «завтра», «в 15:00», «через 10 минут», «в пятницу» — срок передаётся ТОЛЬКО полями date/time (приложение само покажет его в календаре и бейдже). Пиши только суть: не «Позвонить маме завтра в 15:00», а «Позвонить маме» + date/time
 - Задача с датой автоматически попадёт в календарь на этот день — напиши об этом, если поставил дату
 
 КОГДА ВЫЗЫВАТЬ propose_note (добавить запись):
@@ -7294,16 +7492,33 @@ async function sendChatMessage(userText) {
         const minOrder = notes.reduce((m, n) => n.inTodo ? Math.min(m, n.todoOrder ?? Infinity) : m, Infinity);
         todoOrder = minOrder === Infinity ? Date.now() : minOrder - 1;
       }
-      // дата/время от ИИ: валидируем формат, без даты время не сохраняем
+      // дата/время: «через N минут/часов» считаем ТОЛЬКО локально (ИИ ошибается с поясами);
+      // остальное — от ИИ с валидацией, без даты время не сохраняем
       let scheduledDate = isValidDateStr(proposedNote.date) ? proposedNote.date : null;
       let scheduledTime = scheduledDate && isValidTimeStr(proposedNote.time) ? proposedNote.time : null;
+      const lastUserText = [...chatHistory].reverse().find(m => m.role === 'user');
+      const relSrc = (proposedNote.text || '') + ' ' + (lastUserText ? lastUserText.content : '');
+      const relParsed = parseRelativeDateRu(relSrc);
+      if (relParsed.relAt) {
+        scheduledDate = relParsed.date;
+        scheduledTime = relParsed.time;
+      }
+      const sane = sanitizeSchedule(scheduledDate, scheduledTime); // защита от прошлого (тайзоны)
+      scheduledDate = sane.date;
+      scheduledTime = sane.time;
+      // текст задачи чистим от фраз срока — срок уже в полях date/time (виден в календаре и бейдже)
+      let noteText = proposedNote.text;
+      if (scheduledDate || scheduledTime) {
+        const cleaned = stripSchedulingPhrases(noteText);
+        if (cleaned) noteText = cleaned;
+      }
       const whenStr = scheduledDate ? ' · 📅 ' + scheduledDate.slice(8,10) + '.' + scheduledDate.slice(5,7) + (scheduledTime ? ' ' + scheduledTime : '') : '';
       // ЗАДАЧА (to_todo) — ИИ сам классифицировал: сохраняем сразу, без кнопок «Да/Нет»
       if (inTodo) {
         try {
-          await addNoteFromChat({ text: proposedNote.text, tag, wishId, inTodo: true, todoOrder, scheduledDate, scheduledTime });
+          await addNoteFromChat({ text: noteText, tag, wishId, inTodo: true, todoOrder, scheduledDate, scheduledTime });
           const okText = (replyText ? replyText + '\n\n' : '') +
-            '✅ Задача добавлена в тудушку: «' + proposedNote.text + '»' + (tag ? ' [' + tag + ']' : '') + wishNote + whenStr + (scheduledDate ? ' — поставил в календарь.' : '.');
+            '✅ Задача добавлена в тудушку: «' + noteText + '»' + (tag ? ' [' + tag + ']' : '') + wishNote + whenStr + (scheduledDate ? ' — поставил в календарь.' : '.');
           await addChatMessage('assistant', okText);
         } catch(e) {
           await addChatMessage('assistant', 'Ошибка: ' + e.message);
@@ -7311,8 +7526,8 @@ async function sendChatMessage(userText) {
       } else {
         // ЗАМЕТКА — как раньше: подтверждение «Да/Нет»
         const confirmText = (replyText ? replyText + '\n\n' : '') +
-          'Добавить в базу: «' + proposedNote.text + '»' + (tag ? ' [' + tag + ']' : '') + wishNote + '?';
-        await addChatMessage('assistant', confirmText, { note: { text: proposedNote.text, tag, wishId, inTodo: false, todoOrder: null, scheduledDate, scheduledTime }, resolved: false });
+          'Добавить в базу: «' + noteText + '»' + (tag ? ' [' + tag + ']' : '') + wishNote + '?';
+        await addChatMessage('assistant', confirmText, { note: { text: noteText, tag, wishId, inTodo: false, todoOrder: null, scheduledDate, scheduledTime }, resolved: false });
       }
     } else {
       await addChatMessage('assistant', replyText || 'Хорошо.');
@@ -7519,22 +7734,39 @@ window.importToggleAll = importToggleAll;
 window.closeImportModal = closeImportModal;
 window.confirmImport = confirmImport;
 
-// голос в чате — та же модель удержания: зажал, сказал, отпустил — само распознаётся и уходит в чат
+// голос в чате — та же модель «нажал — говоришь — нажал — отправилось», что и на главном экране
 let chatActiveRecorder = null;
 let chatActiveStream = null;
 let isChatRecording = false;
+let pendingStopChat = false; // «отправить» нажали, пока микрофон ещё договаривался (getUserMedia)
+
+const CHAT_SUBTITLE_DEFAULT = 'Готов помочь';
 
 async function startChatRecording() {
   if (isChatRecording) return;
+  isChatRecording = true; // синхронно до await — фикс гонки быстрого тапа
+  pendingStopChat = false;
+  document.getElementById('chat-mic').classList.add('recording');
+  document.getElementById('chat-subtitle').textContent = '🎙️ Слушаю... нажми ещё раз — отправлю';
   try {
     chatActiveStream = await navigator.mediaDevices.getUserMedia({ audio: true });
   } catch(e) {
+    isChatRecording = false;
+    document.getElementById('chat-mic').classList.remove('recording');
     document.getElementById('chat-subtitle').textContent = '⚠️ Нет доступа к микрофону';
+    setTimeout(() => { document.getElementById('chat-subtitle').textContent = CHAT_SUBTITLE_DEFAULT; }, 2500);
     return;
   }
-  isChatRecording = true;
-  document.getElementById('chat-mic').classList.add('recording');
-  document.getElementById('chat-subtitle').textContent = '🎙️ Слушаю...';
+  if (!isChatRecording || pendingStopChat) {
+    // пока запрашивали микрофон, пользователь уже нажал «отправить» — молча гасим
+    chatActiveStream.getTracks().forEach(t => t.stop());
+    chatActiveStream = null;
+    pendingStopChat = false;
+    isChatRecording = false;
+    document.getElementById('chat-mic').classList.remove('recording');
+    document.getElementById('chat-subtitle').textContent = CHAT_SUBTITLE_DEFAULT;
+    return;
+  }
   const mimeType = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : '';
   chatActiveRecorder = mimeType ? new MediaRecorder(chatActiveStream, { mimeType }) : new MediaRecorder(chatActiveStream);
   const chunks = [];
@@ -7550,8 +7782,13 @@ async function startChatRecording() {
 }
 
 function stopChatRecording() {
+  if (!isChatRecording) return;
+  if (!chatActiveRecorder || chatActiveRecorder.state === 'inactive') {
+    pendingStopChat = true; // микрофон ещё готовится — остановимся сразу после старта
+    return;
+  }
+  isChatRecording = false;
   document.getElementById('chat-mic').classList.remove('recording');
-  if (!chatActiveRecorder || chatActiveRecorder.state === 'inactive') { isChatRecording = false; return; }
   document.getElementById('chat-subtitle').textContent = '⏳ Распознаю...';
   chatActiveRecorder.stop(); // onstop асинхронно вызовет handleChatRecordedAudio
 }
@@ -7559,21 +7796,21 @@ function stopChatRecording() {
 async function handleChatRecordedAudio(blob) {
   try {
     if (blob.size < 1000) { // случайное короткое касание
-      document.getElementById('chat-subtitle').textContent = 'Готов помочь';
+      document.getElementById('chat-subtitle').textContent = CHAT_SUBTITLE_DEFAULT;
       isChatRecording = false;
       return;
     }
     const text = await transcribeAudio(blob);
-    document.getElementById('chat-subtitle').textContent = 'Готов помочь';
+    document.getElementById('chat-subtitle').textContent = CHAT_SUBTITLE_DEFAULT;
     if (!text) {
       document.getElementById('chat-subtitle').textContent = '🤔 Не расслышал, попробуй ещё раз';
-      setTimeout(() => { document.getElementById('chat-subtitle').textContent = 'Готов помочь'; }, 2000);
+      setTimeout(() => { document.getElementById('chat-subtitle').textContent = CHAT_SUBTITLE_DEFAULT; }, 2000);
     } else {
       await sendChatMessage(text); // распознанное сразу уходит в чат как обычное сообщение
     }
   } catch(e) {
     document.getElementById('chat-subtitle').textContent = '⚠️ Ошибка распознавания';
-    setTimeout(() => { document.getElementById('chat-subtitle').textContent = 'Готов помочь'; }, 2500);
+    setTimeout(() => { document.getElementById('chat-subtitle').textContent = CHAT_SUBTITLE_DEFAULT; }, 2500);
   } finally {
     isChatRecording = false;
   }
@@ -7584,7 +7821,7 @@ function chatAutoResize() {
   ta.style.height='auto';
   ta.style.height=Math.min(ta.scrollHeight,120)+'px';
 }
-bindHoldToRecord(document.getElementById('chat-mic'), startChatRecording, stopChatRecording);
+bindPressToRecord(document.getElementById('chat-mic'), () => isChatRecording, startChatRecording, stopChatRecording);
 
 document.getElementById('chat-send').addEventListener('click',()=>{
   const text=document.getElementById('chat-input').value.trim();
@@ -8102,6 +8339,24 @@ document.getElementById('devchat-input').addEventListener('input', devAutoResize
 document.getElementById('adminchat-send').addEventListener('click', sendAdminReply);
 document.getElementById('adminchat-input').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendAdminReply(); } });
 document.getElementById('adminchat-input').addEventListener('input', adminAutoResize);
+
+// ── TEST/DEBUG HOOKS ──
+// E2E-скрипты (Playwright) живут вне module-scope — даём им точечный доступ к внутренностям.
+// В UI не видны, на продакшн-поведение не влияют.
+window.__t = {
+  parseRelativeDateRu,
+  stripSchedulingPhrases,
+  sanitizeSchedule,
+  formatDateKey,
+  notes: () => notes,
+  calendar: () => ({ offset: calendarMonthOffset, sel: calendarSelectedKey }),
+  setCalendarSel: (k) => { calendarSelectedKey = k; },
+  addNoteFromChat,
+  loadNotes,
+  renderCalendar,
+  deleteDoc,
+  uDocRef,
+};
 
 // ── REGISTER PROMPT — показываем после 10 заметок или 1 желания ──
 // Пользователь остаётся анонимом, но мягко предлагаем зарегистрироваться
