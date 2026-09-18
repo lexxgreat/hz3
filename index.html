@@ -98,29 +98,45 @@ body{background:#060918;font-family:'Inter',sans-serif;display:flex;justify-cont
 .main-sub{font-size:12px;color:rgba(255,255,255,0.35)}
 
 .focus-card{
-  margin:0 16px 10px;padding:9px 12px;border-radius:14px;
-  background:linear-gradient(135deg, rgba(108,71,255,0.14), rgba(0,212,255,0.08));
-  border:1px solid rgba(108,71,255,0.35);flex-shrink:0;
-  display:flex;align-items:center;gap:10px;
+  margin:2px 14px 10px;padding:13px 15px 12px;border-radius:20px;
+  border:1.5px solid rgba(124,93,255,0.55);flex-shrink:0;
+  display:flex;align-items:center;gap:12px;
   position:relative;overflow:hidden;touch-action:pan-y;
 }
 .focus-card[data-id]{cursor:pointer;}
-.focus-swiping{will-change:transform;box-shadow:0 6px 24px rgba(108,71,255,0.25);z-index:5;}
+.focus-swiping{will-change:transform;box-shadow:0 14px 44px rgba(108,71,255,0.5);z-index:5;}
 .focus-swipe-hint{
-  position:absolute;right:14px;top:50%;transform:translateY(-50%);
-  font-size:11px;font-weight:700;letter-spacing:0.3px;
+  position:absolute;right:16px;top:50%;transform:translateY(-50%);
+  font-size:12px;font-weight:700;letter-spacing:0.3px;
   color:rgba(0,230,120,0.95);opacity:0;pointer-events:none;white-space:nowrap;
-  text-shadow:0 0 12px rgba(0,0,0,0.5);
+  text-shadow:0 0 12px rgba(0,0,0,0.6);z-index:2;
 }
-.focus-text{flex:1;font-size:12.5px;color:rgba(255,255,255,0.9);line-height:1.3;font-weight:500;
-  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.focus-badge{
+  flex-shrink:0;width:46px;height:46px;border-radius:15px;
+  display:flex;align-items:center;justify-content:center;font-size:22px;
+  background:linear-gradient(135deg,#8B6BFF,#5A35E8);
+  box-shadow:0 0 20px rgba(108,71,255,0.5), inset 0 1px 0 rgba(255,255,255,0.28);
+  position:relative;z-index:1;
+}
+.focus-body{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px;position:relative;z-index:1;}
+.focus-eyebrow{font-size:9.5px;font-weight:700;letter-spacing:1.8px;text-transform:uppercase;color:rgba(197,182,255,0.9);}
+.focus-queue{color:rgba(0,212,255,0.85);letter-spacing:0.6px;}
+.focus-text{font-size:16px;font-weight:700;color:rgba(255,255,255,0.97);line-height:1.3;
+  display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;
+  overflow-wrap:anywhere;white-space:normal;}
+.focus-actions{display:flex;align-items:center;margin-top:4px;}
 .focus-done-btn{
-  flex-shrink:0;padding:6px 12px;border-radius:99px;border:none;background:rgba(0,200,100,0.18);
-  color:rgba(0,230,120,0.95);font-size:11.5px;font-weight:600;cursor:pointer;
+  padding:7px 15px;border-radius:99px;border:none;
+  background:linear-gradient(135deg,rgba(0,210,120,0.30),rgba(0,170,95,0.20));
+  color:rgba(130,255,185,0.98);font-size:12.5px;font-weight:700;cursor:pointer;
   font-family:'Inter',sans-serif;transition:all 0.2s;white-space:nowrap;
+  box-shadow:inset 0 0 0 1px rgba(0,230,140,0.30), 0 2px 10px rgba(0,200,120,0.18);
 }
-.focus-done-btn:hover{background:rgba(0,200,100,0.3)}
-.focus-next-hint{font-size:10px;color:rgba(255,255,255,0.3);flex-shrink:0;white-space:nowrap;}
+.focus-done-btn:hover{background:rgba(0,200,100,0.4)}
+.focus-next-hint{font-size:16px;color:rgba(255,255,255,0.5);flex-shrink:0;position:relative;z-index:1;}
+.focus-card.focus-soft{padding:11px 15px;}
+.focus-card.focus-soft .focus-badge{width:38px;height:38px;border-radius:12px;font-size:18px;}
+.focus-card.focus-soft .focus-text{font-size:13.5px;font-weight:600;}
 
 .celebrate-overlay{
   position:absolute;inset:0;z-index:60;display:flex;align-items:center;justify-content:center;
@@ -563,6 +579,34 @@ body.cal-dragging,body.cal-dragging *{touch-action:none!important;user-select:no
   .chat-input-wrap{background:#0A0C22}
 }
 
+/* ── HERO-карточка фокуса (v71): то, на чём сейчас сосредоточение — крупнее и заметнее всех ── */
+.focus-card{
+  background:
+    radial-gradient(130% 170% at 90% -40%, rgba(0,212,255,0.17), transparent 56%),
+    linear-gradient(135deg, rgba(108,71,255,0.36), rgba(84,54,205,0.24) 46%, rgba(40,24,100,0.34));
+  border-color:rgba(142,112,255,0.62);
+  box-shadow:0 12px 34px rgba(108,71,255,0.30), 0 3px 12px rgba(0,0,0,0.42), inset 0 1px 0 rgba(255,255,255,0.10);
+  animation:focusBreath 3.8s ease-in-out infinite;
+}
+@keyframes focusBreath{
+  0%,100%{box-shadow:0 12px 34px rgba(108,71,255,0.30), 0 3px 12px rgba(0,0,0,0.42), inset 0 1px 0 rgba(255,255,255,0.10)}
+  50%{box-shadow:0 15px 46px rgba(108,71,255,0.50), 0 0 28px rgba(0,212,255,0.13), 0 3px 12px rgba(0,0,0,0.42), inset 0 1px 0 rgba(255,255,255,0.13)}
+}
+.focus-card::before{
+  content:'';position:absolute;top:-10%;bottom:-10%;left:-75%;width:52%;
+  background:linear-gradient(100deg,transparent,rgba(255,255,255,0.085) 45%,rgba(0,212,255,0.06) 55%,transparent);
+  transform:skewX(-16deg);animation:focusSheen 7s ease-in-out infinite;pointer-events:none;
+}
+@keyframes focusSheen{0%,52%{left:-75%}88%,100%{left:135%}}
+.focus-card::after{
+  content:'';position:absolute;inset:0;border-radius:inherit;pointer-events:none;
+  background:radial-gradient(75% 95% at 16% 0%, rgba(255,255,255,0.10), transparent 56%);
+}
+@media (prefers-reduced-motion:reduce){
+  .focus-card{animation:none}
+  .focus-card::before{animation:none;display:none}
+}
+
 /* ── Неоновый пульс микрофона при записи ── */
 @keyframes micPulse{0%,100%{box-shadow:0 0 14px rgba(0,212,255,0.3)}50%{box-shadow:0 0 26px rgba(0,212,255,0.75),0 0 64px rgba(108,71,255,0.4)}}
 
@@ -715,6 +759,21 @@ body[data-theme="dream"] .note-card,body[data-theme="dream"] .focus-card{
   border-color:rgba(203,166,247,0.22);
   box-shadow:0 5px 22px rgba(8,3,24,0.5);
 }
+body[data-theme="dream"] .focus-card{
+  background:
+    radial-gradient(130% 170% at 90% -40%, rgba(240,171,252,0.15), transparent 56%),
+    linear-gradient(135deg, rgba(217,70,239,0.32), rgba(168,85,247,0.22) 46%, rgba(88,28,135,0.36));
+  border-color:rgba(240,150,235,0.55);
+  box-shadow:0 12px 34px rgba(217,70,239,0.28), 0 3px 12px rgba(8,3,24,0.5), inset 0 1px 0 rgba(255,255,255,0.10);
+  animation-name:focusBreathDream;
+}
+@keyframes focusBreathDream{
+  0%,100%{box-shadow:0 12px 34px rgba(217,70,239,0.28), 0 3px 12px rgba(8,3,24,0.5), inset 0 1px 0 rgba(255,255,255,0.10)}
+  50%{box-shadow:0 15px 46px rgba(217,70,239,0.46), 0 0 28px rgba(240,171,252,0.12), 0 3px 12px rgba(8,3,24,0.5), inset 0 1px 0 rgba(255,255,255,0.13)}
+}
+body[data-theme="dream"] .focus-badge{background:linear-gradient(135deg,#E879F9,#A855F7);box-shadow:0 0 20px rgba(232,121,249,0.45), inset 0 1px 0 rgba(255,255,255,0.28)}
+body[data-theme="dream"] .focus-eyebrow{color:rgba(240,171,252,0.92)}
+body[data-theme="dream"] .focus-queue{color:rgba(240,171,252,0.8)}
 body[data-theme="dream"] .note-card:hover{border-color:rgba(236,150,235,0.45)}
 body[data-theme="dream"] .note-card::before{background:linear-gradient(to bottom,#E879F9,#F0ABFC)}
 body[data-theme="dream"] .bubble-user{background:rgba(217,70,239,0.24)}
@@ -745,7 +804,17 @@ body[data-theme="business"] .note-card:hover{background:#1B1F26;border-color:#39
 body[data-theme="business"] .note-card::before{background:#5B8DEF;opacity:.9;width:2.5px;border-radius:0}
 body[data-theme="business"] .note-card.note-stale{background:#1D1B14;border-color:rgba(255,209,102,0.4)}
 body[data-theme="business"] .note-card.note-stale::before{background:#D9B45C}
-body[data-theme="business"] .focus-card{background:#171A20;border:1px solid #2A2F38;border-left:2.5px solid #5B8DEF}
+body[data-theme="business"] .focus-card{
+  background:#1B1F26;border:1px solid #2A2F38;border-left:3px solid #5B8DEF;border-radius:12px;
+  box-shadow:none;animation:none;
+}
+body[data-theme="business"] .focus-card::before{display:none}
+body[data-theme="business"] .focus-card::after{display:none}
+body[data-theme="business"] .focus-badge{background:#232936;border:1px solid #39404C;box-shadow:none}
+body[data-theme="business"] .focus-eyebrow{color:rgba(140,176,250,0.9)}
+body[data-theme="business"] .focus-queue{color:rgba(140,176,250,0.75)}
+body[data-theme="business"] .focus-text{color:rgba(235,238,245,0.96)}
+body[data-theme="business"] .focus-done-btn{background:rgba(91,141,239,0.16);color:rgba(140,176,250,0.95);box-shadow:inset 0 0 0 1px rgba(91,141,239,0.3)}
 body[data-theme="business"] .bubble-user{background:rgba(91,141,239,0.15);border:1px solid rgba(91,141,239,0.25)}
 body[data-theme="business"] .bubble-ai{background:#191D24;border:1px solid #262B34}
 body[data-theme="business"] .dock{background:#101216;border-top:1px solid #24272E}
@@ -6116,19 +6185,24 @@ function renderFocusCard() {
     const restCount = queue.length - 1;
     html += `
       <div class="focus-card" data-id="${top.id}">
-        <span style="font-size:15px;flex-shrink:0;">🎯</span>
-        <span class="focus-text">${escHtml(top.text)}</span>
-        ${restCount > 0 ? `<span class="focus-next-hint">+${restCount}</span>` : ''}
-        <button class="focus-done-btn" onclick="toggleDone('${top.id}', false)">✓</button>
+        <div class="focus-badge" aria-hidden="true">🎯</div>
+        <div class="focus-body">
+          <div class="focus-eyebrow">Сейчас в фокусе${restCount > 0 ? ` <span class="focus-queue">· ещё ${restCount}</span>` : ''}</div>
+          <div class="focus-text">${escHtml(top.text)}</div>
+          <div class="focus-actions"><button class="focus-done-btn" onclick="toggleDone('${top.id}', false)">✓ Готово</button></div>
+        </div>
         <div class="focus-swipe-hint">Следующая →</div>
       </div>`;
   }
 
   if (pendingTagSuggestions && pendingTagSuggestions.length) {
     html += `
-      <div class="focus-card" style="cursor:pointer;" onclick="goTo('tags')">
-        <span style="font-size:15px;flex-shrink:0;">✨</span>
-        <span class="focus-text">Есть идеи по тегам для тебя — глянуть?</span>
+      <div class="focus-card focus-soft" style="cursor:pointer;" onclick="goTo('tags')">
+        <div class="focus-badge" aria-hidden="true">✨</div>
+        <div class="focus-body">
+          <div class="focus-eyebrow">Подсказка ИИ</div>
+          <div class="focus-text">Есть идеи по тегам для тебя — глянуть?</div>
+        </div>
         <span class="focus-next-hint">→</span>
       </div>`;
   }
