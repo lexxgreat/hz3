@@ -1126,7 +1126,7 @@ body[data-theme="business"] .cap-mic.recording{box-shadow:0 0 10px rgba(140,176,
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.3)" stroke-width="1.7" stroke-linecap="round">
         <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
       </svg>
-      <input id="hist-search" placeholder="Поиск по записям..." oninput="filterNotes()">
+      <input id="hist-search" placeholder="Поиск по записям, тегам и делам..." oninput="filterNotes()">
     </div>
     <div class="hist-mode-toggle" id="hist-mode-toggle" style="display:flex;gap:6px;padding:0 16px 8px;">
       <button class="hist-mode-btn active" data-mode="added" onclick="setHistMode('added')">📥 Добавлено</button>
@@ -1253,6 +1253,7 @@ body[data-theme="business"] .cap-mic.recording{box-shadow:0 0 10px rgba(140,176,
         <div style="display:flex;align-items:center;gap:7px;font-size:12.5px;font-weight:600;color:rgba(255,255,255,0.8);font-family:Inter,sans-serif;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a7 7 0 0 0-7 7c0 2.4 1.2 4.5 3 5.7V17a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2v-2.3c1.8-1.2 3-3.3 3-5.7a7 7 0 0 0-7-7z"/><path d="M9.5 21h5"/><path d="M10 11l2-3 2 3"/><path d="M12 8v6"/></svg>Разум базы</div>
         <div id="brain-stats" style="font-size:10.5px;color:rgba(255,255,255,0.42);margin-top:5px;line-height:1.5;">Загрузка…</div>
         <button id="backfill-btn" onclick="backfillDimensions()" style="width:100%;margin-top:8px;display:inline-flex;align-items:center;justify-content:center;gap:6px;background:rgba(0,200,120,0.09);border:0.5px solid rgba(0,220,140,0.35);border-radius:10px;padding:8px;color:rgba(0,230,150,0.9);font-size:11.5px;font-weight:500;cursor:pointer;font-family:'Inter',sans-serif;white-space:nowrap;">🧠 Рассортировать архив</button>
+        <button id="compress-btn" onclick="compressAreas()" style="width:100%;margin-top:7px;display:inline-flex;align-items:center;justify-content:center;gap:6px;background:rgba(108,71,255,0.08);border:0.5px solid rgba(139,92,246,0.3);border-radius:10px;padding:8px;color:rgba(178,155,255,0.9);font-size:11.5px;font-weight:500;cursor:pointer;font-family:'Inter',sans-serif;white-space:nowrap;">🧹 Сжать области</button>
       </div>
     </div>
     <!-- ── НАПОМИНАНИЯ: настройка в общих настройках ── -->
@@ -1720,8 +1721,28 @@ window.addTag = addTag; // тесты: посев областей
 function renderQuickTags() {
   const el = document.getElementById('qtags-list');
   if (!el) return;
-  el.innerHTML = tags.map(t => `<button class="qtag" onclick="setTag('${t.label}')"><span class="qtag-icon">${t.icon}</span><span class="qtag-label">${t.label}</span></button>`).join('');
+  // Топ-6 самых употребляемых тегов (по числу записей) — после бэкфилла областей
+  // много, и все чипы на главном превращались в кашу. Остальные — на экране тегов.
+  const counts = {};
+  for (const n of notes) {
+    const t = (n.tag || '').trim();
+    if (t) counts[t] = (counts[t] || 0) + 1;
+  }
+  const norm = (s) => String(s || '').toLowerCase().replace(/ё/g, 'е');
+  const ranked = tags.map((t, i) => ({ t, i, c: counts[(t.label || '').trim()] || 0 }))
+    .sort((a, b) => b.c - a.c || a.i - b.i);
+  // выбранный тег всегда виден (иначе его не снять), даже если не в топ-6
+  if (activeTag && !ranked.slice(0, 6).some(o => norm(o.t.label) === norm(activeTag))) {
+    const sel = ranked.find(o => norm(o.t.label) === norm(activeTag));
+    if (sel) { sel.c = Infinity; ranked.sort((a, b) => b.c - a.c || a.i - b.i); }
+  }
+  const top = ranked.slice(0, 6);
+  const rest = ranked.length - top.length;
+  el.innerHTML = top.map(o => `<button class="qtag" onclick="setTag('${o.t.label}')"><span class="qtag-icon">${o.t.icon}</span><span class="qtag-label">${o.t.label}</span></button>`).join('')
+    + (rest > 0 ? `<button class="qtag" onclick="goTo('tags')"><span class="qtag-icon">⋯</span><span class="qtag-label">ещё ${rest}</span></button>` : '');
 }
+window.renderQuickTags = renderQuickTags; // тесты
+window.__tags = () => tags; // тесты: список областей
 
 let pendingTagSuggestions = null; // [{label, icon}] — ждут решения пользователя (добавить/отклонить)
 
@@ -2710,6 +2731,60 @@ async function callBrainAI(messages, options) {
   return callPolzaAI(messages, options);
 }
 
+// ── КЛЮЧЕВОЙ ТЕГ по похожим записям ──
+// ИИ видит примеры записей по областям и наследует тег по сходству: всё про это самое
+// приложение (интерфейс, баги, фичи) само уедет в область, где таких записей больше всего.
+function buildAreaExemplars() {
+  const byTag = {};
+  for (const n of notes) {
+    const t = (n.tag || '').trim();
+    if (!t) continue;
+    (byTag[t] = byTag[t] || []).push(n);
+  }
+  return Object.keys(byTag)
+    .sort((a, b) => byTag[b].length - byTag[a].length)
+    .slice(0, 20)
+    .map(t => {
+      const ex = byTag[t].slice(0, 2).map(n => '«' + String(n.text || '').slice(0, 55).replace(/\s+/g, ' ').trim() + '»').join(', ');
+      return t + ' (' + byTag[t].length + '): ' + ex;
+    })
+    .join('; ');
+}
+// локальное наследование (работает даже если ИИ недоступен): максимум пересечения
+// значимых слов (≥4 букв) с записями области; Jaccard ≥ minJac — считаем «похоже»
+function matchAreaByExemplars(text, minJac) {
+  const words = (s) => new Set(normDim(s).split(' ').filter(w => w.length >= 4));
+  const tw = words(text);
+  if (!tw.size) return null;
+  let best = null, bestJac = 0;
+  for (const n of notes) {
+    const t = (n.tag || '').trim();
+    if (!t) continue;
+    const nw = words(n.text);
+    if (!nw.size) continue;
+    let inter = 0;
+    nw.forEach(w => { if (tw.has(w)) inter++; });
+    const jac = inter / (nw.size + tw.size - inter);
+    if (jac > bestJac) { bestJac = jac; best = t; }
+  }
+  return bestJac >= (minJac || 0.34) ? best : null;
+}
+// области для промпта, отсортированные по употребляемости (важные не отрезаются лимитом)
+function areaNamesForPrompt(cap) {
+  const counts = {};
+  for (const n of notes) {
+    const t = (n.tag || '').trim();
+    if (t) counts[t] = (counts[t] || 0) + 1;
+  }
+  return tags.map((t, i) => ({ label: (t.label || '').trim(), i, c: counts[(t.label || '').trim()] || 0 }))
+    .filter(o => o.label)
+    .sort((a, b) => b.c - a.c || a.i - b.i)
+    .slice(0, cap || 40)
+    .map(o => o.label);
+}
+window.buildAreaExemplars = buildAreaExemplars; // тесты
+window.matchAreaByExemplars = matchAreaByExemplars; // тесты
+
 async function classifyAndRouteNote(note) {
   if (!note || !note.id || !note.text) return;
   if (note.inTodo === true) return; // уже в тудушке
@@ -2719,7 +2794,8 @@ async function classifyAndRouteNote(note) {
   let parsed = null; // разметка второго мозга (area/kind/cluster) — есть только при успехе ИИ
   const nowMsk = new Date(Date.now() + 3 * 60 * 60 * 1000);
   const mskTimeStr = String(nowMsk.getUTCHours()).padStart(2,'0') + ':' + String(nowMsk.getUTCMinutes()).padStart(2,'0');
-  const areaNames = tags.map(t => (t.label || '').trim()).filter(Boolean).slice(0, 20);
+  const areaNames = areaNamesForPrompt(40);
+  const areaExemplars = buildAreaExemplars();
   const clList = await loadClusters();
   const clusterNames = [...clList].sort((a,b)=>(b.count||0)-(a.count||0)).slice(0, 30).map(c => c.name);
   try {
@@ -2727,6 +2803,8 @@ async function classifyAndRouteNote(note) {
       { role: 'system', content: 'Ты — классификатор записей личного дневника-трекера. Ответь ТОЛЬКО валидным JSON без markdown: {"task": true/false, "date": "YYYY-MM-DD" или null, "time": "HH:MM" или null, "area": "..." или null, "newArea": {"name":"...","icon":"эмодзи"} или null, "kind": "мысль|событие|решение|идея|вопрос|дело", "cluster": "..." или null}. '
         + 'task: true — если запись это конкретное действие, которое предстоит сделать и потом можно поставить галочку (купить, позвонить, записаться, отправить, сделать, не забыть); false — мысль, факт, идея без действия, дневниковая запись, справка. Сомневаешься — true: лучше поставить в тудушку, чем потерять дело. '
         + 'area: ОДНА область жизни из списка [' + areaNames.join(' | ') + ']. Подходит хоть одна — верни её точное имя. Ни одна не подходит — area: null и newArea: {"name": "1-2 слова, существительное", "icon": "один эмодзи"}. '
+        + (areaExemplars ? 'Примеры записей пользователя по областям — наследуй область по СХОДСТВУ с примерами: если новая запись похожа на примеры какой-то области — верни именно её (особенно записи про это самое приложение, его интерфейс, функции, баги и доработки — они относятся к области, где таких записей больше всего): ' + areaExemplars + '. ' : '')
+        + 'newArea — только если запись явно о совершенно новой сфере, которой нет в списке; если похоже на существующую — выбирай существующую, НЕ плодь новые области. '
         + 'kind: мысль (размышление, чувство, наблюдение) | событие (что произошло, факт из жизни) | решение (выбрал, постановил) | идея (придумал что-то, что можно сделать) | вопрос (сомнение, надо выяснить) | дело (конкретное действие — совпадает с task:true). '
         + 'cluster: если запись — однотипное повторяющееся дело (смотреть фильм/сериал, читать книгу, тренировка, купить X, встреча...) — короткое имя группы в именной форме из существующих [' + clusterNames.join(' | ') + '] (точное имя существующего, если подходит) или новое («Посмотреть фильмы», «Тренировка», «Купить продукты»); разовые дела и не-дела — null. '
         + 'Все даты/времена — в московском поясе (МСК = UTC+3), СЕЙЧАС ' + mskTimeStr + ' МСК. date: ТОЛЬКО если в тексте ЯВНО назван день или срок («сегодня», «завтра», «в пятницу», «через неделю») — вычисли точную дату от СЕГОДНЯ (сегодня=' + todayKey + ', завтра=' + tomorrowKey + '; «через неделю» = +7 дней; «на следующей неделе» = ближайший понедельник; названный день недели = ближайший будущий). День/срок НЕ назван — date: null и time: null: задача без срока просто ляжет в тудушку, её раскидают по календарю позже. ЗАПРЕЩЕНО ставить «сегодня» по умолчанию или «для порядка». time: если названо время («в 15:00», «утром» = 09:00, «вечером» = 18:00) — HH:MM; «через N минут/часов» = текущее время ' + mskTimeStr + ' + N (НИКОГДА не ставь время раньше текущего).' },
@@ -2750,12 +2828,23 @@ async function classifyAndRouteNote(note) {
     dimsPatch = {};
     if (note.tag) {
       dimsPatch.area = note.tag; // ручной тег пользователя — приоритет, ИИ не перебивает
-    } else if (parsed && parsed.area && typeof parsed.area === 'string') {
-      const a = await ensureArea(parsed.area);
-      if (a) dimsPatch.area = a.label;
-    } else if (parsed && parsed.newArea && parsed.newArea.name) {
-      const a = await ensureArea(parsed.newArea.name, parsed.newArea.icon);
-      if (a) dimsPatch.area = a.label;
+    } else {
+      // КЛЮЧЕВОЙ ТЕГ: сильное сходство с записями существующей области (Jaccard ≥0.45)
+      // перебивает и newArea, и ошибку ИИ — так всё про приложение уезжает в «Хэзенштейн»,
+      // даже если ИИ вернул null или придумал новую область.
+      // ИИ недоступен — фолбэк с мягким порогом (0.34).
+      const local = matchAreaByExemplars(note.text, parsed ? 0.45 : 0.34);
+      const aiAreaValid = parsed && parsed.area && typeof parsed.area === 'string'
+        && tags.some(t => normDim(t.label) === normDim(parsed.area)); // ИИ должен выбрать ИЗ списка — иначе плодит теги
+      if (local) {
+        const a = await ensureArea(local);
+        if (a) dimsPatch.area = a.label;
+      } else if (aiAreaValid) {
+        dimsPatch.area = tags.find(t => normDim(t.label) === normDim(parsed.area)).label;
+      } else if (parsed && parsed.newArea && parsed.newArea.name) {
+        const a = await ensureArea(parsed.newArea.name, parsed.newArea.icon);
+        if (a) dimsPatch.area = a.label;
+      }
     }
     if (parsed && parsed.kind && NOTE_KINDS.includes(String(parsed.kind))) dimsPatch.kind = parsed.kind;
     if (parsed && parsed.cluster && typeof parsed.cluster === 'string') {
@@ -2828,6 +2917,7 @@ async function loadNotes() {
     filterNotes(); // рендерим с учётом активного фильтра по дате/поиску
     renderTodo(); // тудушка всегда синхронна с общей базой записей
     renderFocusCard(); // карточка "сейчас важно" на главном экране тоже
+    renderQuickTags(); // чипы тегов на главном: топ-6 по употребляемости (счётчики могли измениться)
   } catch(e) {
     document.getElementById('hist-list').innerHTML = '<div class="hist-empty"><div>⚠️</div>Ошибка загрузки</div>';
   }
@@ -3100,7 +3190,19 @@ function filterNotes() {
   let list = notes.filter(n => matchesDateFilter(n, histFilter, histMode));
   if (histMode === 'added' && !showDoneInHistory) list = list.filter(n => !n.done);
   if (histTags.size) list = list.filter(n => histTags.has((n.tag || '').trim()));
-  if (q) list = list.filter(n => n.text.toLowerCase().includes(q));
+  if (q) {
+    // Поиск по тексту И по разметке: тег (с «#» или без), кластер дел, тип записи.
+    // Так поиск впитывает фильтр по тегам: набрал «хэзенштейн» — видишь всё по приложению.
+    const raw = q.replace(/^#+/, '').trim();
+    list = list.filter(n => {
+      if (raw && n.text.toLowerCase().includes(raw)) return true;
+      const tag = (n.tag || '').trim().toLowerCase();
+      if (tag && tag.includes(raw)) return true;
+      if (n.cluster && n.cluster.toLowerCase().includes(raw)) return true;
+      if (n.kind && n.kind.toLowerCase() === raw) return true;
+      return false;
+    });
+  }
   renderNotes(list);
 }
 window.filterNotes = filterNotes;
@@ -4354,12 +4456,13 @@ async function loadGraphData() {
     if (clCount) parts.push(clCount + ' кластеров');
     parts.push(graphLeafCount + ' записей');
     parts.push(drawnAi + ' связей ИИ');
-    parts.push('щипок — глубже');
+    parts.push('щипок — глубже · тап по сфере — подзадачи');
     sub.textContent = parts.join(' · ');
   }
 }
 window.loadGraphData = loadGraphData;
 window.__graphSnapshot = () => ({ nodes: graphNodes, edges: graphEdges }); // тесты
+window.__graphCam = () => graphCam; // тесты: LOD/камера
 
 function ensureGraphCanvasSized() {
   if (!graphCanvas) return;
@@ -4485,8 +4588,18 @@ function drawGraph() {
   const leafA = graphSmooth(0.5, 0.8, k);        // записи-точки
   const leafLabelA = graphSmooth(1.15, 1.7, k);  // подписи записей
   const aiA = graphSmooth(0.72, 1.05, k);        // ИИ-линии
+  const clusterA = graphSmooth(1.05, 1.55, k);   // узлы-кластеры: на общем плане — почти не видны
+  const clLabelA = graphSmooth(1.4, 2.0, k);     // подписи кластеров — при глубоком зуме
   const deepA = graphSmooth(1.9, 2.7, k);        // глубокий слой: шаги + диалоги
   const hubScale = k < 1 ? 1 + (1 - k) * 0.3 : 1; // хабы чуть крупнее на отдалении
+  // Ранг сфер по числу записей: топ всегда подписан, хвост проявляется зумом —
+  // иначе после бэкфилла 30+ подписей сфер превращаются в кашу
+  const SPHERE_TOP = 7;
+  const sphereRank = {};
+  graphNodes.map((n, i) => ({ i, kind: n.kind, c: n.kind === 'sphere' ? (n.count || 0) : -1 }))
+    .filter(o => o.c >= 0)
+    .sort((a, b) => b.c - a.c)
+    .forEach((o, r) => { sphereRank[o.i] = r; });
 
   const selIdx = graphSelectedIdx;
   const sel = selIdx !== null ? graphNodes[selIdx] : null;
@@ -4570,7 +4683,7 @@ function drawGraph() {
       ctx.stroke();
     }
   }
-  // Хабы — сферы и желания
+  // Хабы — сферы и желания (кластеры проявляются только с зумом)
   for (let i = 0; i < graphNodes.length; i++) {
     const n = graphNodes[i];
     if (n.kind === 'note') continue;
@@ -4579,10 +4692,13 @@ function drawGraph() {
     const dimmed = sel && !neighbor;
     const isWish = n.kind === 'wish';
     const baseR = n.r * hubScale + (isSel ? 4 : 0);
-    const nodeAlpha = dimmed ? 0.25 : 1;
+    // кластер на отдалении растворяется (кроме выделенного и соседей выбранного)
+    const fade = (n.kind === 'cluster' && !isSel && !neighbor) ? clusterA : 1;
+    if (fade < 0.02) continue;
+    const nodeAlpha = (dimmed ? 0.25 : 1) * fade;
 
     // glow
-    const glowA = isSel ? 0.4 : (neighbor ? 0.28 : (dimmed ? 0.05 : 0.16));
+    const glowA = (isSel ? 0.4 : (neighbor ? 0.28 : (dimmed ? 0.05 : 0.16))) * fade;
     ctx.fillStyle = graphHexA(n.color, glowA);
     ctx.beginPath();
     ctx.arc(n.x, n.y, baseR + 12, 0, Math.PI * 2);
@@ -4599,7 +4715,7 @@ function drawGraph() {
     ctx.beginPath();
     ctx.arc(n.x, n.y, baseR, 0, Math.PI * 2);
     ctx.stroke();
-    if (isWish && !dimmed) {
+    if (isWish && !dimmed && fade > 0.5) {
       const pulse = Math.sin(now * 2.2 + i) * 1.6;
       ctx.strokeStyle = graphHexA(n.color, 0.3);
       ctx.lineWidth = 1;
@@ -4619,12 +4735,20 @@ function drawGraph() {
   // ── ЭКРАН (подписи константного размера — читаемость на любом зуме) ──
   ctx.textAlign = 'center';
   ctx.textBaseline = 'top';
-  // Подписи хабов — всегда
+  // Подписи хабов — по уровню зума: желания и топ-сферы всегда, хвост сфер и
+  // кластеры проявляются при приближении (у выделенного с соседями — всегда)
   for (let i = 0; i < graphNodes.length; i++) {
     const n = graphNodes[i];
     if (n.kind === 'note') continue;
     const isSel = i === selIdx;
-    const dimmed = sel && !isNeighbor(i);
+    const isNb = isNeighbor(i);
+    const dimmed = sel && !isNb;
+    let labA;
+    if (isSel || isNb) labA = 1;
+    else if (n.kind === 'wish') labA = 1;
+    else if (n.kind === 'cluster') labA = clLabelA;
+    else labA = ((n.count || 0) > 0 && sphereRank[i] < SPHERE_TOP) ? 1 : graphSmooth(1.05, 1.7, k);
+    if (labA <= 0.03) continue;
     const sp = graphW2S(n.x, n.y);
     if (sp.x < -90 || sp.x > w + 90 || sp.y < -70 || sp.y > h + 70) continue;
     const label = n.label.length > 16 ? n.label.slice(0, 15) + '…' : n.label;
@@ -4633,13 +4757,16 @@ function drawGraph() {
     const labelW = metrics.width + 10;
     const labelH = 17;
     const labelY = sp.y + n.r * hubScale * k + 5;
+    ctx.globalAlpha = labA;
     ctx.fillStyle = `rgba(0,0,0,${dimmed ? 0.4 : 0.65})`;
     ctx.fillRect(sp.x - labelW / 2, labelY, labelW, labelH);
     ctx.fillStyle = graphHexA(n.color, dimmed ? 0.4 : 1);
     ctx.fillText(label, sp.x, labelY + 2);
+    ctx.globalAlpha = 1;
   }
 
-  // Подписи листьев — проявляются зумом (плюс выбранные и маленькие карты)
+  // Подписи листьев — проявляются зумом; у выделенного узла соседи подписаны
+  // ВСЕГДА: тап по родительскому тегу = увидел свои подзадачи
   const showAllLeafLabels = graphLeafCount <= 15;
   ctx.font = '10.5px Inter, sans-serif';
   ctx.textBaseline = 'top';
@@ -4647,9 +4774,10 @@ function drawGraph() {
     const n = graphNodes[i];
     if (n.kind !== 'note') continue;
     const isSel = i === selIdx;
-    const ownA = isSel ? 1 : Math.max(leafLabelA, showAllLeafLabels && !n.done ? 1 : 0);
+    const isNb = isNeighbor(i);
+    const ownA = isSel ? 1 : (isNb ? 1 : Math.max(leafLabelA, showAllLeafLabels && !n.done ? 1 : 0));
     if (ownA <= 0.02) continue;
-    const dimmed = sel && !isNeighbor(i);
+    const dimmed = sel && !isNb;
     if (dimmed && !isSel) continue;
     const sp = graphW2S(n.x, n.y);
     if (sp.x < -90 || sp.x > w + 90 || sp.y < -50 || sp.y > h + 50) continue;
@@ -4838,6 +4966,8 @@ function setupGraphInteraction() {
         const n = graphNodes[i];
         const isHub = n.kind !== 'note';
         if ((pass === 0) !== isHub) continue;
+        // невидимые на отдалении кластеры не ловим — иначе тап «в пустоту» выбирает скрытый узел
+        if (n.kind === 'cluster' && k < 0.95 && graphSelectedIdx === null) continue;
         const sp = graphW2S(n.x, n.y);
         const r = Math.max(n.r * hubScale * k, isHub ? 18 : 14) + 6;
         const dx = sx - sp.x, dy = sy - sp.y;
@@ -4846,6 +4976,19 @@ function setupGraphInteraction() {
     }
     return -1;
   }
+
+  // Тап по родительскому узлу (сфера/кластер/желание): карта плавно приблизится —
+  // подзадачи/записи станут видны рядом с родителем
+  function focusGraphOnHub(idx) {
+    const n = graphNodes[idx];
+    if (!n || n.kind === 'note') return;
+    ensureGraphCamera();
+    if (graphCam.tk < 1.5) graphCam.tk = 1.5;
+    graphCam.tcx = n.x;
+    graphCam.tcy = n.y;
+    graphClampCamTargets();
+  }
+  window.focusGraphOnHub = focusGraphOnHub; // тесты
 
   canvas.addEventListener('touchstart', (e) => {
     graphInertia = null;
@@ -4920,6 +5063,7 @@ function setupGraphInteraction() {
         // Это тап — селекция узла + показ popover
         graphSelectedIdx = tapIdx;
         showGraphPopover(tapIdx);
+        focusGraphOnHub(tapIdx); // хаб раскрывает подзадачи: камера подъезжает
       }
     } else if (mode === 'pan' && panVel) {
       // Отпустили с разгоном — карта скользит по инерции и плавно тормозит
@@ -4985,6 +5129,7 @@ function setupGraphInteraction() {
       if (dt < 450 && moved < 10 && tapIdx !== null) {
         graphSelectedIdx = tapIdx;
         showGraphPopover(tapIdx);
+        focusGraphOnHub(tapIdx); // хаб раскрывает подзадачи: камера подъезжает
       }
     } else if (Math.hypot(panVel.x, panVel.y) > 1.5) {
       graphInertia = { x: panVel.x, y: panVel.y };
@@ -8332,7 +8477,8 @@ async function backfillDimensions() {
   }
   progressEl.style.display = 'block';
 
-  const areaNames = tags.map(t => (t.label || '').trim()).filter(Boolean);
+  const areaNames = areaNamesForPrompt(40);
+  const areaExemplars = buildAreaExemplars();
   let done = 0, marked = 0;
   for (let i = 0; i < batch.length; i += BATCH) {
     if (backfillCancelled) break;
@@ -8343,6 +8489,8 @@ async function backfillDimensions() {
       const resp = await callBrainAI([
         { role: 'system', content: 'Ты — ассистент личного дневника-трекера. Разметь записи. Ответь ТОЛЬКО валидным JSON-массивом без markdown, по одному объекту на запись, В ПОРЯДКЕ НУМЕРАЦИИ: [{"i":0,"area":"...","newArea":null,"kind":"...","cluster":null},...]. '
           + 'area — ОДНА область из списка [' + areaNames.join(' | ') + '] (точное имя); если ни одна не подходит — area: null и newArea: {"name": "1-2 слова, существительное", "icon": "один эмодзи"}. '
+          + (areaExemplars ? 'Примеры записей пользователя по областям — распределяй записи по СХОДСТВУ с примерами (записи про само приложение, его интерфейс и доработки — в область, где таких записей больше всего): ' + areaExemplars + '. ' : '')
+          + 'newArea — ТОЛЬКО для записей о совершенно новой сфере: НЕ создавай новые области, если похожая уже есть в списке (даже несовершенное совпадение лучше нового тега — иначе список засоряется). '
           + 'kind — одно из: мысль | событие | решение | идея | вопрос | дело (дело — конкретное действие). '
           + 'cluster — если запись это однотипное повторяющееся дело (смотреть фильм/сериал, читать, тренировка, купить X, встреча…) — короткое имя группы в именной форме («Посмотреть фильмы», «Тренировка»), иначе null. Ничего лишнего не выдумывай.' },
         { role: 'user', content: listText }
@@ -8395,6 +8543,74 @@ async function backfillDimensions() {
 window.backfillDimensions = backfillDimensions;
 window.loadClusters = loadClusters; // тесты: контроль коллекции кластеров
 window.callBrainAI = callBrainAI; // тесты: контроль вызовов ИИ второго мозга
+
+// ── СЖАТЬ ОБЛАСТИ: ИИ находит явные дубли среди тегов («Документы»/«Документы»,
+// «Звонки»/«Звонки по работе»), записи переносятся в каноническую область, дубли удаляются.
+// Каждый слив — с подтверждением пользователя.
+async function compressAreas() {
+  if (!currentUid || notes.length === 0) { alert('Нет записей — сжимать нечего'); return; }
+  if (tags.length < 4) { alert('Областей мало (' + tags.length + ') — сжатие не нужно.'); return; }
+  const counts = {};
+  for (const n of notes) {
+    const t = (n.tag || '').trim();
+    if (t) counts[t] = (counts[t] || 0) + 1;
+  }
+  const listText = tags.map(t => '- ' + (t.label || '').trim() + ' — ' + (counts[(t.label || '').trim()] || 0) + ' записей').join('\n');
+  if (!confirm('Областей: ' + tags.length + '.\nИИ найдёт ЯВНО дублирующиеся/похожие области и предложит их слить (записи перенесутся, дубли удалятся). Каждый слив — с подтверждением.\nЗапустить?')) return;
+  const btn = document.getElementById('compress-btn');
+  if (btn) { btn.textContent = '⏳ Анализирую…'; btn.style.opacity = '0.6'; }
+  let groups = [];
+  try {
+    const resp = await callBrainAI([
+      { role: 'system', content: 'Ты — ассистент личного дневника-трекера. Вот список областей (тегов) пользователя с числом записей:\n' + listText + '\n\nНайди ТОЛЬКО ЯВНО дублирующиеся или вложенные области: разный регистр/форма («Документы» и «документы», «Фильмы» и «Посмотреть фильмы»), очевидные синонимы одного и того же («Звонки» и «Телефонные звонки»). РАЗНЫЕ по смыслу области НЕ сливай (например «Работа» и «Финансы» — разные, даже если обе про дела). Ответь ТОЛЬКО валидным JSON-массивом без markdown: [{"keep":"точное имя оставшейся области","merge":["точные имена слить в неё"]}] — имя keep должно быть из списка, merge только из списка, не смешивай их. Дублей нет — верни [].' },
+      { role: 'user', content: 'Найди дубли среди областей' }
+    ], { max_tokens: 500, temperature: 0 });
+    const m = resp && resp.match(/\[[\s\S]*\]/);
+    if (m) groups = JSON.parse(m[0]);
+  } catch (e) {
+    console.warn('[Compress] AI failed', e);
+    if (btn) { btn.textContent = '🧹 Сжать области'; btn.style.opacity = '1'; }
+    alert('ИИ недоступен: ' + (e.message || 'неизвестная ошибка') + '. Попробуй позже.');
+    return;
+  }
+  if (btn) { btn.textContent = '🧹 Сжать области'; btn.style.opacity = '1'; }
+  if (!Array.isArray(groups) || !groups.length) { alert('Дубликатов не нашлось — все области разные 🎉'); return; }
+  let mergedAny = 0;
+  for (const g of groups) {
+    if (!g || !g.keep || !Array.isArray(g.merge) || !g.merge.length) continue;
+    const keepTag = tags.find(t => normDim(t.label) === normDim(g.keep));
+    if (!keepTag) continue; // keep должен существовать
+    // merge-имена ищем СРЕДИ ДРУГИХ тегов (не у keepTag — иначе дубль-имя найдёт сам keep и слив молча пропустится)
+    const others = tags.filter(t => t.id !== keepTag.id);
+    const seen = new Set();
+    const mergeTags = [];
+    for (const x of g.merge) {
+      const t = others.find(tt => normDim(tt.label) === normDim(String(x || '')));
+      if (t && !seen.has(t.id)) { seen.add(t.id); mergeTags.push(t); }
+    }
+    if (!mergeTags.length) continue;
+    const mergeLabels = mergeTags.map(t => t.label);
+    const nCount = notes.filter(n => mergeLabels.some(l => normDim(l) === normDim((n.tag || '').trim()))).length;
+    if (!confirm('Слить ' + mergeLabels.map(l => '«' + l + '»').join(', ') + ' → «' + keepTag.label + '»?\nПеренесётся записей: ' + nCount + '.')) continue;
+    try {
+      for (const n of notes) {
+        const nt = (n.tag || '').trim();
+        if (!mergeLabels.some(l => normDim(l) === normDim(nt))) continue;
+        await updateDoc(uDocRef('notes', n.id), { tag: keepTag.label, area: keepTag.label });
+        n.tag = keepTag.label; n.area = keepTag.label;
+      }
+      for (const t of mergeTags) {
+        await deleteDoc(uDocRef('tags', t.id));
+        tags = tags.filter(x => x.id !== t.id);
+      }
+      mergedAny += mergeTags.length;
+      renderQuickTags(); renderTagsScreen(); updateBrainStats();
+    } catch (e) { console.warn('[Compress] merge failed', e); alert('Не удалось слить: ' + e.message); }
+  }
+  if (mergedAny) alert('Готово! Удалено областей-дублей: ' + mergedAny + '. Осталось: ' + tags.length + '.');
+  else alert('Ничего не слито.');
+}
+window.compressAreas = compressAreas; // тесты
 
 function showTyping() {
   const el = document.getElementById('chat-messages');
