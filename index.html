@@ -1247,6 +1247,14 @@ body[data-theme="business"] .cap-mic.recording{box-shadow:0 0 10px rgba(140,176,
       </div>
     </div>
     <input type="file" id="import-file-input" accept=".json,.txt,.csv" style="display:none;">
+    <!-- ── РАЗУМ БАЗЫ: области / типы записей / кластеры дел (второй мозг, v72) ── -->
+    <div style="padding:12px 16px 0;">
+      <div style="background:rgba(255,255,255,0.04);border:0.5px solid rgba(255,255,255,0.1);border-radius:12px;padding:12px 14px;">
+        <div style="display:flex;align-items:center;gap:7px;font-size:12.5px;font-weight:600;color:rgba(255,255,255,0.8);font-family:Inter,sans-serif;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a7 7 0 0 0-7 7c0 2.4 1.2 4.5 3 5.7V17a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2v-2.3c1.8-1.2 3-3.3 3-5.7a7 7 0 0 0-7-7z"/><path d="M9.5 21h5"/><path d="M10 11l2-3 2 3"/><path d="M12 8v6"/></svg>Разум базы</div>
+        <div id="brain-stats" style="font-size:10.5px;color:rgba(255,255,255,0.42);margin-top:5px;line-height:1.5;">Загрузка…</div>
+        <button id="backfill-btn" onclick="backfillDimensions()" style="width:100%;margin-top:8px;display:inline-flex;align-items:center;justify-content:center;gap:6px;background:rgba(0,200,120,0.09);border:0.5px solid rgba(0,220,140,0.35);border-radius:10px;padding:8px;color:rgba(0,230,150,0.9);font-size:11.5px;font-weight:500;cursor:pointer;font-family:'Inter',sans-serif;white-space:nowrap;">🧠 Рассортировать архив</button>
+      </div>
+    </div>
     <!-- ── НАПОМИНАНИЯ: настройка в общих настройках ── -->
     <div style="padding:12px 16px 0;">
       <div style="background:rgba(255,255,255,0.04);border:0.5px solid rgba(255,255,255,0.1);border-radius:12px;padding:12px 14px;">
@@ -1707,6 +1715,7 @@ async function deleteTag(id) {
   } catch(e) { console.error('tag delete error', e); }
 }
 window.deleteTag = deleteTag;
+window.addTag = addTag; // тесты: посев областей
 
 function renderQuickTags() {
   const el = document.getElementById('qtags-list');
@@ -2618,31 +2627,156 @@ function stripSchedulingPhrases(text) {
   return t.charAt(0).toUpperCase() + t.slice(1);
 }
 
+// ── ВТОРОЙ МОЗГ: многомерная разметка записей (v72) ──
+// area (область жизни) = существующий тег из tags — чипы, фильтр Истории, сферы графа продолжают работать.
+// kind (тип записи): мысль/событие/решение/идея/вопрос/дело — ортогонально областям.
+// cluster (кластер однотипных дел): «посмотреть фильм 1/2/3» → «Посмотреть фильмы» (коллекция clusters).
+// Связи «по смыслу» уже собирает findAndSaveLinksForNote (коллекция links) — не дублируем.
+const NOTE_KINDS = ['мысль', 'событие', 'решение', 'идея', 'вопрос', 'дело'];
+let clustersCache = null; // [{id, name, count}] — name в именной форме («Посмотреть фильмы»)
+
+function normDim(s) {
+  return String(s || '').toLowerCase().replace(/ё/g, 'е').replace(/[^а-яa-z0-9]+/g, ' ').trim().replace(/\s+/g, ' ');
+}
+function clusterTitle(s) {
+  const t = String(s || '').trim().replace(/\s+/g, ' ');
+  return t ? t.charAt(0).toUpperCase() + t.slice(1) : '';
+}
+
+async function loadClusters(force) {
+  if (clustersCache && !force) return clustersCache;
+  try {
+    const snap = await getDocs(query(uCol('clusters')));
+    clustersCache = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  } catch (e) { clustersCache = clustersCache || []; }
+  return clustersCache;
+}
+
+// fuzzy-match кластера: точное совпадение, взаимное включение (посмотреть фильм ⊂ посмотреть фильмы), ≥60% общих слов
+function matchCluster(name, clusters) {
+  const n = normDim(name);
+  if (!n) return null;
+  const nw = new Set(n.split(' '));
+  let best = null, bestScore = 0;
+  for (const c of clusters) {
+    const cn = normDim(c.name);
+    if (!cn) continue;
+    if (cn === n) return c;
+    const cw = new Set(cn.split(' '));
+    let inter = 0;
+    cw.forEach(w => { if (nw.has(w)) inter++; });
+    const jac = inter / Math.max(cw.size, nw.size);
+    const incl = (cn.includes(n) || n.includes(cn)) && Math.min(cn.length, n.length) >= 6;
+    const score = incl ? 0.85 : jac;
+    if (score > bestScore) { bestScore = score; best = c; }
+  }
+  return bestScore >= 0.6 ? best : null;
+}
+
+async function ensureCluster(name) {
+  const title = clusterTitle(name);
+  if (!title) return null;
+  const list = await loadClusters();
+  const m = matchCluster(title, list);
+  if (m) {
+    m.count = (m.count || 0) + 1;
+    try { await updateDoc(uDocRef('clusters', m.id), { count: m.count, lastUsedAt: new Date().toISOString() }); } catch (e) {}
+    return m;
+  }
+  try {
+    const ref = await addDoc(uCol('clusters'), { name: title, count: 1, createdAt: new Date().toISOString() });
+    const c = { id: ref.id, name: title, count: 1 };
+    if (clustersCache) clustersCache.push(c);
+    return c;
+  } catch (e) { console.warn('[Brain] cluster create failed', e); return null; }
+}
+
+// область: регистронезависимо ищем среди тегов, иначе создаём новый (чипы/фильтры обновятся сами через addTag)
+async function ensureArea(name, icon) {
+  const title = clusterTitle(name);
+  if (!title) return null;
+  const ex = tags.find(t => normDim(t.label) === normDim(title));
+  if (ex) return ex;
+  const iconChar = (icon && typeof icon === 'string' && /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u.test(icon)) ? icon : '🏷️';
+  try { await addTag(title, iconChar); } catch (e) { return null; }
+  return tags.find(t => normDim(t.label) === normDim(title)) || null;
+}
+window.ensureArea = ensureArea;
+window.classifyAndRouteNote = classifyAndRouteNote; // тесты: разметка вне saveNote
+
+// ИИ-вызов второго мозга: тесты могут перехватить через window.__aiHook(messages, options) → строка
+async function callBrainAI(messages, options) {
+  if (window.__aiHook) return window.__aiHook(messages, options);
+  return callPolzaAI(messages, options);
+}
+
 async function classifyAndRouteNote(note) {
   if (!note || !note.id || !note.text) return;
   if (note.inTodo === true) return; // уже в тудушке
   const todayKey = formatDateKey(new Date());
   const tomorrowKey = formatDateKey(new Date(Date.now() + 86400000));
   let isTask = null, aiDate = null, aiTime = null;
+  let parsed = null; // разметка второго мозга (area/kind/cluster) — есть только при успехе ИИ
   const nowMsk = new Date(Date.now() + 3 * 60 * 60 * 1000);
   const mskTimeStr = String(nowMsk.getUTCHours()).padStart(2,'0') + ':' + String(nowMsk.getUTCMinutes()).padStart(2,'0');
+  const areaNames = tags.map(t => (t.label || '').trim()).filter(Boolean).slice(0, 20);
+  const clList = await loadClusters();
+  const clusterNames = [...clList].sort((a,b)=>(b.count||0)-(a.count||0)).slice(0, 30).map(c => c.name);
   try {
-    const resp = await callPolzaAI([
-      { role: 'system', content: 'Ты — классификатор записей пользователя. Ответь ТОЛЬКО валидным JSON без markdown: {"task": true/false, "date": "YYYY-MM-DD" или null, "time": "HH:MM" или null}. task: true — если запись это конкретное действие, которое предстоит сделать и потом можно поставить галочку (купить, позвонить, записаться, отправить, сделать, не забыть); false — мысль, факт, идея без действия, дневниковая запись, справка. Сомневаешься — true: лучше поставить в тудушку, чем потерять дело. Все даты/времена — в московском поясе (МСК = UTC+3), СЕЙЧАС ' + mskTimeStr + ' МСК. date: ТОЛЬКО если в тексте ЯВНО назван день или срок («сегодня», «завтра», «в пятницу», «через неделю») — вычисли точную дату от СЕГОДНЯ (сегодня=' + todayKey + ', завтра=' + tomorrowKey + '; «через неделю» = +7 дней; «на следующей неделе» = ближайший понедельник; названный день недели = ближайший будущий). День/срок НЕ назван — date: null и time: null: задача без срока просто ляжет в тудушку, её раскидают по календарю позже. ЗАПРЕЩЕНО ставить «сегодня» по умолчанию или «для порядка». time: если названо время («в 15:00», «утром» = 09:00, «вечером» = 18:00) — HH:MM; «через N минут/часов» = текущее время ' + mskTimeStr + ' + N (НИКОГДА не ставь время раньше текущего).' },
+    const resp = await callBrainAI([
+      { role: 'system', content: 'Ты — классификатор записей личного дневника-трекера. Ответь ТОЛЬКО валидным JSON без markdown: {"task": true/false, "date": "YYYY-MM-DD" или null, "time": "HH:MM" или null, "area": "..." или null, "newArea": {"name":"...","icon":"эмодзи"} или null, "kind": "мысль|событие|решение|идея|вопрос|дело", "cluster": "..." или null}. '
+        + 'task: true — если запись это конкретное действие, которое предстоит сделать и потом можно поставить галочку (купить, позвонить, записаться, отправить, сделать, не забыть); false — мысль, факт, идея без действия, дневниковая запись, справка. Сомневаешься — true: лучше поставить в тудушку, чем потерять дело. '
+        + 'area: ОДНА область жизни из списка [' + areaNames.join(' | ') + ']. Подходит хоть одна — верни её точное имя. Ни одна не подходит — area: null и newArea: {"name": "1-2 слова, существительное", "icon": "один эмодзи"}. '
+        + 'kind: мысль (размышление, чувство, наблюдение) | событие (что произошло, факт из жизни) | решение (выбрал, постановил) | идея (придумал что-то, что можно сделать) | вопрос (сомнение, надо выяснить) | дело (конкретное действие — совпадает с task:true). '
+        + 'cluster: если запись — однотипное повторяющееся дело (смотреть фильм/сериал, читать книгу, тренировка, купить X, встреча...) — короткое имя группы в именной форме из существующих [' + clusterNames.join(' | ') + '] (точное имя существующего, если подходит) или новое («Посмотреть фильмы», «Тренировка», «Купить продукты»); разовые дела и не-дела — null. '
+        + 'Все даты/времена — в московском поясе (МСК = UTC+3), СЕЙЧАС ' + mskTimeStr + ' МСК. date: ТОЛЬКО если в тексте ЯВНО назван день или срок («сегодня», «завтра», «в пятницу», «через неделю») — вычисли точную дату от СЕГОДНЯ (сегодня=' + todayKey + ', завтра=' + tomorrowKey + '; «через неделю» = +7 дней; «на следующей неделе» = ближайший понедельник; названный день недели = ближайший будущий). День/срок НЕ назван — date: null и time: null: задача без срока просто ляжет в тудушку, её раскидают по календарю позже. ЗАПРЕЩЕНО ставить «сегодня» по умолчанию или «для порядка». time: если названо время («в 15:00», «утром» = 09:00, «вечером» = 18:00) — HH:MM; «через N минут/часов» = текущее время ' + mskTimeStr + ' + N (НИКОГДА не ставь время раньше текущего).' },
       { role: 'user', content: note.text.slice(0, 300) }
-    ], { max_tokens: 60, temperature: 0 });
+    ], { max_tokens: 240, temperature: 0 });
     const m = resp && resp.match(/\{[\s\S]*\}/);
     if (m) {
-      const p = JSON.parse(m[0]);
-      if (typeof p.task === 'boolean') {
-        isTask = p.task;
-        if (isValidDateStr(p.date)) aiDate = p.date;
-        if (isValidTimeStr(p.time)) aiTime = p.time;
+      parsed = JSON.parse(m[0]);
+      if (typeof parsed.task === 'boolean') {
+        isTask = parsed.task;
+        if (isValidDateStr(parsed.date)) aiDate = parsed.date;
+        if (isValidTimeStr(parsed.time)) aiTime = parsed.time;
       }
     }
   } catch(e) { console.warn('[Classify] AI failed, fallback to heuristic:', e); }
-  if (isTask === null) isTask = heuristicIsTask(note.text); // фолбэк без ИИ
-  if (!isTask) return; // заметка — остаётся в истории, ничего не делаем
+  if (isTask === null) isTask = heuristicIsTask(note.text);
+
+  // ── РАЗМЕТКА (второй мозг): area/kind/cluster — для ВСЕХ записей, не только задач ──
+  let dimsPatch = null;
+  try {
+    dimsPatch = {};
+    if (note.tag) {
+      dimsPatch.area = note.tag; // ручной тег пользователя — приоритет, ИИ не перебивает
+    } else if (parsed && parsed.area && typeof parsed.area === 'string') {
+      const a = await ensureArea(parsed.area);
+      if (a) dimsPatch.area = a.label;
+    } else if (parsed && parsed.newArea && parsed.newArea.name) {
+      const a = await ensureArea(parsed.newArea.name, parsed.newArea.icon);
+      if (a) dimsPatch.area = a.label;
+    }
+    if (parsed && parsed.kind && NOTE_KINDS.includes(String(parsed.kind))) dimsPatch.kind = parsed.kind;
+    if (parsed && parsed.cluster && typeof parsed.cluster === 'string') {
+      const c = await ensureCluster(parsed.cluster);
+      if (c) { dimsPatch.cluster = c.name; dimsPatch.clusterId = c.id; }
+    }
+    if (dimsPatch.area && dimsPatch.area !== note.tag) dimsPatch.tag = dimsPatch.area; // tag — совместимость фильтров/графа
+    if (!dimsPatch.area) delete dimsPatch.area;
+    if (!Object.keys(dimsPatch).length) dimsPatch = null;
+  } catch (e) { console.warn('[Classify] dims error', e); dimsPatch = null; }
+
+  if (!isTask) {
+    if (dimsPatch) {
+      try {
+        await updateDoc(uDocRef('notes', note.id), dimsPatch);
+        const fn = notes.find(n => n.id === note.id);
+        if (fn) Object.assign(fn, dimsPatch);
+      } catch (e) { console.warn('[Classify] dims save failed', e); }
+    }
+    return; // заметка — остаётся в истории, ничего не делаем
+  }
   // дата/время: «через N минут/часов» — ТОЛЬКО локальный расчёт (ИИ ошибается с поясами);
   // иначе — от ИИ, с локальным фолбэком относительных дат
   const heur = parseRelativeDateRu(note.text);
@@ -2667,6 +2801,7 @@ async function classifyAndRouteNote(note) {
   const todoOrder = minOrder === Infinity ? Date.now() : minOrder - 1; // новая задача — вверху очереди
   try {
     const patch = { inTodo: true, todoOrder };
+    if (dimsPatch) Object.assign(patch, dimsPatch); // разметка едет вместе с роутингом — один вызов
     if (scheduledDate) patch.scheduledDate = scheduledDate; // задача с датой → в календарь
     if (scheduledTime) patch.scheduledTime = scheduledTime;
     // текст чистим от фраз срока («завтра в 15:00») — срок уже виден в бейдже/календаре
@@ -2728,6 +2863,11 @@ function renderNotes(list) {
     const isInTodo = n.inTodo === true;
     const todoBtn = `<button class="note-btn ${isInTodo ? 'note-undone' : 'note-edit'}" onclick="toggleTodo('${n.id}', ${isInTodo});event.stopPropagation();">${isInTodo ? '✕ Убрать из тудулиста' : '➜ В тудулист'}</button>`;
     const staleCls = isStaleNote(n) ? ' note-stale' : '';
+    // размеры второго мозга: тип записи + кластер дел (область уже видна в meta как tag)
+    const dimBadges = [
+      n.kind ? `<span style="flex-shrink:0;font-size:9.5px;font-weight:600;padding:2px 8px;border-radius:99px;background:rgba(108,71,255,0.14);border:0.5px solid rgba(124,93,255,0.35);color:rgba(197,182,255,0.92);white-space:nowrap;">${escHtml(n.kind)}</span>` : '',
+      n.cluster ? `<span style="flex-shrink:0;font-size:9.5px;font-weight:600;padding:2px 8px;border-radius:99px;background:rgba(0,212,255,0.10);border:0.5px solid rgba(0,212,255,0.3);color:rgba(140,225,255,0.92);white-space:nowrap;">🧩 ${escHtml(n.cluster)}</span>` : ''
+    ].filter(Boolean).join('');
     return `
       <div class="note-card${staleCls}" ${cardClick}>
         <div style="display:flex;gap:10px;align-items:flex-start;">
@@ -2740,6 +2880,7 @@ function renderNotes(list) {
               </span>
             </div>
             <div class="note-text" style="${textStyle}">${escHtml(n.text)}</div>
+            ${dimBadges ? `<div style="display:flex;gap:5px;margin-top:6px;flex-wrap:wrap;">${dimBadges}</div>` : ''}
             ${selectionMode ? '' : `
             <div class="note-actions">
               ${doneBtn}
@@ -3068,6 +3209,10 @@ function openEdit(id) {
       const dd = new Date(new Date(n.doneAt).getTime() + 3*60*60*1000);
       parts.push('Выполнено: ' + dd.toLocaleDateString('ru-RU', { day:'numeric', month:'short', timeZone:'UTC' }) + ' в ' + dd.toLocaleTimeString('ru-RU', { hour:'2-digit', minute:'2-digit', timeZone:'UTC' }));
     }
+    // размеры второго мозга (v72)
+    if (n.area && n.area !== n.tag) parts.push('Область: ' + n.area);
+    if (n.kind) parts.push('Тип: ' + n.kind);
+    if (n.cluster) parts.push('Кластер: ' + n.cluster);
     metaEl.textContent = parts.join(' · ');
     metaEl.style.display = parts.length ? 'block' : 'none';
   }
@@ -4048,6 +4193,7 @@ function graphRR(ctx, x, y, w, h, r) {
 
 const GRAPH_SPHERE_COLORS = ['#8B5CF6','#22D3EE','#34D399','#F59E0B','#F472B6','#60A5FA','#FBBF24','#F87171','#A78BFA','#2DD4BF','#E879F9','#4ADE80'];
 const GRAPH_WISH_COLOR = '#FFD166';   // золото — цвет целей
+const GRAPH_CLUSTER_COLOR = '#00D4FF'; // голубой — кластеры однотипных дел (v72)
 const GRAPH_NOHUB_COLOR = '#9CA3AF';  // серые записи без тега живут у центра
 
 function graphSphereColor(i) { return GRAPH_SPHERE_COLORS[i % GRAPH_SPHERE_COLORS.length]; }
@@ -4094,6 +4240,23 @@ async function loadGraphData() {
     graphNodes.push({ id: 'wish:' + w.id, kind: 'wish', wishId: w.id, label: (w.shortTag || (w.text || '').slice(0, 16)).toLowerCase(), icon: w.icon || '🌠', color: GRAPH_WISH_COLOR, r: 16, state: w.state || 'dream', count: 0, x: 0, y: 0, vx: 0, vy: 0 });
   });
 
+  // ── Хабы уровня 1: кластеры однотипных дел (v72, голубые) — «Посмотреть фильмы» и т.п. ──
+  const clusterIdxByKey = {};
+  const clusterAgg = {};
+  for (const n of visibleNotes) {
+    if (!n.cluster) continue;
+    const key = normDim(n.cluster);
+    if (!key) continue;
+    if (!clusterAgg[key]) clusterAgg[key] = { name: n.cluster, count: 0 };
+    clusterAgg[key].count++;
+  }
+  Object.values(clusterAgg)
+    .sort((a, b) => b.count - a.count)
+    .forEach(c => {
+      clusterIdxByKey[normDim(c.name)] = graphNodes.length;
+      graphNodes.push({ id: 'cluster:' + c.name, kind: 'cluster', label: c.name, icon: '🧩', color: GRAPH_CLUSTER_COLOR, r: 13 + Math.min(c.count, 7), count: 0, x: 0, y: 0, vx: 0, vy: 0 });
+    });
+
   // ── Листья: записи ──
   const connCount = {};
   for (const l of allLinks) {
@@ -4105,6 +4268,8 @@ async function loadGraphData() {
     const tagKey = (n.tag || '').trim().toLowerCase();
     if (n.wishId && wishIdxById[n.wishId] !== undefined) {
       hub = wishIdxById[n.wishId]; color = GRAPH_WISH_COLOR;
+    } else if (n.cluster && clusterIdxByKey[normDim(n.cluster)] !== undefined) {
+      hub = clusterIdxByKey[normDim(n.cluster)]; color = GRAPH_CLUSTER_COLOR; // кластер важнее общего тега
     } else if (tagKey && sphereIdxByLabel[tagKey] !== undefined) {
       hub = sphereIdxByLabel[tagKey]; color = graphNodes[hub].color;
     } else if (tagKey && wishIdxByKey[normalizeWishKey(tagKey)] !== undefined) {
@@ -4185,6 +4350,8 @@ async function loadGraphData() {
     const parts = [];
     if (tags.length) parts.push(tags.length + ' сфер');
     if (wishes.length) parts.push(wishes.length + ' желаний');
+    const clCount = graphNodes.filter(n => n.kind === 'cluster').length;
+    if (clCount) parts.push(clCount + ' кластеров');
     parts.push(graphLeafCount + ' записей');
     parts.push(drawnAi + ' связей ИИ');
     parts.push('щипок — глубже');
@@ -4192,6 +4359,7 @@ async function loadGraphData() {
   }
 }
 window.loadGraphData = loadGraphData;
+window.__graphSnapshot = () => ({ nodes: graphNodes, edges: graphEdges }); // тесты
 
 function ensureGraphCanvasSized() {
   if (!graphCanvas) return;
@@ -6928,6 +7096,9 @@ function goTo(screen) {
   const dockBtn = document.getElementById('dock-' + screen);
   if (dockBtn) dockBtn.classList.add('active');
   if (screen === 'main') showMainHints();
+  if (screen === 'settings') {
+    loadClusters().then(() => updateBrainStats()).catch(() => {}); // разум базы: статистика разметки
+  }
   if (screen === 'hist') {
     loadNotes();
     // Обучение в Истории: что это → теги → юбилеи
@@ -8113,6 +8284,118 @@ async function migrateFindLinks() {
 }
 window.migrateFindLinks = migrateFindLinks;
 
+// ── БЭКФИЛЛ «второго мозга»: рассортировать архив по областям/типам/кластерам (v72) ──
+// Батчи по 12 записок — один ИИ-вызов на батч; новые области создаются как теги
+// (чипы/фильтры обновляются сами), кластеры — в коллекцию clusters. Прерываемо.
+let backfillRunning = false;
+let backfillCancelled = false;
+
+function updateBrainStats() {
+  const el = document.getElementById('brain-stats');
+  if (!el) return;
+  const total = notes.length;
+  const marked = notes.filter(n => n.area || n.kind).length;
+  const clCount = (clustersCache || []).length;
+  el.textContent = total === 0
+    ? 'Добавь первые записи — ИИ будет раскладывать их по областям, типам (мысль/событие/решение…) и кластерам дел автоматически.'
+    : `Размечено: ${marked} из ${total} записей · областей: ${tags.length} · кластеров дел: ${clCount}. Новые записи размечаются сами.`;
+}
+window.updateBrainStats = updateBrainStats;
+
+async function backfillDimensions() {
+  if (backfillRunning) { backfillCancelled = true; return; }
+  if (!currentUid || notes.length === 0) { alert('Нет заметок для разбора'); return; }
+  await loadClusters(true);
+  const unmarked = notes.filter(n => !n.area && !n.kind);
+  if (unmarked.length === 0) {
+    updateBrainStats();
+    alert('Все записи уже размечены 🎉 Новые записи ИИ размечает автоматически.');
+    return;
+  }
+  const BATCH = 12, MAX = 480;
+  const batch = unmarked.slice(0, MAX);
+  const skipped = unmarked.length - batch.length;
+  const mins = Math.ceil(batch.length / BATCH * 2.2 / 60);
+  if (!confirm(`Записей без разметки: ${unmarked.length}.\nБудет разобрано: ${batch.length}${skipped > 0 ? ` (остальные ${skipped} — при следующем запуске)` : ''}.\nЭто займёт ~${mins} мин. Запустить?`)) return;
+
+  backfillRunning = true;
+  backfillCancelled = false;
+  const btn = document.getElementById('backfill-btn');
+  if (btn) { btn.textContent = '⏹ Остановить'; btn.style.background = 'rgba(255,80,80,0.15)'; }
+
+  let progressEl = document.getElementById('backfill-progress');
+  if (!progressEl) {
+    progressEl = document.createElement('div');
+    progressEl.id = 'backfill-progress';
+    progressEl.style.cssText = 'position:fixed;top:calc(8px + env(safe-area-inset-top));left:50%;transform:translateX(-50%);z-index:9998;background:rgba(15,18,40,0.95);border:1px solid rgba(0,220,140,0.5);border-radius:99px;padding:8px 16px;font-size:12px;color:#fff;font-family:Inter,sans-serif;box-shadow:0 4px 20px rgba(0,220,140,0.35);backdrop-filter:blur(10px);';
+    document.body.appendChild(progressEl);
+  }
+  progressEl.style.display = 'block';
+
+  const areaNames = tags.map(t => (t.label || '').trim()).filter(Boolean);
+  let done = 0, marked = 0;
+  for (let i = 0; i < batch.length; i += BATCH) {
+    if (backfillCancelled) break;
+    const chunk = batch.slice(i, i + BATCH);
+    progressEl.textContent = `🧠 Разбираю архив: ${done}/${batch.length} (${Math.round(done / batch.length * 100)}%)`;
+    try {
+      const listText = chunk.map((n, j) => `${j}. ${(n.text || '').slice(0, 140).replace(/\n/g, ' ')}`).join('\n');
+      const resp = await callBrainAI([
+        { role: 'system', content: 'Ты — ассистент личного дневника-трекера. Разметь записи. Ответь ТОЛЬКО валидным JSON-массивом без markdown, по одному объекту на запись, В ПОРЯДКЕ НУМЕРАЦИИ: [{"i":0,"area":"...","newArea":null,"kind":"...","cluster":null},...]. '
+          + 'area — ОДНА область из списка [' + areaNames.join(' | ') + '] (точное имя); если ни одна не подходит — area: null и newArea: {"name": "1-2 слова, существительное", "icon": "один эмодзи"}. '
+          + 'kind — одно из: мысль | событие | решение | идея | вопрос | дело (дело — конкретное действие). '
+          + 'cluster — если запись это однотипное повторяющееся дело (смотреть фильм/сериал, читать, тренировка, купить X, встреча…) — короткое имя группы в именной форме («Посмотреть фильмы», «Тренировка»), иначе null. Ничего лишнего не выдумывай.' },
+        { role: 'user', content: listText }
+      ], { max_tokens: 1400, temperature: 0 });
+      const m = resp && resp.match(/\[[\s\S]*\]/);
+      if (m) {
+        const arr = JSON.parse(m[0]);
+        for (const it of (Array.isArray(arr) ? arr : [])) {
+          const idx = typeof it.i === 'number' ? it.i : -1;
+          if (idx < 0 || idx >= chunk.length) continue;
+          const n = chunk[idx];
+          const patch = {};
+          try {
+            if (typeof it.area === 'string' && it.area.trim()) {
+              const ex = tags.find(t => normDim(t.label) === normDim(it.area));
+              if (ex) { patch.area = ex.label; if (n.tag !== ex.label) patch.tag = ex.label; }
+            } else if (!n.tag && it.newArea && it.newArea.name) {
+              const a = await ensureArea(it.newArea.name, it.newArea.icon);
+              if (a) { patch.area = a.label; if (n.tag !== a.label) patch.tag = a.label; }
+            }
+            if (it.kind && NOTE_KINDS.includes(String(it.kind))) patch.kind = it.kind;
+            if (typeof it.cluster === 'string' && it.cluster.trim()) {
+              const c = await ensureCluster(it.cluster);
+              if (c) { patch.cluster = c.name; patch.clusterId = c.id; }
+            }
+            if (Object.keys(patch).length) {
+              await updateDoc(uDocRef('notes', n.id), patch);
+              Object.assign(n, patch);
+              marked++;
+            }
+          } catch (e) { console.warn('[Backfill] note patch failed', n.id, e); }
+        }
+      }
+    } catch (e) { console.warn('[Backfill] batch failed', e); }
+    done += chunk.length;
+    if (i + BATCH < batch.length && !backfillCancelled) {
+      await new Promise(r => setTimeout(r, 1200)); // rate limit
+    }
+  }
+
+  progressEl.style.display = 'none';
+  if (btn) { btn.textContent = '🧠 Рассортировать архив'; btn.style.background = 'rgba(0,200,120,0.09)'; }
+  backfillRunning = false;
+  backfillCancelled = false;
+  try { await loadNotes(); } catch (e) {}
+  updateBrainStats();
+  renderTagsScreen();
+  alert(`Готово! Размечено записей: ${marked} из ${done}${backfillCancelled ? ' (прервано)' : ''}.${marked < done ? '\nОставшиеся — повтори запуск.' : ''}`);
+}
+window.backfillDimensions = backfillDimensions;
+window.loadClusters = loadClusters; // тесты: контроль коллекции кластеров
+window.callBrainAI = callBrainAI; // тесты: контроль вызовов ИИ второго мозга
+
 function showTyping() {
   const el = document.getElementById('chat-messages');
   const div = document.createElement('div');
@@ -8273,6 +8556,27 @@ function buildSystemPrompt() {
     ? scheduledCtx.map(n => `  - ${n.scheduledDate}${n.scheduledTime ? ' ' + n.scheduledTime : ''} — ${n.text}${n.tag ? ' [' + n.tag + ']' : ''}`).join('\n')
     : '  (ничего не запланировано на конкретные дни)';
 
+  // ИНДЕКС (второй мозг, v72): компактная карта базы — области, типы, кластеры, решения.
+  // ИИ читает её ПЕРВОЙ и понимает контекст человека даже при коротком запросе.
+  const areaCounts = {}, kindCounts = {}, clusterCounts = {};
+  for (const n of notes) {
+    const a = n.area || n.tag;
+    if (a) areaCounts[a] = (areaCounts[a] || 0) + 1;
+    if (n.kind) kindCounts[n.kind] = (kindCounts[n.kind] || 0) + 1;
+    if (n.cluster) clusterCounts[n.cluster] = (clusterCounts[n.cluster] || 0) + 1;
+  }
+  const idxParts = [];
+  const areasStr = Object.entries(areaCounts).sort((x, y) => y[1] - x[1]).map(([k, v]) => `${k} (${v})`).join(', ');
+  if (areasStr) idxParts.push('ОБЛАСТИ: ' + areasStr);
+  const clustersStr = Object.entries(clusterCounts).sort((x, y) => y[1] - x[1]).slice(0, 15).map(([k, v]) => `${k} (${v})`).join(', ');
+  if (clustersStr) idxParts.push('КЛАСТЕРЫ ДЕЛ: ' + clustersStr);
+  const kindsStr = Object.entries(kindCounts).map(([k, v]) => `${k}: ${v}`).join(', ');
+  if (kindsStr) idxParts.push('ТИПЫ ЗАПИСЕЙ: ' + kindsStr);
+  const decisionsCtx = notes.filter(n => n.kind === 'решение').slice(0, 8)
+    .map(n => `  - ${toMoscow(n.createdAt)} — «${n.text.slice(0, 90)}»`).join('\n');
+  if (decisionsCtx) idxParts.push('НЕДАВНИЕ РЕШЕНИЯ (сравнивай с ними новые — не предлагай уже отвергнутое, опирайся на выбор):\n' + decisionsCtx);
+  const indexContext = idxParts.length ? '\nИНДЕКС БАЗЫ (карта записей — используй для понимания контекста и закономерностей):\n- ' + idxParts.join('\n- ') : '';
+
   return `Ты — личный ИИ-ассистент пользователя в приложении Hazenstein. Сейчас: ${todayStr}.
 СЕГОДНЯ (машиночитаемо, для вычисления сроков задач в поле date): ${todayKeyStr}.
 
@@ -8286,6 +8590,7 @@ ${calendarContext}
 
 ЖЕЛАНИЯ (цели пользователя; shortTag в [скобках] — это значение для поля wish функции propose_note; шаги: [x] выполнен, [ ] нет):
 ${wishesContext}
+${indexContext}
 
 ЗА СЕГОДНЯ (добавлено или выполнено сегодня — этот список уже точно отфильтрован по сегодняшнему дню, используй его напрямую для любых вопросов про "сегодня", не нужно искать это в общей базе ниже):
 ${todayContext}
@@ -8299,6 +8604,8 @@ ${promptRules.length ? 'ДОПОЛНИТЕЛЬНЫЕ ИНСТРУКЦИИ ОТ �
 
 Отвечай кратко, по-русски, дружелюбно.`;
 }
+
+window.buildSystemPrompt = buildSystemPrompt; // тесты: проверка индекса второго мозга в контексте
 
 // формирует точный, заранее отфильтрованный список записей за последние N дней
 // (по дате создания ИЛИ по дате отметки "выполнено") — модель получает готовые данные, не считает сама
