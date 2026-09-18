@@ -7096,7 +7096,7 @@ function goTo(screen) {
   const dockBtn = document.getElementById('dock-' + screen);
   if (dockBtn) dockBtn.classList.add('active');
   if (screen === 'main') showMainHints();
-  if (screen === 'settings') {
+  if (screen === 'prompt') {
     loadClusters().then(() => updateBrainStats()).catch(() => {}); // разум базы: статистика разметки
   }
   if (screen === 'hist') {
