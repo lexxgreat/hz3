@@ -133,7 +133,7 @@ body{background:#060918;font-family:'Inter',sans-serif;display:flex;justify-cont
   box-shadow:inset 0 0 0 1px rgba(0,230,140,0.30), 0 2px 10px rgba(0,200,120,0.18);
 }
 .focus-done-btn:hover{background:rgba(0,200,100,0.4)}
-/* v76: кнопка «Пропустить» — задача опускается на 3 позиции ниже (не в конец) */
+/* v77: «Пропустить» — 1-й пропуск уносит задачу на 5-ю позицию, повторный — в конец */
 .focus-skip-btn{
   padding:7px 13px;border-radius:99px;border:none;
   background:rgba(255,255,255,0.07);
@@ -373,11 +373,7 @@ body{background:#060918;font-family:'Inter',sans-serif;display:flex;justify-cont
 .note-card.note-stale::before{background:linear-gradient(to bottom,#FFD166,#FF9F43);opacity:0.95}
 .note-text{font-size:13.5px;color:rgba(255,255,255,0.82);line-height:1.5;word-break:break-word}
 .note-actions{display:flex;gap:8px;margin-top:10px;opacity:1;flex-wrap:wrap;}
-/* v76: свернутые теги карточки истории + детали заметки */
-.ntag-chip{flex-shrink:0;font-size:9.5px;font-weight:600;padding:2px 8px;border-radius:99px;border:0.5px solid;white-space:nowrap;font-family:'Inter',sans-serif}
-.ntag-toggle{flex-shrink:0;font-size:9.5px;font-weight:600;padding:2px 8px;border-radius:99px;border:0.5px dashed rgba(255,255,255,0.28);background:rgba(255,255,255,0.04);color:rgba(255,255,255,0.6);cursor:pointer;font-family:'Inter',sans-serif;transition:background 0.15s}
-.ntag-toggle:hover{background:rgba(255,255,255,0.09)}
-.note-details-text{margin-top:6px;padding:8px 10px;border-radius:8px;background:rgba(0,230,130,0.05);border:0.5px solid rgba(0,230,130,0.18);font-size:12px;line-height:1.55;color:rgba(215,248,232,0.88);white-space:pre-wrap;word-break:break-word;font-family:'Inter',sans-serif}
+/* v77: свернутые теги/стрелочки карточки убраны (откат к v75 по фидбеку) */
 
 .note-btn{
   font-size:11px;padding:4px 12px;border-radius:99px;border:none;
@@ -1487,7 +1483,7 @@ service cloud.firestore {
       <div class="modal-title">Редактировать запись</div>
       <div id="modal-meta" style="display:none;font-size:11px;color:rgba(255,255,255,0.45);margin:0 0 8px;line-height:1.5;font-family:Inter,sans-serif;"></div>
       <textarea class="modal-textarea" id="modal-text"></textarea>
-      <textarea class="modal-textarea" id="modal-details" placeholder="📝 Детали — списки, расшифровка, продолжение мысли (например, сам список займов)" style="min-height:70px;font-size:12.5px;margin-top:6px;"></textarea>
+      <textarea class="modal-textarea" id="modal-details" placeholder="📝 Детали — списки, цифры, расшифровка, продолжение мысли" style="min-height:70px;font-size:12.5px;margin-top:6px;"></textarea>
       <div id="modal-schedule-row" style="display:flex;gap:6px;margin:10px 0 6px;align-items:flex-end;">
         <div style="flex:1.4;">
           <div style="font-size:9.5px;color:rgba(255,255,255,0.45);margin-bottom:4px;text-transform:uppercase;letter-spacing:1px;font-family:Inter,sans-serif;">📅 Срок (в календарь)</div>
@@ -1695,14 +1691,19 @@ let notes = [];
 let editingId = null;
 let editingSelectedTag = null;
 
+// v77: внутри карточки (редактора) длинный список тегов свёрнут в выпадающий список
+// вместо простыни чипов — выбирается одним тапом, «Без тега» — первый пункт
 function renderModalTagPicker() {
   const el = document.getElementById('modal-tag-picker');
   if (!el) return;
-  const noneBtn = `<button class="hist-filter-btn ${!editingSelectedTag ? 'active' : ''}" onclick="setModalTag(null)">Без тега</button>`;
-  const tagBtns = tags.map(t =>
-    `<button class="hist-filter-btn ${editingSelectedTag === t.label ? 'active' : ''}" onclick="setModalTag('${t.label}')">${t.icon} ${t.label}</button>`
-  ).join('');
-  el.innerHTML = noneBtn + tagBtns;
+  const known = editingSelectedTag && tags.some(t => t.label === editingSelectedTag);
+  const curOpt = (editingSelectedTag && !known)
+    ? '<option value="' + escHtml(editingSelectedTag) + '" selected>' + escHtml(editingSelectedTag) + ' (текущий)</option>' : '';
+  el.innerHTML = '<select aria-label="Тег записи" onchange="setModalTag(this.value || null)" style="width:100%;padding:10px 12px;border-radius:10px;border:0.5px solid rgba(108,71,255,0.35);background:rgba(18,22,40,0.95);color:#fff;font-size:13px;font-family:Inter,sans-serif;outline:none;color-scheme:dark;cursor:pointer;">'
+    + '<option value="">Без тега</option>' + curOpt + tags.map(t =>
+      '<option value="' + escHtml(t.label) + '"' + (editingSelectedTag === t.label ? ' selected' : '') + '>' + escHtml((t.icon ? t.icon + ' ' : '') + t.label) + '</option>'
+    ).join('') + '</select>'
+    + (editingSelectedTag ? '<div style="font-size:10.5px;color:rgba(255,255,255,0.4);margin-top:5px;">Тег: ' + escHtml(editingSelectedTag) + ' · убрать — выбери «Без тега»</div>' : '');
 }
 
 function setModalTag(label) {
@@ -3005,14 +3006,6 @@ async function loadNotes() {
   }
 }
 
-// v76: какие карточки истории раскрыты (теги + детали) — живёт в памяти сессии
-const expandedNoteTags = new Set();
-function toggleNoteTags(id) {
-  if (expandedNoteTags.has(id)) expandedNoteTags.delete(id); else expandedNoteTags.add(id);
-  filterNotes(); // перерисовка с сохранённым состоянием раскрытия
-}
-window.toggleNoteTags = toggleNoteTags;
-
 function renderNotes(list) {
   const el = document.getElementById('hist-list');
   document.getElementById('hist-count').textContent = list.length + ' записей';
@@ -3043,39 +3036,27 @@ function renderNotes(list) {
     const isInTodo = n.inTodo === true;
     const todoBtn = `<button class="note-btn ${isInTodo ? 'note-undone' : 'note-edit'}" onclick="toggleTodo('${n.id}', ${isInTodo});event.stopPropagation();">${isInTodo ? '✕ Убрать из тудулиста' : '➜ В тудулист'}</button>`;
     const staleCls = isStaleNote(n) ? ' note-stale' : '';
-    // ТЕГИ КАРТОЧКИ (v76): свёрнуты в один чип + кнопка «▼ N» — по тапу раскрывается список
-    // (тип записи, кластер, область) и блок деталей (расширенное тело заметки)
-    const tagChips = [
-      n.tag ? '<span class="ntag-chip" style="background:rgba(108,71,255,0.14);border-color:rgba(124,93,255,0.35);color:rgba(197,182,255,0.92);">🏷 ' + escHtml(n.tag) + '</span>' : '',
-      n.kind ? '<span class="ntag-chip" style="background:rgba(108,71,255,0.14);border-color:rgba(124,93,255,0.35);color:rgba(197,182,255,0.92);">' + escHtml(n.kind) + '</span>' : '',
-      n.cluster ? '<span class="ntag-chip" style="background:rgba(0,212,255,0.10);border-color:rgba(0,212,255,0.3);color:rgba(140,225,255,0.92);">🧩 ' + escHtml(n.cluster) + '</span>' : '',
-      (n.area && n.area !== n.tag) ? '<span class="ntag-chip" style="background:rgba(255,209,102,0.10);border-color:rgba(255,209,102,0.3);color:rgba(255,224,138,0.92);">📁 ' + escHtml(n.area) + '</span>' : ''
-    ].filter(Boolean);
-    const tagsExpanded = expandedNoteTags.has(n.id);
-    const hiddenCount = Math.max(0, tagChips.length - 1);
-    const canExpand = hiddenCount > 0 || !!n.details;
-    const tagsRow = (tagChips.length || n.details)
-      ? '<div style="display:flex;gap:5px;margin-top:6px;flex-wrap:wrap;align-items:center;">'
-        + (tagChips[0] || '')
-        + (tagsExpanded && n.details ? '<span class="ntag-chip" style="background:rgba(0,230,130,0.08);border-color:rgba(0,230,130,0.3);color:rgba(120,240,180,0.92);">📝 детали</span>' : '')
-        + (canExpand ? '<button class="ntag-toggle" onclick="toggleNoteTags(\'' + n.id + '\');event.stopPropagation();">' + (tagsExpanded ? '▲ свернуть' : '▼ ' + (hiddenCount ? hiddenCount + (n.details ? ' +📝' : '') : '📝 детали')) + '</button>' : '')
-        + (tagsExpanded ? tagChips.slice(1).join('') : '')
-        + '</div>'
-        + (tagsExpanded && n.details ? '<div class="note-details-text">' + escHtml(n.details) + '</div>' : '')
-      : '';
+    // v77 (откат к v75 по фидбеку): главный тег — снова в строке даты, как было;
+    // под текстом — строчка мелких бейджей (тип, кластер, область). Никаких
+    // раскрывающихся стрелочек. Полный разбор и «Детали» — внутри карточки, в редакторе.
+    const dimBadges = [
+      n.kind ? `<span style="flex-shrink:0;font-size:9.5px;font-weight:600;padding:2px 8px;border-radius:99px;background:rgba(108,71,255,0.14);border:0.5px solid rgba(124,93,255,0.35);color:rgba(197,182,255,0.92);white-space:nowrap;">${escHtml(n.kind)}</span>` : '',
+      n.cluster ? `<span style="flex-shrink:0;font-size:9.5px;font-weight:600;padding:2px 8px;border-radius:99px;background:rgba(0,212,255,0.10);border:0.5px solid rgba(0,212,255,0.3);color:rgba(140,225,255,0.92);white-space:nowrap;">🧩 ${escHtml(n.cluster)}</span>` : '',
+      (n.area && n.area !== n.tag) ? `<span style="flex-shrink:0;font-size:9.5px;font-weight:600;padding:2px 8px;border-radius:99px;background:rgba(255,209,102,0.10);border:0.5px solid rgba(255,209,102,0.3);color:rgba(255,224,138,0.92);white-space:nowrap;">📁 ${escHtml(n.area)}</span>` : ''
+    ].filter(Boolean).join('');
     return `
       <div class="note-card${staleCls}" ${cardClick}>
         <div style="display:flex;gap:10px;align-items:flex-start;">
           ${checkbox}
           <div style="flex:1;min-width:0;">
             <div class="note-meta">
-              <span class="note-date">${date} · ${time}${doneAtStr}${schedStr ? ' · ' + schedStr : ''}</span>
+              <span class="note-date">${date} · ${time}${n.tag ? ' · ' + escHtml(n.tag) : ''}${doneAtStr}${schedStr ? ' · ' + schedStr : ''}</span>
               <span style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
                 ${selectionMode ? '' : `<button class="note-copy-btn" title="Скопировать текст" onclick="copyNoteText('${n.id}');event.stopPropagation();">📋</button>`}
               </span>
             </div>
             <div class="note-text" style="${textStyle}">${escHtml(n.text)}</div>
-            ${tagsRow}
+            ${dimBadges ? `<div style="display:flex;gap:5px;margin-top:6px;flex-wrap:wrap;">${dimBadges}</div>` : ''}
             ${selectionMode ? '' : `
             <div class="note-actions">
               ${doneBtn}
@@ -5567,12 +5548,14 @@ function renderScorePad(container, initial, onChange) {
     paint();
     if (onChange) onChange(Object.assign({}, vals));
   }
-  container.addEventListener('pointerdown', ev => {
+  // v77: 'click' вместо 'pointerdown' — листание модалки/списка пальцем, начатое
+  // на клетке, больше не меняет оценку (после движения клик не срабатывает),
+  // а случайные задевания не сохраняются сами — только через «Сохранить».
+  container.addEventListener('click', ev => {
     const row = ev.target.closest('.sp-row');
     const cell = ev.target.closest('.sp-cell');
     if (!row || !cell) return;
     apply(row.dataset.k, Number(cell.dataset.v));
-    ev.preventDefault();
   });
   paint();
   return { get: () => Object.assign({}, vals) };
@@ -5778,8 +5761,8 @@ async function showWishSuggestionModal(text) {
       <textarea id="ws-milestones" style="width:100%;background:rgba(255,255,255,0.04);border:0.5px solid rgba(108,71,255,0.3);border-radius:8px;padding:8px 10px;color:#fff;font-size:12px;font-family:Inter,sans-serif;resize:vertical;min-height:90px;outline:none;" rows="5">${(suggestion.milestones || []).map(m => escHtml(m)).join('\n')}</textarea>
     </div>
     <div style="margin-bottom:14px;">
-      <div style="font-size:10px;color:rgba(255,255,255,0.5);margin-bottom:2px;text-transform:uppercase;letter-spacing:1px;">Оценки — проведи пальцем сверху вниз</div>
-      <div style="font-size:10.5px;color:rgba(255,255,255,0.35);margin-bottom:8px;">в каждой строке смести палец на нужную цифру (ИИ уже предположил — поправь если не так)</div>
+      <div style="font-size:10px;color:rgba(255,255,255,0.5);margin-bottom:2px;text-transform:uppercase;letter-spacing:1px;">Оценки — нажми на цифру в каждой строке</div>
+      <div style="font-size:10.5px;color:rgba(255,255,255,0.35);margin-bottom:8px;">ИИ уже предположил — поправь, если не так</div>
       <div id="ws-scorepad"></div>
     </div>
     <div style="background:rgba(0,212,255,0.06);border:0.5px solid rgba(0,212,255,0.2);border-radius:8px;padding:8px 10px;font-size:11px;color:rgba(0,212,255,0.7);line-height:1.5;">
@@ -5787,7 +5770,7 @@ async function showWishSuggestionModal(text) {
       💡 После сохранения AI сгенерирует картинку-настроение (~10-30 сек).
     </div>
   `;
-  // пэд оценок с ИИ-предзаполнением (жест-зигзаг или тап по ячейке)
+  // пэд оценок с ИИ-предзаполнением (тап по ячейке)
   const padHost = document.getElementById('ws-scorepad');
   if (padHost) {
     window._wsPad = renderScorePad(padHost, window._pendingWishSuggestion.scores || { v: 5, s: 5, e: 5, z: 5 });
@@ -6134,13 +6117,17 @@ async function openWishDetail(id) {
           </div>
         </div>
 
-        <!-- Оценки: Важно / Срочно / Лёгкое / Зажигает — зигзаг-пэд -->
+        <!-- Оценки: Важно / Срочно / Лёгкое / Зажигает — тапы, сохранение кнопкой -->
         <div style="margin-bottom:14px;">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-            <div style="font-size:10px;color:rgba(255,255,255,0.5);text-transform:uppercase;letter-spacing:1px;font-family:Inter,sans-serif;">Оценки · проведи пальцем</div>
+            <div style="font-size:10px;color:rgba(255,255,255,0.5);text-transform:uppercase;letter-spacing:1px;font-family:Inter,sans-serif;">Оценки · нажми на цифру</div>
             <div id="wd-score-sum" style="font-size:11px;font-weight:700;color:rgba(255,225,150,0.95);font-family:Inter,sans-serif;">Σ ${w.scores ? wishScoreSum(w.scores) : '—'}</div>
           </div>
           <div id="wd-scorepad"></div>
+          <div style="display:flex;gap:8px;margin-top:10px;">
+            <button id="wd-scores-back" type="button" style="flex:1;padding:10px;border-radius:10px;border:0.5px solid rgba(255,255,255,0.15);background:rgba(255,255,255,0.04);color:rgba(255,255,255,0.7);font-size:12.5px;font-weight:600;cursor:pointer;font-family:Inter,sans-serif;">← Назад</button>
+            <button id="wd-scores-save" type="button" style="flex:2;padding:10px;border-radius:10px;border:0.5px solid rgba(0,220,140,0.35);background:rgba(0,200,120,0.1);color:rgba(0,230,150,0.8);font-size:12.5px;font-weight:700;cursor:pointer;font-family:Inter,sans-serif;transition:all .15s;">💾 Сохранить оценки</button>
+          </div>
         </div>
 
         <!-- Milestones -->
@@ -6198,20 +6185,38 @@ async function openWishDetail(id) {
         ` : ''}
       </div>
     </div>`;
-  // пэд оценок в карточке: правки сохраняются сразу (с дебаунсом)
+  // v77: пэд оценок в карточке — правки сначала ЧЕРНОВИК: случайные задевания
+  // при листании не сохраняются. В облако пишем только по «Сохранить» (и закрываем
+  // карточку), «Назад» закрывает, отбросив черновик.
   const wdPadHost = modal.querySelector('#wd-scorepad');
   if (wdPadHost) {
-    let wdSaveTimer = null;
-    renderScorePad(wdPadHost, w.scores || { v: 5, s: 5, e: 5, z: 5 }, (vals) => {
-      w.scores = vals;
-      const sumEl = modal.querySelector('#wd-score-sum');
+    const saveBtn = modal.querySelector('#wd-scores-save');
+    const backBtn = modal.querySelector('#wd-scores-back');
+    const sumEl = modal.querySelector('#wd-score-sum');
+    const base = Object.assign({ v: 5, s: 5, e: 5, z: 5 }, w.scores || {});
+    let wdDraft = Object.assign({}, base);
+    const markDirty = () => {
+      if (!saveBtn) return;
+      saveBtn.classList.add('wd-dirty');
+      saveBtn.style.background = 'rgba(0,200,120,0.24)';
+      saveBtn.style.borderColor = 'rgba(0,230,150,0.65)';
+      saveBtn.style.color = 'rgba(140,255,200,1)';
+    };
+    renderScorePad(wdPadHost, base, (vals) => {
+      wdDraft = vals;
       if (sumEl) sumEl.textContent = 'Σ ' + wishScoreSum(vals);
-      clearTimeout(wdSaveTimer);
-      wdSaveTimer = setTimeout(() => {
-        updateDoc(uDocRef('wishes', w.id), { scores: vals }).catch(e => console.warn('[Wish] scores save failed', e));
-      }, 400);
-      renderWishes(); // обновить бейджи Σ на карточках
+      markDirty();
     });
+    if (saveBtn) saveBtn.addEventListener('click', async () => {
+      try {
+        w.scores = Object.assign({}, wdDraft);
+        await updateDoc(uDocRef('wishes', w.id), { scores: w.scores });
+        renderWishes(); // бейджи Σ и точки на карточках + сортировка
+        closeWishDetail();
+        setStatus('💾 Оценки сохранены', 2200);
+      } catch(e) { console.warn('[Wish] scores save failed', e); alert('Не удалось сохранить: ' + e.message); }
+    });
+    if (backBtn) backBtn.addEventListener('click', () => closeWishDetail());
   }
   modal.classList.add('open');
 }
@@ -7396,9 +7401,10 @@ async function reorderWish(id, newIndex) {
 }
 
 // ── КАРТОЧКА ФОКУСА НА ГЛАВНОЙ: тап → открыть задачу, свайп вправо → опустить в очереди ──
-// Скип (v76) = задача опускается на НЕСКОЛЬКО ПУНКТОВ вниз (3 позиции),
-// а не улетает в конец — она может понадобиться уже скоро. Механика та же,
-// что при драге за ⠿ (reorderTodo): соседи сдвигаются сами.
+// Скип (v77 по фидбеку): 1-й пропуск уносит задачу на 5-ю позицию, повторный —
+// в самый конец. Счётчик пропусков (skipCount) хранится на записи в Firestore
+// и переживает перезапуск. Механика та же, что при драге за ⠿ (reorderTodo):
+// соседи сдвигаются сами.
 async function skipTodoTask(id) {
   const queue = getTodoQueue();
   const idx = queue.findIndex(n => n.id === id);
@@ -7407,11 +7413,19 @@ async function skipTodoTask(id) {
     setStatus('Это единственная задача в очереди — листать некуда 🙂', 2600);
     return;
   }
-  const newIdx = Math.min(idx + 3, queue.length - 1);
+  const note = queue[idx];
+  const skipN = (Number(note.skipCount) || 0) + 1;
+  const toEnd = skipN >= 2;
+  const newIdx = toEnd ? queue.length - 1 : Math.min(4, queue.length - 1);
   try {
+    note.skipCount = skipN; // локально — до перезагрузки с сервера
+    try { await updateDoc(uDocRef('notes', id), { skipCount: skipN }); } catch(e) { console.warn('[focus] skipCount save failed', e); }
     await reorderTodo(id, newIdx);
-    const shift = newIdx - idx;
-    setStatus('↪ Задача опустилась на ' + shift + ' ' + (shift === 1 ? 'позицию' : 'позиции') + ' ниже', 2600);
+    setStatus(toEnd
+      ? '↪ Пропущена снова — уехала в конец очереди'
+      : (newIdx === queue.length - 1
+        ? '↪ Уехала в конец очереди — задач меньше пяти'
+        : '↪ Переехала на 5-ю позицию — ещё один пропуск унесёт её в конец'), 3000);
   } catch(e) { console.warn('[focus] skip failed', e); alert('Ошибка: ' + e.message); }
 }
 window.skipTodoTask = skipTodoTask;
