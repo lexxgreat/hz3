@@ -133,7 +133,7 @@ body{background:#060918;font-family:'Inter',sans-serif;display:flex;justify-cont
   box-shadow:inset 0 0 0 1px rgba(0,230,140,0.30), 0 2px 10px rgba(0,200,120,0.18);
 }
 .focus-done-btn:hover{background:rgba(0,200,100,0.4)}
-/* v74: кнопка «Пропустить» — задача уходит в конец очереди, наверх встаёт следующая */
+/* v76: кнопка «Пропустить» — задача опускается на 3 позиции ниже (не в конец) */
 .focus-skip-btn{
   padding:7px 13px;border-radius:99px;border:none;
   background:rgba(255,255,255,0.07);
@@ -373,6 +373,11 @@ body{background:#060918;font-family:'Inter',sans-serif;display:flex;justify-cont
 .note-card.note-stale::before{background:linear-gradient(to bottom,#FFD166,#FF9F43);opacity:0.95}
 .note-text{font-size:13.5px;color:rgba(255,255,255,0.82);line-height:1.5;word-break:break-word}
 .note-actions{display:flex;gap:8px;margin-top:10px;opacity:1;flex-wrap:wrap;}
+/* v76: свернутые теги карточки истории + детали заметки */
+.ntag-chip{flex-shrink:0;font-size:9.5px;font-weight:600;padding:2px 8px;border-radius:99px;border:0.5px solid;white-space:nowrap;font-family:'Inter',sans-serif}
+.ntag-toggle{flex-shrink:0;font-size:9.5px;font-weight:600;padding:2px 8px;border-radius:99px;border:0.5px dashed rgba(255,255,255,0.28);background:rgba(255,255,255,0.04);color:rgba(255,255,255,0.6);cursor:pointer;font-family:'Inter',sans-serif;transition:background 0.15s}
+.ntag-toggle:hover{background:rgba(255,255,255,0.09)}
+.note-details-text{margin-top:6px;padding:8px 10px;border-radius:8px;background:rgba(0,230,130,0.05);border:0.5px solid rgba(0,230,130,0.18);font-size:12px;line-height:1.55;color:rgba(215,248,232,0.88);white-space:pre-wrap;word-break:break-word;font-family:'Inter',sans-serif}
 
 .note-btn{
   font-size:11px;padding:4px 12px;border-radius:99px;border:none;
@@ -395,9 +400,9 @@ body{background:#060918;font-family:'Inter',sans-serif;display:flex;justify-cont
   flex-shrink:0;line-height:1;border-radius:8px;
 }
 .wish-drag-handle:hover{color:rgba(255,215,102,0.7)}
-/* ── Пэд оценок желаний: зигзаг-жест как паттерн-разблокировка (4 шкалы × 1-3-5-7-10) ── */
+/* ── Пэд оценок желаний: ПРОСТЫЕ ТАПЫ по ячейкам (v76 — жест убрали) 4 шкалы × 1-3-5-7-10 ── */
 .score-pad{
-  touch-action:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;
+  user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;
 }
 .sp-row{display:flex;align-items:center;gap:8px;margin-bottom:7px}
 .sp-label{width:72px;flex-shrink:0;font-size:10.5px;font-weight:700;letter-spacing:0.3px;font-family:'Inter',sans-serif;text-align:right;text-transform:uppercase}
@@ -1322,6 +1327,7 @@ body[data-theme="business"] .cap-mic.recording{box-shadow:0 0 10px rgba(140,176,
     </div>
     <div id="users-count-widget" style="display:none;align-items:center;justify-content:space-between;padding:10px 16px;margin:12px 16px 0;background:rgba(255,255,255,0.04);border:0.5px solid rgba(255,255,255,0.1);border-radius:12px;">
       <span style="display:inline-flex;align-items:center;gap:6px;font-size:12.5px;color:rgba(255,255,255,0.55);"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="rgba(139,92,246,0.8)" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>Пользователей: <span id="users-count" style="color:rgba(139,92,246,0.95);font-weight:600;">—</span></span>
+      <span style="display:inline-flex;align-items:center;gap:6px;font-size:12.5px;color:rgba(255,255,255,0.55);" title="Создавал хоть одну запись (включая анонимов)">✍️ Пишут: <span id="writers-count" style="color:rgba(0,212,255,0.95);font-weight:600;">—</span></span>
       <button onclick="refreshUsersCount()" style="background:none;border:none;color:rgba(255,255,255,0.35);font-size:14px;cursor:pointer;padding:4px;">↻</button>
     </div>
     <div id="adminchat-widget" style="display:none;padding:12px 16px 0;">
@@ -1481,6 +1487,7 @@ service cloud.firestore {
       <div class="modal-title">Редактировать запись</div>
       <div id="modal-meta" style="display:none;font-size:11px;color:rgba(255,255,255,0.45);margin:0 0 8px;line-height:1.5;font-family:Inter,sans-serif;"></div>
       <textarea class="modal-textarea" id="modal-text"></textarea>
+      <textarea class="modal-textarea" id="modal-details" placeholder="📝 Детали — списки, расшифровка, продолжение мысли (например, сам список займов)" style="min-height:70px;font-size:12.5px;margin-top:6px;"></textarea>
       <div id="modal-schedule-row" style="display:flex;gap:6px;margin:10px 0 6px;align-items:flex-end;">
         <div style="flex:1.4;">
           <div style="font-size:9.5px;color:rgba(255,255,255,0.45);margin-bottom:4px;text-transform:uppercase;letter-spacing:1px;font-family:Inter,sans-serif;">📅 Срок (в календарь)</div>
@@ -1576,7 +1583,7 @@ service cloud.firestore {
 <!-- Firebase -->
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-import { getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, addDoc, getDocs, getDoc, updateDoc, deleteDoc, doc, orderBy, query, where, setDoc, serverTimestamp, getCountFromServer, onSnapshot, arrayUnion } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+import { getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, addDoc, getDocs, getDoc, updateDoc, deleteDoc, doc, orderBy, query, where, setDoc, serverTimestamp, getCountFromServer, onSnapshot, arrayUnion, increment } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, signInAnonymously, linkWithCredential, EmailAuthProvider } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 
 const firebaseConfig = {
@@ -2503,6 +2510,7 @@ async function saveNote(text, type) {
     activeTag = null;
     document.querySelectorAll('.qtag').forEach(b => { b.style.borderColor=''; b.style.background=''; });
     flashSaved();
+    bumpProfileActivity(); // v76: отметка «пользователь пишет» для статистики владельца
     await loadNotes();
     maybeShowInstallBanner(); // PWA: предложить установку после первой записи (один раз)
     // AI auto-linking — для только что созданной заметки (в фоне, не блокируя UI)
@@ -2849,6 +2857,15 @@ async function classifyAndRouteNote(note) {
   const mskTimeStr = String(nowMsk.getUTCHours()).padStart(2,'0') + ':' + String(nowMsk.getUTCMinutes()).padStart(2,'0');
   const areaNames = areaNamesForPrompt(40);
   const areaExemplars = buildAreaExemplars();
+  // ЛОГ ПРАВОК ТЕГОВ (v76): последние правки пользователя — классификатор наследует ручную разметку
+  let tagLogText = '';
+  try {
+    const tagLog = await loadTagLog();
+    if (tagLog.length) {
+      tagLogText = 'Правки пользователя (он сам переносил записи между областями — для ПОХОЖИХ текстов сразу выбирай итоговую область): '
+        + tagLog.slice(-8).map(it => '«' + String(it.t || '').slice(0, 50) + '»' + (it.from ? ' (было: ' + it.from + ')' : '') + ' → "' + it.to + '"').join('; ') + '. ';
+    }
+  } catch(e) {}
   const clList = await loadClusters();
   const clusterNames = [...clList].sort((a,b)=>(b.count||0)-(a.count||0)).slice(0, 30).map(c => c.name);
   try {
@@ -2857,6 +2874,7 @@ async function classifyAndRouteNote(note) {
         + 'task: true — если запись это конкретное действие, которое предстоит сделать и потом можно поставить галочку (купить, позвонить, записаться, отправить, сделать, не забыть); false — мысль, факт, идея без действия, дневниковая запись, справка. Сомневаешься — true: лучше поставить в тудушку, чем потерять дело. Запись, начинающаяся с действия/инфинитива («Настроить кнопку», «Проверить фильтр», «Добавить подписи») — ВСЕГДА task: true, даже если звучит как заметка о работе над проектом. '
         + 'area: ОДНА область жизни из списка [' + areaNames.join(' | ') + ']. Подходит хоть одна — верни её точное имя. Ни одна не подходит — area: null и newArea: {"name": "1-2 слова, существительное", "icon": "один эмодзи"}. '
         + (areaExemplars ? 'Примеры записей пользователя по областям — наследуй область по СХОДСТВУ с примерами: если новая запись похожа на примеры какой-то области — верни именно её (особенно записи про это самое приложение, его интерфейс, функции, баги и доработки — они относятся к области, где таких записей больше всего): ' + areaExemplars + '. ' : '')
+        + tagLogText
         + 'newArea — только если запись явно о совершенно новой сфере, которой нет в списке; если похоже на существующую — выбирай существующую, НЕ плодь новые области. '
         + 'kind: мысль (размышление, чувство, наблюдение) | событие (что произошло, факт из жизни) | решение (выбрал, постановил) | идея (придумал что-то, что можно сделать) | вопрос (сомнение, надо выяснить) | дело (конкретное действие — совпадает с task:true). '
         + 'cluster: если запись — однотипное повторяющееся дело (смотреть фильм/сериал, читать книгу, тренировка, купить X, встреча...) — короткое имя группы в именной форме из существующих [' + clusterNames.join(' | ') + '] (точное имя существующего, если подходит) или новое («Посмотреть фильмы», «Тренировка», «Купить продукты»); разовые дела и не-дела — null. '
@@ -2948,10 +2966,9 @@ async function classifyAndRouteNote(note) {
   // перепроверка актуального состояния (могли изменить с другого устройства пока думали)
   const fresh = notes.find(n => n.id === note.id);
   if (!fresh || fresh.inTodo === true || fresh.done) return;
-  // v74: новая задача — в КОНЕЦ очереди, чтобы не перекрывать главную задачу.
-  // Главная сдвигается только выполнением или пропуском.
-  const maxOrder = notes.reduce((mm, n) => n.inTodo ? Math.max(mm, n.todoOrder || 0) : mm, 0);
-  const todoOrder = maxOrder + 1;
+  // v76: последняя добавленная задача — В НАЧАЛО очереди (новое поверх старого),
+  // вниз её сдвигают пропуском (skipTodoTask) или перетаскиванием за ⠿
+  const todoOrder = nextTopTodoOrder();
   try {
     const patch = { inTodo: true, todoOrder };
     if (dimsPatch) Object.assign(patch, dimsPatch); // разметка едет вместе с роутингом — один вызов
@@ -2988,6 +3005,14 @@ async function loadNotes() {
   }
 }
 
+// v76: какие карточки истории раскрыты (теги + детали) — живёт в памяти сессии
+const expandedNoteTags = new Set();
+function toggleNoteTags(id) {
+  if (expandedNoteTags.has(id)) expandedNoteTags.delete(id); else expandedNoteTags.add(id);
+  filterNotes(); // перерисовка с сохранённым состоянием раскрытия
+}
+window.toggleNoteTags = toggleNoteTags;
+
 function renderNotes(list) {
   const el = document.getElementById('hist-list');
   document.getElementById('hist-count').textContent = list.length + ' записей';
@@ -3018,24 +3043,39 @@ function renderNotes(list) {
     const isInTodo = n.inTodo === true;
     const todoBtn = `<button class="note-btn ${isInTodo ? 'note-undone' : 'note-edit'}" onclick="toggleTodo('${n.id}', ${isInTodo});event.stopPropagation();">${isInTodo ? '✕ Убрать из тудулиста' : '➜ В тудулист'}</button>`;
     const staleCls = isStaleNote(n) ? ' note-stale' : '';
-    // размеры второго мозга: тип записи + кластер дел (область уже видна в meta как tag)
-    const dimBadges = [
-      n.kind ? `<span style="flex-shrink:0;font-size:9.5px;font-weight:600;padding:2px 8px;border-radius:99px;background:rgba(108,71,255,0.14);border:0.5px solid rgba(124,93,255,0.35);color:rgba(197,182,255,0.92);white-space:nowrap;">${escHtml(n.kind)}</span>` : '',
-      n.cluster ? `<span style="flex-shrink:0;font-size:9.5px;font-weight:600;padding:2px 8px;border-radius:99px;background:rgba(0,212,255,0.10);border:0.5px solid rgba(0,212,255,0.3);color:rgba(140,225,255,0.92);white-space:nowrap;">🧩 ${escHtml(n.cluster)}</span>` : ''
-    ].filter(Boolean).join('');
+    // ТЕГИ КАРТОЧКИ (v76): свёрнуты в один чип + кнопка «▼ N» — по тапу раскрывается список
+    // (тип записи, кластер, область) и блок деталей (расширенное тело заметки)
+    const tagChips = [
+      n.tag ? '<span class="ntag-chip" style="background:rgba(108,71,255,0.14);border-color:rgba(124,93,255,0.35);color:rgba(197,182,255,0.92);">🏷 ' + escHtml(n.tag) + '</span>' : '',
+      n.kind ? '<span class="ntag-chip" style="background:rgba(108,71,255,0.14);border-color:rgba(124,93,255,0.35);color:rgba(197,182,255,0.92);">' + escHtml(n.kind) + '</span>' : '',
+      n.cluster ? '<span class="ntag-chip" style="background:rgba(0,212,255,0.10);border-color:rgba(0,212,255,0.3);color:rgba(140,225,255,0.92);">🧩 ' + escHtml(n.cluster) + '</span>' : '',
+      (n.area && n.area !== n.tag) ? '<span class="ntag-chip" style="background:rgba(255,209,102,0.10);border-color:rgba(255,209,102,0.3);color:rgba(255,224,138,0.92);">📁 ' + escHtml(n.area) + '</span>' : ''
+    ].filter(Boolean);
+    const tagsExpanded = expandedNoteTags.has(n.id);
+    const hiddenCount = Math.max(0, tagChips.length - 1);
+    const canExpand = hiddenCount > 0 || !!n.details;
+    const tagsRow = (tagChips.length || n.details)
+      ? '<div style="display:flex;gap:5px;margin-top:6px;flex-wrap:wrap;align-items:center;">'
+        + (tagChips[0] || '')
+        + (tagsExpanded && n.details ? '<span class="ntag-chip" style="background:rgba(0,230,130,0.08);border-color:rgba(0,230,130,0.3);color:rgba(120,240,180,0.92);">📝 детали</span>' : '')
+        + (canExpand ? '<button class="ntag-toggle" onclick="toggleNoteTags(\'' + n.id + '\');event.stopPropagation();">' + (tagsExpanded ? '▲ свернуть' : '▼ ' + (hiddenCount ? hiddenCount + (n.details ? ' +📝' : '') : '📝 детали')) + '</button>' : '')
+        + (tagsExpanded ? tagChips.slice(1).join('') : '')
+        + '</div>'
+        + (tagsExpanded && n.details ? '<div class="note-details-text">' + escHtml(n.details) + '</div>' : '')
+      : '';
     return `
       <div class="note-card${staleCls}" ${cardClick}>
         <div style="display:flex;gap:10px;align-items:flex-start;">
           ${checkbox}
           <div style="flex:1;min-width:0;">
             <div class="note-meta">
-              <span class="note-date">${date} · ${time}${n.tag ? ' · ' + n.tag : ''}${doneAtStr}${schedStr ? ' · ' + schedStr : ''}</span>
+              <span class="note-date">${date} · ${time}${doneAtStr}${schedStr ? ' · ' + schedStr : ''}</span>
               <span style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
                 ${selectionMode ? '' : `<button class="note-copy-btn" title="Скопировать текст" onclick="copyNoteText('${n.id}');event.stopPropagation();">📋</button>`}
               </span>
             </div>
             <div class="note-text" style="${textStyle}">${escHtml(n.text)}</div>
-            ${dimBadges ? `<div style="display:flex;gap:5px;margin-top:6px;flex-wrap:wrap;">${dimBadges}</div>` : ''}
+            ${tagsRow}
             ${selectionMode ? '' : `
             <div class="note-actions">
               ${doneBtn}
@@ -3180,13 +3220,12 @@ async function bulkAddToTodo() {
   if (!selectedNoteIds.size) return;
   const ids = Array.from(selectedNoteIds);
   try {
-    // все выбранные встают в КОНЕЦ очереди (v74 — главную задачу не перекрываем),
-    // сохраняя порядок выбора
-    const maxOrder = notes.reduce((m, n) => n.inTodo ? Math.max(m, n.todoOrder || 0) : m, 0);
-    let base = maxOrder;
+    // все выбранные встают в НАЧАЛО очереди (v76 — новое поверх старого),
+    // сохраняя порядок выбора: первый выбранный — самый верхний
+    let base = nextTopTodoOrder() - (ids.length - 1);
     for (const id of ids) {
-      base += 1;
       await updateDoc(uDocRef('notes', id), { inTodo: true, todoOrder: base });
+      base += 1;
     }
     selectedNoteIds.clear();
     toggleSelectionMode();
@@ -3346,6 +3385,8 @@ function openEdit(id) {
   const n = notes.find(x => x.id === id);
   if (!n) return;
   document.getElementById('modal-text').value = n.text;
+  const detInp = document.getElementById('modal-details');
+  if (detInp) detInp.value = n.details || ''; // v76: расширенное тело заметки (списки, детали)
   editingSelectedTag = n.tag || null;
   renderModalTagPicker();
   // срок — универсальное редактирование из любого раздела (история/тудушка/календарь/фокус)
@@ -3488,6 +3529,9 @@ window.closeModal = closeModal;
 async function saveEdit() {
   const text = document.getElementById('modal-text').value.trim();
   if (!text || !editingId) return;
+  const detInp = document.getElementById('modal-details');
+  const detailsVal = detInp ? detInp.value.trim() : '';
+  const oldNote = notes.find(x => x.id === editingId); // для лога правок тегов
   const dateInp = document.getElementById('modal-date');
   const timeSel = document.getElementById('modal-time');
   let dateVal = dateInp && dateInp.value ? dateInp.value : null;
@@ -3497,9 +3541,15 @@ async function saveEdit() {
     await updateDoc(uDocRef('notes', editingId), {
       text,
       tag: editingSelectedTag,
+      details: detailsVal || null, // v76: расширенное тело заметки
       scheduledDate: dateVal,
       scheduledTime: timeVal
     });
+    // САМООБУЧЕНИЕ ТЕГОВ (v76): пользователь перенёс запись в другой тег руками —
+    // запоминаем пример «текст → тег», классификатор потом наследует такие правки
+    if (oldNote && (oldNote.tag || null) !== (editingSelectedTag || null)) {
+      pushTagLog({ t: text.slice(0, 60), from: oldNote.tag || null, to: editingSelectedTag });
+    }
     closeModal();
     await loadNotes();
     renderCalendar(); // срок мог измениться — календарь сразу перерисуется
@@ -3594,9 +3644,8 @@ async function toggleTodo(id, currentInTodo) {
     const willBeInTodo = !currentInTodo;
     const update = { inTodo: willBeInTodo };
     if (willBeInTodo) {
-      // v74: в КОНЕЦ очереди — не перекрываем главную задачу
-      const maxOrder = notes.reduce((m, n) => n.inTodo ? Math.max(m, n.todoOrder || 0) : m, 0);
-      update.todoOrder = maxOrder + 1;
+      // v76: последняя добавленная — В НАЧАЛО очереди (новое поверх старого)
+      update.todoOrder = nextTopTodoOrder();
     }
     await updateDoc(uDocRef('notes', id), update);
     await loadNotes();
@@ -5487,9 +5536,9 @@ function snapScore(v) {
   return 10;
 }
 
-// Пэд оценок: палец ведём сверху вниз, в каждой строке смещая влево/вправо — строка,
-// через которую прошёл палец, запоминает значение колонки (как паттерн-разблокировка).
-// Тап по ячейке тоже работает. onChange(vals) — на каждое изменение.
+// v76: ПРОСТЫЕ ТАПЫ по ячейкам (1-3-5-7-10 в каждой строке). Прежний зигзаг-жест
+// «как разблокировка» срабатывал случайно при обычном скролле и требовал не отпускать палец —
+// убрали: тапнул значение в строке — оно выбралось. Подсветка выбранного — сразу.
 function renderScorePad(container, initial, onChange) {
   const vals = Object.assign({ v: null, s: null, e: null, z: null }, initial || {});
   container.classList.add('score-pad');
@@ -5499,40 +5548,18 @@ function renderScorePad(container, initial, onChange) {
     + '<div class="sp-cells">' + WISH_SCORE_VALUES.map(v =>
         '<div class="sp-cell" data-v="' + v + '">' + v + '</div>').join('') + '</div></div>'
   ).join('');
-  const rowEls = {};
-  container.querySelectorAll('.sp-row').forEach(r => rowEls[r.dataset.k] = r);
-  let active = false;
-  function hitFromEvent(ev) {
-    let cur = null;
-    for (const a of WISH_AXES) {
-      const rr = rowEls[a.k].getBoundingClientRect();
-      if (ev.clientY >= rr.top && ev.clientY <= rr.bottom) { cur = a.k; break; }
-    }
-    if (!cur) return null;
-    const cells = [...rowEls[cur].querySelectorAll('.sp-cell')];
-    for (const c of cells) {
-      const cr = c.getBoundingClientRect();
-      if (ev.clientX >= cr.left && ev.clientX <= cr.right) return { k: cur, v: Number(c.dataset.v) };
-    }
-    // между ячейками — ближайшая по X
-    let best = null, bd = Infinity;
-    for (const c of cells) {
-      const cr = c.getBoundingClientRect();
-      const d = Math.abs((cr.left + cr.right) / 2 - ev.clientX);
-      if (d < bd) { bd = d; best = c; }
-    }
-    return best ? { k: cur, v: Number(best.dataset.v) } : null;
-  }
   function paint() {
-    for (const a of WISH_AXES) {
+    container.querySelectorAll('.sp-row').forEach(row => {
+      const a = WISH_AXES.find(x => x.k === row.dataset.k);
+      if (!a) return;
       const v = vals[a.k];
-      rowEls[a.k].querySelectorAll('.sp-cell').forEach(c => {
+      row.querySelectorAll('.sp-cell').forEach(c => {
         const on = Number(c.dataset.v) === v;
         c.classList.toggle('on', on);
         c.style.background = on ? a.hex + '38' : '';
         c.style.borderColor = on ? a.hex : '';
       });
-    }
+    });
   }
   function apply(k, v) {
     if (vals[k] === v) return;
@@ -5541,21 +5568,12 @@ function renderScorePad(container, initial, onChange) {
     if (onChange) onChange(Object.assign({}, vals));
   }
   container.addEventListener('pointerdown', ev => {
-    active = true;
-    try { container.setPointerCapture(ev.pointerId); } catch(e) {}
-    const hit = hitFromEvent(ev);
-    if (hit) apply(hit.k, hit.v);
+    const row = ev.target.closest('.sp-row');
+    const cell = ev.target.closest('.sp-cell');
+    if (!row || !cell) return;
+    apply(row.dataset.k, Number(cell.dataset.v));
     ev.preventDefault();
   });
-  container.addEventListener('pointermove', ev => {
-    if (!active) return;
-    const hit = hitFromEvent(ev);
-    if (hit) apply(hit.k, hit.v);
-    ev.preventDefault();
-  });
-  const stop = () => { active = false; };
-  container.addEventListener('pointerup', stop);
-  container.addEventListener('pointercancel', stop);
   paint();
   return { get: () => Object.assign({}, vals) };
 }
@@ -5827,6 +5845,8 @@ async function confirmWishSuggestion() {
       }
     }
     // Создаём задачи в тудушке для каждого milestone
+    const minMsOrder = nextTopTodoOrder() - milestones.length; // ниже текущего топа, порядок майлстоунов сохраняется
+    let msShift = 0;
     for (const ms of milestones) {
       try {
         const noteRef = await addDoc(notesCol(), {
@@ -5834,7 +5854,7 @@ async function confirmWishSuggestion() {
           type: 'text',
           tag: shortTag,
           inTodo: true,
-          todoOrder: Date.now() + Math.random(),
+          todoOrder: minMsOrder + (msShift++), // v76: задачи майлстоунов — наверх очереди по порядку
           done: false,
           doneAt: null,
           milestoneLink: docRef.id + '/' + ms.id,
@@ -5960,7 +5980,7 @@ async function addMilestone(wishId) {
       type: 'text',
       tag: w.shortTag || 'желание',
       inTodo: true,
-      todoOrder: Date.now() + Math.random(),
+      todoOrder: nextTopTodoOrder(), // v76: новая задача — наверх очереди
       done: false,
       doneAt: null,
       milestoneLink: wishId + '/' + msId,
@@ -6796,13 +6816,21 @@ function showMainHints() {
     ['onb_2_hist', '✅ Первая запись есть! Все записи живут в Истории — вкладка 🕐 в доке внизу.', 'main-hint', () => notes.length >= 1],
     ['onb_4_todo', '📋 Теперь держи дела в Тудушке — вкладка ☑️ внизу. ИИ сам понимает из текста, что это задача.', 'main-hint', () => notes.length >= 2],
     ['main_x', 'Перечеркни весь экран крест-накрест («Х») — отметит текущую задачу выполненной.', 'main-hint', () => notes.filter(n => n.inTodo && !n.done).length >= 1],
-    ['focus_gestures', '🎯 Тапни на карточку задачи — откроется целиком. Смахни вправо — отложится в конец очереди.', 'focus-hint', () => notes.filter(n => n.inTodo && !n.done).length >= 1],
+    ['focus_gestures', '🎯 Тапни на карточку задачи — откроется целиком. Смахни вправо — отложится пониже в очереди.', 'focus-hint', () => notes.filter(n => n.inTodo && !n.done).length >= 1],
     ['onb_6_calendar', '📅 Планируй по дням в Календаре — вкладка внизу. Кнопка «🎯 Раскидать» разложит задачи по дням сама.', 'main-hint', () => notes.some(n => n.inTodo)],
     ['onb_7_wishes', '🌠 Мечтай масштабно: золотая плашка «Желания» под полем ввода — цель, шаги и настроение.', 'main-hint', () => notes.length >= 4],
     ['onb_8_settings', '⚙️ Настройки, теги и правила для ИИ — в чате с ИИ, иконка ⚙️ в шапке.', 'main-hint', () => notes.length >= 4]
   ]);
 }
 window.showMainHints = showMainHints;
+
+// v76: последняя добавленная задача ложится В НАЧАЛО очереди (новое поверх старого);
+// вниз её двигают пропуском (skipTodoTask) или вручную за ⠿. Единая точка для всех 5 мест
+// добавления задач (ручная, массовая, ИИ-чат, майлстоуны, «в тудушку») — порядок всегда консистентен
+function nextTopTodoOrder() {
+  const minOrder = notes.reduce((m, n) => n.inTodo ? Math.min(m, n.todoOrder ?? Infinity) : m, Infinity);
+  return minOrder === Infinity ? Date.now() : minOrder - 1;
+}
 
 function getTodoQueue() {
   return notes.filter(n => n.inTodo === true && !n.done).sort((a,b) => (a.todoOrder||0) - (b.todoOrder||0));
@@ -6825,7 +6853,7 @@ function renderFocusCard() {
           <div class="focus-text">${escHtml(top.text)}</div>
           <div class="focus-actions"><button class="focus-done-btn" onclick="toggleDone('${top.id}', false)">✓ Готово</button><button class="focus-skip-btn" onclick="skipTodoTask('${top.id}')">↪ Пропустить</button></div>
         </div>
-        <div class="focus-swipe-hint">Следующая →</div>
+        <div class="focus-swipe-hint">Пониже →</div>
       </div>`;
   }
 
@@ -7367,20 +7395,23 @@ async function reorderWish(id, newIndex) {
   renderWishes();
 }
 
-// ── КАРТОЧКА ФОКУСА НА ГЛАВНОЙ: тап → открыть задачу, свайп вправо → в конец очереди ──
-// Скип = todoOrder в самый конец очереди, наверх встаёт следующая задача.
+// ── КАРТОЧКА ФОКУСА НА ГЛАВНОЙ: тап → открыть задачу, свайп вправо → опустить в очереди ──
+// Скип (v76) = задача опускается на НЕСКОЛЬКО ПУНКТОВ вниз (3 позиции),
+// а не улетает в конец — она может понадобиться уже скоро. Механика та же,
+// что при драге за ⠿ (reorderTodo): соседи сдвигаются сами.
 async function skipTodoTask(id) {
   const queue = getTodoQueue();
-  if (!queue.some(n => n.id === id)) return;
+  const idx = queue.findIndex(n => n.id === id);
+  if (idx < 0) return;
   if (queue.length < 2) {
     setStatus('Это единственная задача в очереди — листать некуда 🙂', 2600);
     return;
   }
-  const maxOrder = queue.reduce((m, n) => Math.max(m, n.todoOrder || 0), 0);
+  const newIdx = Math.min(idx + 3, queue.length - 1);
   try {
-    await updateDoc(uDocRef('notes', id), { todoOrder: maxOrder + 1 });
-    await loadNotes(); // перерисует карточку фокуса — наверх встанет следующая
-    setStatus('↪ Задача ушла в конец очереди', 2600);
+    await reorderTodo(id, newIdx);
+    const shift = newIdx - idx;
+    setStatus('↪ Задача опустилась на ' + shift + ' ' + (shift === 1 ? 'позицию' : 'позиции') + ' ниже', 2600);
   } catch(e) { console.warn('[focus] skip failed', e); alert('Ошибка: ' + e.message); }
 }
 window.skipTodoTask = skipTodoTask;
@@ -7441,7 +7472,7 @@ function initFocusCardGestures() {
     if (!st) return;
     if (st.mode === 'swipe') {
       if (st.dx >= SWIPE_THRESHOLD) {
-        // вылет вправо + перенос в конец очереди
+        // вылет вправо + перенос пониже в очереди (v76: на 3 позиции)
         st.el.style.transition = 'transform 0.28s ease-in, opacity 0.28s ease-in';
         st.el.style.transform = 'translateX(430px) rotate(7deg)';
         st.el.style.opacity = '0';
@@ -7520,7 +7551,7 @@ function renderTodo() {
       <div class="todo-drag-handle">⠿</div>
       <div style="flex:1;min-width:0;">
         <div class="note-meta">
-          <span class="note-date"${whenStyle}>#${i+1}${n.tag ? ' · ' + n.tag : ''}${whenStr ? ' · ' + whenStr : ''}</span>
+          <span class="note-date"${whenStyle}>#${i+1}${n.tag ? ' · ' + n.tag : ''}${whenStr ? ' · ' + whenStr : ''}${n.details ? ' · 📝' : ''}</span>
           <button class="note-copy-btn" title="Скопировать текст" onclick="copyNoteText('${n.id}');event.stopPropagation();">📋</button>
         </div>
         <div class="note-text">${escHtml(n.text)}</div>
@@ -7556,6 +7587,19 @@ window.exportChat = async function() {
 };
 
 function goTo(screen) {
+  // v76: выход из Истории сбрасывает поиск и фильтры — каждый вход начинается
+  // с настройками по умолчанию (все даты, без тегов, без текста в поиске)
+  const _prevScreen = document.querySelector('.screen.active');
+  if (_prevScreen && _prevScreen.id === 'screen-hist' && screen !== 'hist') {
+    histTags.clear();
+    const _hs = document.getElementById('hist-search');
+    if (_hs) _hs.value = '';
+    setHistFilter('all');
+    setHistMode('added');
+    if (histFilterPanelOpen) toggleFilterPanel(); // закрыть панель фильтров
+    renderFilterTags();
+    filterNotes(); // перерисовать список с дефолтными настройками
+  }
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
   document.querySelectorAll('.dock-item').forEach(b => b.classList.remove('active'));
   document.getElementById('screen-' + screen).classList.add('active');
@@ -7793,6 +7837,40 @@ function refreshUsersCount() {
 }
 window.refreshUsersCount = refreshUsersCount;
 
+// v76: «ПИШУТ» — сколько людей реально пользуется приложением (создавал хоть одну запись),
+// а не просто зарегистрировался. Считаем профили users/{uid} с notesCount > 0 —
+// и анонимные ветки тоже: важно «кто пишет», а не «кто оставил почту»
+function refreshWritersCount() {
+  const el = document.getElementById('writers-count');
+  if (!el || !isOwner()) return;
+  el.textContent = '...';
+  el.title = 'Пользователи (включая анонимов), у которых есть хоть одна созданная запись';
+  getCountFromServer(query(collection(db, 'users'), where('notesCount', '>', 0)))
+    .then(snap => { el.textContent = String(snap.data().count); })
+    .catch(e => {
+      const code = String((e && e.code) || '');
+      el.textContent = code.indexOf('permission-denied') >= 0 ? 'нет правил' : '—';
+      console.warn('[Writers] count failed:', code || e);
+    });
+}
+window.refreshWritersCount = refreshWritersCount;
+
+// Отметка активности (v76): пользователь реально ПИШЕТ. Вызывается при создании каждой
+// записи (вручную и через ИИ-чат): счётчик заметок + время последней записи в своём
+// users/{uid}. Каждый пишет только в свой документ — rules не нарушаются
+function bumpProfileActivity() {
+  try {
+    const u = auth.currentUser;
+    if (!u) return;
+    setDoc(doc(db, 'users', u.uid), {
+      lastSeen: serverTimestamp(),
+      lastNoteAt: serverTimestamp(),
+      notesCount: increment(1)
+    }, { merge: true }).catch(() => {}); // fire-and-forget: не тормозим сохранение записи
+  } catch(e) {}
+}
+window.bumpProfileActivity = bumpProfileActivity;
+
 // Показывает владелец-панели и запускает загрузку данных; остальным — ничего не видно и не тратится
 function updateOwnerPanel() {
   const show = isOwner();
@@ -7802,7 +7880,7 @@ function updateOwnerPanel() {
   if (uw) uw.style.display = show ? 'flex' : 'none';
   const aw = document.getElementById('adminchat-widget');
   if (aw) aw.style.display = show ? 'block' : 'none';
-  if (show) { loadBalance(); refreshUsersCount(); refreshAdminBadge(); }
+  if (show) { loadBalance(); refreshUsersCount(); refreshWritersCount(); refreshAdminBadge(); }
 }
 window.updateOwnerPanel = updateOwnerPanel;
 const CHAT_MODEL = 'anthropic/claude-haiku-4.5';
@@ -7931,6 +8009,7 @@ async function addNoteFromChat(nd) {
   if (nd.scheduledDate) newDoc.scheduledDate = nd.scheduledDate; // дата → задача попадёт в календарь
   if (nd.scheduledTime) newDoc.scheduledTime = nd.scheduledTime;
   await addDoc(notesCol(), newDoc);
+  bumpProfileActivity(); // v76: отметка «пользователь пишет» для статистики владельца
   await loadNotes();
   renderCalendar();
   return newDoc;
@@ -9329,11 +9408,14 @@ async function wizardAssignNote(tagLabel) {
   wizardLastAssignTs = Date.now();
   const id = st.queue[0];
   const n = notes.find(x => x.id === id);
+  const prevTag = n ? (n.tag || null) : null; // для лога обучения тегов
   const tag = await ensureArea(tagLabel);
   if (tag && n) {
     try { await updateDoc(uDocRef('notes', id), { tag: tag.label, area: tag.label }); } catch(e) {}
     n.tag = tag.label; n.area = tag.label;
     st.applied++;
+    // САМООБУЧЕНИЕ ТЕГОВ: ручная разметка пользователя — пример для классификатора
+    pushTagLog({ t: (n.text || '').slice(0, 60), from: prevTag, to: tag.label });
   }
   st.queue.shift();
   wizardSelectedId = null;
@@ -9819,6 +9901,27 @@ async function loadScoreLog() {
   } catch(e) { return []; }
 }
 window.loadScoreLog = loadScoreLog;
+
+// ── ЛОГ ПРАВОК ТЕГОВ (самообучение разметки, v76): пользователь переносит запись в другой
+// тег/область руками (редактор, мастер сортировки) — запоминаем пример «текст → тег».
+// Классификатор получает эти примеры в промпт и наследует разметку для похожих записей.
+async function loadTagLog() {
+  try {
+    const s = await getDoc(uDocRef('meta', 'tag_log'));
+    return s.exists() ? (s.data().items || []) : [];
+  } catch(e) { return []; }
+}
+window.loadTagLog = loadTagLog;
+async function pushTagLog(entry) {
+  try {
+    if (!entry || !entry.to) return; // правка «в пустоту» — не пример
+    const log = await loadTagLog();
+    log.push(Object.assign({ at: new Date().toISOString() }, entry));
+    while (log.length > 40) log.shift(); // держим последние 40 — свежие привычки важнее
+    await setDoc(uDocRef('meta', 'tag_log'), { items: log });
+  } catch(e) { console.warn('[TagLog] save failed', e); }
+}
+window.pushTagLog = pushTagLog;
 // поправочные коэффициенты: средняя дельта «пользователь − ИИ» по каждой оси —
 // даже без переобучения модели предзаполнение подтягивается к привычкам человека
 function adjustScoresByLog(aiScores, log) {
@@ -10065,8 +10168,7 @@ async function sendChatMessage(userText) {
       let inTodo = false, todoOrder = null;
       if (proposedNote.to_todo === true) {
         inTodo = true;
-        const minOrder = notes.reduce((m, n) => n.inTodo ? Math.min(m, n.todoOrder ?? Infinity) : m, Infinity);
-        todoOrder = minOrder === Infinity ? Date.now() : minOrder - 1;
+        todoOrder = nextTopTodoOrder(); // v76: новая задача — наверх очереди
       }
       // дата/время: «через N минут/часов» считаем ТОЛЬКО локально (ИИ ошибается с поясами);
       // остальное — от ИИ с валидацией, без даты время не сохраняем
