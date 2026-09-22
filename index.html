@@ -3003,7 +3003,22 @@ async function loadNotes() {
   try {
     const q = query(notesCol(), orderBy('createdAt', 'desc'));
     const snap = await getDocs(q);
+    // ЗАЩИТА порядка тудушки: если у нас есть ещё не записанный в облако локальный
+    // порядок (тап по ▲ / драг / скип в ожидании дебаунс-записи), снимок сервера
+    // не имеет права его затирать — иначе летящий in-flight loadNotes откатывает
+    // то, что пользователь только что сделал, и «стрелочка не сразу поднимает».
+    const localOrder = (_todoPersistTimer || _todoPersistBusy)
+      ? new Map(notes.map(n => [n.id, n.todoOrder]))
+      : null;
     notes = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    if (localOrder) {
+      notes.forEach(n => {
+        if (n.inTodo === true && localOrder.has(n.id)) {
+          const local = localOrder.get(n.id);
+          if (local != null && local !== n.todoOrder) n.todoOrder = local;
+        }
+      });
+    }
     filterNotes(); // рендерим с учётом активного фильтра по дате/поиску
     renderTodo(); // тудушка всегда синхронна с общей базой записей
     renderFocusCard(); // карточка "сейчас важно" на главном экране тоже
@@ -7274,27 +7289,54 @@ function initTodoDrag() {
   });
 }
 
+// Порядок тудушки: локально применяется мгновенно при каждом тапе/драге/скипе.
+// В облако порядок уходит ОДНОЙ полной записью через 350мс после последнего
+// изменения (дебаунс). Промежуточных loadNotes больше нет — именно они при
+// быстрых тапах ▲ приносили старый снимок сервера и откатывали список назад
+// («стрелочка не сразу поднимает»). После успешной записи перезагрузка не
+// нужна: записали ровно тот порядок, который видим. Свернули приложение
+// сразу после сортировки — visibilitychange доливает очередь немедленно,
+// плюс persistentLocalCache Firestore страхует данные офлайна.
+let _todoPersistTimer = null;
+let _todoPersistBusy = false;
+
+function scheduleTodoPersist() {
+  clearTimeout(_todoPersistTimer);
+  _todoPersistTimer = setTimeout(persistTodoOrderNow, 350);
+}
+
+async function persistTodoOrderNow() {
+  clearTimeout(_todoPersistTimer);
+  _todoPersistTimer = null;
+  if (_todoPersistBusy) { scheduleTodoPersist(); return; } // запись идёт — переназначим на неё
+  _todoPersistBusy = true;
+  try {
+    const queue = getTodoQueue();
+    await Promise.all(queue.map((n, i) => updateDoc(uDocRef('notes', n.id), { todoOrder: i + 1 })));
+  } catch(e) { alert('Ошибка сортировки: ' + e.message); }
+  _todoPersistBusy = false;
+}
+
+// Свернули/спрятали приложение с незаписанным порядком — пишем немедленно
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden && _todoPersistTimer) persistTodoOrderNow();
+});
+
 async function reorderTodo(id, newIndex) {
   // Оптимистичный порядок: карточка мгновенно остаётся там, куда её утащили.
-  // Локальный state мутируется ДО любых await, рендер синхронный — Firestore
-  // пишет фоном и больше не заставляет список «соскальзывать» на старый порядок.
+  // Локальный state мутируется ДО любых await, рендер синхронный — сеть вообще
+  // не участвует в мгновенной перестановке карточек.
   const queue = getTodoQueue();
   const dragged = queue.find(n => n.id === id);
   if (!dragged) return;
   const rest = queue.filter(n => n.id !== id);
   rest.splice(newIndex, 0, dragged);
-  const updates = [];
   rest.forEach((n, i) => {
-    const order = i + 1;
-    if ((n.todoOrder || 0) !== order) updates.push({ id: n.id, order }); // пишем только изменившиеся
-    n.todoOrder = order; // getTodoQueue() возвращает те же ссылки — порядок уже новый
+    n.todoOrder = i + 1; // getTodoQueue() возвращает те же ссылки — порядок уже новый
   });
   renderTodo();      // синхронный рендер — до первого await, без «мигания» старым порядком
   renderFocusCard(); // фокус-карточка на главной — вдруг наверх утащили другую задачу
-  try {
-    await Promise.all(updates.map(u => updateDoc(uDocRef('notes', u.id), { todoOrder: u.order })));
-  } catch(e) { alert('Ошибка сортировки: ' + e.message); }
-  await loadNotes(); // подтягиваем серверную правду после записи
+  scheduleTodoPersist(); // облако — одна полная запись через 350мс тишины
 }
 
 // ▲ кнопка на карточке: поднять задачу на одну позицию вверх без перетаскивания —
