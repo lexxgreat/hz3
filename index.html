@@ -124,6 +124,9 @@ body{background:#060918;font-family:'Inter',sans-serif;display:flex;justify-cont
 .focus-text{font-size:16px;font-weight:700;color:rgba(255,255,255,0.97);line-height:1.3;
   display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;
   overflow-wrap:anywhere;white-space:normal;}
+/* v81: дата/время и тег текущей задачи в фокус-карточке */
+.focus-meta{font-size:11px;font-weight:600;color:rgba(255,255,255,0.55);letter-spacing:0.2px;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .focus-actions{display:flex;align-items:center;gap:8px;margin-top:4px;}
 .focus-done-btn{
   padding:7px 15px;border-radius:99px;border:none;
@@ -1442,7 +1445,7 @@ service cloud.firestore {
     }
   }
 }</pre>
-      <button onclick="copyAdminRulesSnippet()" style="width:100%;margin-top:8px;background:rgba(255,209,102,0.12);border:0.5px solid rgba(255,209,102,0.4);border-radius:8px;padding:7px;color:rgba(255,209,102,0.95);font-size:11.5px;font-weight:600;cursor:pointer;font-family:Inter,sans-serif;">📋 Скопировать правила (замена целиком)</button>
+      <button onclick="copyAdminRulesSnippet()" style="width:100%;margin-top:8px;background:rgba(255,209,102,0.12);border:0.5px solid rgba(255,209,102,0.4);border-radius:8px;padding:7px;color:rgba(255,209,102,0.95);font-size:11.5px;font-weight:600;cursor:pointer;font-family:Inter,sans-serif;"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:-1.5px;margin-right:5px" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>Скопировать правила (замена целиком)</button>
     </div>
     <div class="hist-list" id="adminchat-list" style="padding:10px 16px 16px;overflow-y:auto;flex:1;"></div>
     <div id="adminchat-threads" style="display:none;flex-direction:column;flex:1;min-height:0;">
@@ -3081,7 +3084,7 @@ function renderNotes(list) {
             <div class="note-meta">
               <span class="note-date">${date} · ${time}${n.tag ? ' · ' + escHtml(n.tag) : ''}${doneAtStr}${schedStr ? ' · ' + schedStr : ''}</span>
               <span style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
-                ${selectionMode ? '' : `<button class="note-copy-btn" title="Скопировать текст" onclick="copyNoteText('${n.id}');event.stopPropagation();">📋</button>`}
+                ${selectionMode ? '' : `<button class="note-copy-btn" title="Скопировать текст" onclick="copyNoteText('${n.id}');event.stopPropagation();">${COPY_ICON_SVG}</button>`}
               </span>
             </div>
             <div class="note-text" style="${textStyle}">${escHtml(n.text)}</div>
@@ -3098,6 +3101,10 @@ function renderNotes(list) {
 }
 
 // ── КОПИРОВАНИЕ ТЕКСТА ЗАМЕТКИ (иконка 📋 на карточке: история + тудушка) ──
+// Стандартная иконка «копирование» — две рамки (как во всех чатах), вместо эмодзи 📋.
+// SVG с stroke:currentColor наследует цвет кнопки, размеры задаются width/height.
+const COPY_ICON_SVG = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:block" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
+
 // Копируем ТОЛЬКО текст заметки (не тег/дату), не открывая карточку.
 window.copyNoteText = async function(id) {
   const n = notes.find(x => x.id === id);
@@ -3450,7 +3457,7 @@ function renderModalActions(n) {
   box.innerHTML = `
     <button onclick="modalToggleDone()" style="${st}border:0.5px solid ${isDone ? 'rgba(255,255,255,0.15)' : 'rgba(0,220,120,0.4)'};background:${isDone ? 'rgba(255,255,255,0.05)' : 'rgba(0,220,120,0.12)'};color:${isDone ? 'rgba(255,255,255,0.6)' : 'rgba(0,230,130,0.95)'};">${isDone ? '↩ Вернуть в работу' : '✓ Выполнить'}</button>
     <button onclick="modalToggleTodo()" style="${st}border:0.5px solid ${isInTodo ? 'rgba(255,80,80,0.3)' : 'rgba(108,71,255,0.4)'};background:${isInTodo ? 'rgba(255,80,80,0.08)' : 'rgba(108,71,255,0.1)'};color:${isInTodo ? 'rgba(255,110,110,0.9)' : 'rgba(139,92,246,0.95)'};">${isInTodo ? '✕ Из тудушки' : '➜ В тудушку'}</button>
-    <button onclick="modalCopyText()" style="${st}border:0.5px solid rgba(255,255,255,0.15);background:rgba(255,255,255,0.05);color:rgba(255,255,255,0.75);">📋 Копировать</button>
+    <button onclick="modalCopyText()" style="${st}border:0.5px solid rgba(255,255,255,0.15);background:rgba(255,255,255,0.05);color:rgba(255,255,255,0.75);">${COPY_ICON_SVG} Копировать</button>
     <button onclick="modalDuplicate()" style="${st}border:0.5px solid rgba(0,212,255,0.3);background:rgba(0,212,255,0.08);color:rgba(0,212,255,0.85);">⧉ Дублировать</button>
     <button onclick="modalDelete()" style="${st}border:0.5px solid rgba(255,80,80,0.3);background:rgba(255,80,80,0.1);color:rgba(255,110,110,0.9);">🗑 Удалить</button>`;
 }
@@ -6914,12 +6921,19 @@ function renderFocusCard() {
   if (queue.length) {
     const top = queue[0];
     const restCount = queue.length - 1;
+    // v81: дата/время (если назначены) и основной тег — прямо в фокус-карточке
+    const whenStr = whenBadgeStr(top); // «📅 25 сент. 15:00» (+ ⚠ если просрочено)
+    const metaBits = [];
+    if (whenStr) metaBits.push(whenStr);
+    if (top.tag) metaBits.push('🏷 ' + escHtml(top.tag));
+    const metaOverdue = top.scheduledDate && top.scheduledDate < formatDateKey(new Date());
     html += `
       <div class="focus-card" data-id="${top.id}">
         <div class="focus-badge" aria-hidden="true">🎯</div>
         <div class="focus-body">
           <div class="focus-eyebrow">Сейчас в фокусе${restCount > 0 ? ` <span class="focus-queue">· ещё ${restCount}</span>` : ''}</div>
           <div class="focus-text">${escHtml(top.text)}</div>
+          ${metaBits.length ? `<div class="focus-meta"${metaOverdue ? ' style="color:rgba(255,110,110,0.85);"' : ''}>${metaBits.join(' · ')}</div>` : ''}
           <div class="focus-actions"><button class="focus-done-btn" onclick="toggleDone('${top.id}', false)">✓ Готово</button><button class="focus-skip-btn" onclick="skipTodoTask('${top.id}')">↪ Пропустить</button></div>
         </div>
         <div class="focus-swipe-hint">Пониже →</div>
@@ -7345,14 +7359,14 @@ async function reorderTodo(id, newIndex) {
   scheduleTodoPersist(); // облако — одна полная запись через 350мс тишины
 }
 
-// ▲ кнопка на карточке (v80): задача улетает на САМЫЙ ВЕРХ очереди — становится
+// ▲ кнопка на карточке (v80/v81): задача улетает на САМЫЙ ВЕРХ очереди — становится
 // первой и попадает в фокус-карточку на главном экране (renderFocusCard вызывается
 // внутри reorderTodo). Полёт виден глазами: FLIP-анимация — карточка стартует со
 // своего места и плавно летит наверх, соседки расступаются (тот же визуал
 // «расталкивания», что при перетаскивании за ⠿). Порядок применяется мгновенно
 // (reorderTodo — локальная мутация + рендер до сети), облако догоняет дебаунсом
-// scheduleTodoPersist. Список проскролливается к верху, чтобы полёт было видно
-// целиком даже из нижней части длинной очереди.
+// scheduleTodoPersist. Скролл списка НЕ трогаем (v81): пользователь остаётся там,
+// где был — уезжает только карточка, даже если верх списка вне экрана.
 let _todoFlySeq = 0;
 function moveTodoTop(id) {
   const queue = getTodoQueue();
@@ -7363,9 +7377,8 @@ function moveTodoTop(id) {
   // FLIP-снимок: где стояли карточки ДО перестановки (viewport-координаты)
   const oldTops = new Map();
   listEl.querySelectorAll('.note-card').forEach(el => oldTops.set(el.dataset.id, el.getBoundingClientRect().top));
-  const wasScrolled = listEl.scrollTop;
   reorderTodo(id, 0); // мгновенный локальный порядок + renderTodo + renderFocusCard + облако (дебаунс)
-  if (wasScrolled > 0) listEl.scrollTop = 0; // финальная сцена — верх списка перед глазами
+  // Скролл НЕ трогаем (v81): пользователь остаётся на своём месте — уезжает только карточка
   // стартовые позиции: каждая карточка визуально остаётся на старом месте
   const seq = ++_todoFlySeq;
   const moved = [];
@@ -7712,7 +7725,7 @@ function renderTodo() {
       <div style="flex:1;min-width:0;">
         <div class="note-meta">
           <span class="note-date"${whenStyle}>#${i+1}${n.tag ? ' · ' + n.tag : ''}${whenStr ? ' · ' + whenStr : ''}${n.details ? ' · 📝' : ''}</span>
-          <button class="note-copy-btn" title="Скопировать текст" onclick="copyNoteText('${n.id}');event.stopPropagation();">📋</button>
+          <button class="note-copy-btn" title="Скопировать текст" onclick="copyNoteText('${n.id}');event.stopPropagation();">${COPY_ICON_SVG}</button>
         </div>
         <div class="note-text">${escHtml(n.text)}</div>
         <div class="note-actions">
