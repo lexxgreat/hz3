@@ -368,9 +368,52 @@ body{background:#060918;font-family:'Inter',sans-serif;display:flex;justify-cont
 }
 .note-meta{display:flex;justify-content:space-between;align-items:center;margin-bottom:7px}
 .note-date{font-size:10px;color:rgba(255,255,255,0.4);font-weight:500}
-.note-copy-btn{background:none;border:none;cursor:pointer;font-size:13px;padding:0 2px;opacity:0.4;transition:opacity 0.15s,transform 0.1s;line-height:1;flex-shrink:0}
-.note-copy-btn:hover{opacity:0.85}
+/* v82: иконка копирования светлее (на тёмном фоне терялась) + свои цвета в темах */
+.note-copy-btn{background:none;border:none;cursor:pointer;font-size:13px;padding:0 2px;opacity:0.62;color:rgba(255,255,255,0.82);transition:opacity 0.15s,transform 0.1s;line-height:1;flex-shrink:0}
+.note-copy-btn:hover{opacity:1}
 .note-copy-btn:active{opacity:1;transform:scale(0.88)}
+body[data-theme="dream"] .note-copy-btn{color:rgba(244,182,236,0.85)}
+body[data-theme="business"] .note-copy-btn{color:rgba(169,194,238,0.85)}
+/* v82: копирование в окне редактора — маленькая светлая кнопка рядом с текстом (правый верхний угол поля) */
+.modal-copy-btn{position:absolute;top:8px;right:8px;background:rgba(255,255,255,0.07);border:0.5px solid rgba(255,255,255,0.16);border-radius:8px;padding:6px;color:rgba(255,255,255,0.8);cursor:pointer;line-height:0;z-index:2;transition:background 0.15s,color 0.15s,transform 0.1s}
+.modal-copy-btn:hover{background:rgba(255,255,255,0.13);color:#fff}
+.modal-copy-btn:active{transform:scale(0.9)}
+body[data-theme="dream"] .modal-copy-btn{color:rgba(244,182,236,0.88);border-color:rgba(236,150,235,0.3)}
+body[data-theme="business"] .modal-copy-btn{color:rgba(169,194,238,0.88);border-color:rgba(91,141,239,0.35)}
+/* v82: глобальный тост подтверждения (копирование и др.) — виден с любого экрана и поверх модалок */
+#app-toast{position:absolute;left:50%;bottom:92px;transform:translateX(-50%) translateY(10px);background:rgba(22,17,46,0.94);border:0.5px solid rgba(139,92,246,0.55);color:#fff;font-size:12.5px;font-weight:600;padding:9px 16px;border-radius:99px;opacity:0;pointer-events:none;transition:opacity 0.18s,transform 0.18s;z-index:1400;max-width:82%;text-align:center;box-shadow:0 8px 28px rgba(0,0,0,0.5);font-family:Inter,sans-serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#app-toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+body[data-theme="business"] #app-toast{background:rgba(17,21,28,0.95);border-color:rgba(91,141,239,0.55)}
+body[data-theme="dream"] #app-toast{background:rgba(40,20,48,0.94);border-color:rgba(236,150,235,0.5)}
+/* v82: кнопка «✨ Умно» в шапке тудушки */
+.todo-smart-btn{background:rgba(108,71,255,0.12);border:0.5px solid rgba(139,92,246,0.45);color:rgba(199,184,255,0.95);font-size:11px;font-weight:600;padding:5px 11px;border-radius:99px;cursor:pointer;font-family:Inter,sans-serif;flex-shrink:0;transition:background 0.15s,transform 0.1s}
+.todo-smart-btn:hover{background:rgba(108,71,255,0.22)}
+.todo-smart-btn:active{transform:scale(0.94)}
+body[data-theme="business"] .todo-smart-btn{color:rgba(169,194,238,0.95);border-color:rgba(91,141,239,0.45);background:rgba(91,141,239,0.1)}
+body[data-theme="dream"] .todo-smart-btn{color:rgba(244,182,236,0.95);border-color:rgba(236,150,235,0.45);background:rgba(236,150,235,0.1)}
+/* v82: подзадачи — бейдж «↳ мать» на карточке ребёнка и прогресс «☑ 2/5» на карточке матери */
+.sub-badge,.sub-progress{flex-shrink:0;font-size:9.5px;font-weight:600;padding:2px 8px;border-radius:99px;white-space:nowrap;cursor:pointer;border:0.5px solid rgba(0,212,255,0.3);background:rgba(0,212,255,0.08);color:rgba(140,225,255,0.92);font-family:Inter,sans-serif}
+.sub-progress{cursor:default;border-color:rgba(124,93,255,0.35);background:rgba(108,71,255,0.12);color:rgba(197,182,255,0.92)}
+.sub-progress.all-done{border-color:rgba(0,220,120,0.4);background:rgba(0,220,120,0.1);color:rgba(0,230,130,0.95)}
+/* v82: подзадачи в редакторе — цепочка предков, ряд ребёнка, строка добавления */
+.sub-crumb{display:flex;align-items:center;gap:4px;flex-wrap:wrap;font-size:11px;font-family:Inter,sans-serif;margin:0 0 8px}
+.sub-crumb button{background:rgba(0,212,255,0.08);border:0.5px solid rgba(0,212,255,0.3);color:rgba(140,225,255,0.92);border-radius:99px;padding:3px 9px;font-size:10.5px;font-weight:600;cursor:pointer;font-family:Inter,sans-serif;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sub-crumb .crumb-sep{color:rgba(255,255,255,0.35);font-size:10px}
+.sub-row{display:flex;align-items:center;gap:8px;padding:7px 8px;border-radius:9px;background:rgba(255,255,255,0.03);border:0.5px solid rgba(255,255,255,0.07);margin-bottom:5px;cursor:pointer}
+.sub-row .sub-text{flex:1;min-width:0;font-size:12.5px;color:rgba(255,255,255,0.85);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:Inter,sans-serif}
+.sub-row.is-done .sub-text{color:rgba(255,255,255,0.38);text-decoration:line-through}
+.sub-check{width:20px;height:20px;border-radius:7px;border:1.5px solid rgba(255,255,255,0.3);background:none;cursor:pointer;flex-shrink:0;font-size:12px;line-height:1;color:rgba(0,230,130,0.95);padding:0}
+.sub-check.on{background:rgba(0,220,120,0.16);border-color:rgba(0,220,120,0.55)}
+.sub-add-row{display:flex;gap:6px;margin-top:7px}
+.sub-add-row input{flex:1;background:rgba(255,255,255,0.04);border:0.5px solid rgba(108,71,255,0.35);border-radius:9px;padding:8px 10px;color:#fff;font-size:12.5px;font-family:Inter,sans-serif;outline:none}
+.sub-add-row button{background:rgba(108,71,255,0.14);border:0.5px solid rgba(139,92,246,0.45);color:rgba(199,184,255,0.95);border-radius:9px;padding:0 12px;font-size:12px;font-weight:700;cursor:pointer;font-family:Inter,sans-serif;flex-shrink:0}
+/* v82: важность/объём в редакторе — чипы */
+.imp-eff-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:2px 0 8px}
+.imp-eff-lbl{font-size:9.5px;color:rgba(255,255,255,0.45);text-transform:uppercase;letter-spacing:1px;font-family:Inter,sans-serif;margin-right:2px}
+.chip-btn{background:rgba(255,255,255,0.04);border:0.5px solid rgba(255,255,255,0.14);color:rgba(255,255,255,0.6);border-radius:99px;padding:4px 9px;font-size:11px;font-weight:600;cursor:pointer;font-family:Inter,sans-serif}
+.chip-btn.on{background:rgba(108,71,255,0.18);border-color:rgba(139,92,246,0.6);color:rgba(213,200,255,1)}
+body[data-theme="business"] .chip-btn.on{background:rgba(91,141,239,0.16);border-color:rgba(91,141,239,0.6);color:#BDD3F7}
+body[data-theme="dream"] .chip-btn.on{background:rgba(236,150,235,0.16);border-color:rgba(236,150,235,0.6);color:#F8D0F5}
 /* Залежавшаяся задача — висит больше 10 дней и не ждёт будущего срока */
 .note-card.note-stale{background:linear-gradient(155deg,rgba(56,47,24,0.97),rgba(40,34,20,0.97));border-color:rgba(255,209,102,0.35)}
 .note-card.note-stale::before{background:linear-gradient(to bottom,#FFD166,#FF9F43);opacity:0.95}
@@ -1027,6 +1070,7 @@ body[data-theme="business"] .cap-mic.recording{box-shadow:0 0 10px rgba(140,176,
           <div class="hist-title">Тудушка</div>
           <div class="hist-sub" id="todo-count">Загрузка...</div>
         </div>
+        <button class="todo-smart-btn" onclick="smartSortTodo()" title="Собрать очередь: срочное и важное сверху (учёт сроков, важности, объёма и времени суток)">✨ Умно</button>
       </div>
     </div>
     <div id="todo-hint" style="padding:0 16px;"></div>
@@ -1499,7 +1543,10 @@ service cloud.firestore {
     <div class="modal">
       <div class="modal-title">Редактировать запись</div>
       <div id="modal-meta" style="display:none;font-size:11px;color:rgba(255,255,255,0.45);margin:0 0 8px;line-height:1.5;font-family:Inter,sans-serif;"></div>
-      <textarea class="modal-textarea" id="modal-text"></textarea>
+      <div style="position:relative;">
+        <textarea class="modal-textarea" id="modal-text"></textarea>
+        <button class="modal-copy-btn" title="Скопировать текст" onclick="modalCopyText();event.stopPropagation();"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
+      </div>
       <textarea class="modal-textarea" id="modal-details" placeholder="📝 Детали — списки, цифры, расшифровка, продолжение мысли" style="min-height:70px;font-size:12.5px;margin-top:6px;"></textarea>
       <div id="modal-schedule-row" style="display:flex;gap:6px;margin:10px 0 6px;align-items:flex-end;">
         <div style="flex:1.4;">
@@ -1518,7 +1565,9 @@ service cloud.firestore {
         <button onclick="modalQuickDate(7)" style="padding:6px 11px;border-radius:99px;border:0.5px solid rgba(108,71,255,0.4);background:rgba(108,71,255,0.1);color:rgba(139,92,246,0.95);font-size:11px;font-weight:600;cursor:pointer;font-family:Inter,sans-serif;">+7 дней</button>
       </div>
       <div id="modal-tag-picker" style="display:flex;flex-wrap:wrap;gap:6px;margin:10px 0;"></div>
-      <!-- Действия над записью: выполнить, тудушка, копия, дубликат, удалить -->
+      <div id="modal-subtasks" style="margin:0 0 8px;"></div>
+      <div id="modal-impeff" class="imp-eff-row"></div>
+      <!-- Действия над записью: выполнить, тудушка, дубликат, удалить -->
       <div id="modal-actions" style="display:flex;gap:6px;flex-wrap:wrap;margin:2px 0 10px;"></div>
       <div class="modal-btns">
         <button class="modal-cancel" onclick="closeModal()">Отмена</button>
@@ -2485,6 +2534,25 @@ function setStatus(txt, hideMs) {
   }, hideMs);
 }
 
+// v82: глобальный тост подтверждения — виден с ЛЮБОГО экрана и поверх модалок
+// (setStatus виден только на главном, поэтому копирование из тудушки/истории/редактора было «немым»)
+let toastTimer = null;
+function showToast(txt, hideMs) {
+  let el = document.getElementById('app-toast');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'app-toast';
+    const phone = document.getElementById('phone');
+    if (!phone) return;
+    phone.appendChild(el);
+  }
+  el.textContent = txt;
+  el.classList.add('show');
+  if (toastTimer) { clearTimeout(toastTimer); toastTimer = null; }
+  if (hideMs !== 0) toastTimer = setTimeout(() => { el.classList.remove('show'); toastTimer = null; }, hideMs || 2200);
+}
+window.showToast = showToast;
+
 function autoResize() {
   const ta = document.getElementById('cap-input');
   ta.style.height = 'auto';
@@ -2984,9 +3052,9 @@ async function classifyAndRouteNote(note) {
   // перепроверка актуального состояния (могли изменить с другого устройства пока думали)
   const fresh = notes.find(n => n.id === note.id);
   if (!fresh || fresh.inTodo === true || fresh.done) return;
-  // v76: последняя добавленная задача — В НАЧАЛО очереди (новое поверх старого),
-  // вниз её сдвигают пропуском (skipTodoTask) или перетаскиванием за ⠿
-  const todoOrder = nextTopTodoOrder();
+  // v82: новая задача встаёт ПО УМНОМУ СКОРУ (срочность + важность + объём + время суток) —
+  // не перекрывает намеченный порядок; вверх её всегда можно поднять ▲ или «✨ Умно»
+  const todoOrder = computeSmartOrder(smartScoreForFields({ scheduledDate, importance: note.importance, effort: note.effort }));
   try {
     const patch = { inTodo: true, todoOrder };
     if (dimsPatch) Object.assign(patch, dimsPatch); // разметка едет вместе с роутингом — один вызов
@@ -3089,6 +3157,7 @@ function renderNotes(list) {
             </div>
             <div class="note-text" style="${textStyle}">${escHtml(n.text)}</div>
             ${dimBadges ? `<div style="display:flex;gap:5px;margin-top:6px;flex-wrap:wrap;">${dimBadges}</div>` : ''}
+            ${subtaskBadgesHtml(n)}
             ${selectionMode ? '' : `
             <div class="note-actions">
               ${doneBtn}
@@ -3130,7 +3199,7 @@ window.copyNoteText = async function(id) {
     }
   } catch(e) { /* отклонено/недоступно — пробуем фолбэк */ }
   if (!copied) copied = legacyCopy();
-  if (copied) setStatus('📋 Текст скопирован — можно послать кому угодно', 2200);
+  if (copied) showToast('✓ Скопировано', 2200);
   else alert('Не удалось скопировать текст');
 };
 
@@ -3237,12 +3306,14 @@ async function bulkAddToTodo() {
   if (!selectedNoteIds.size) return;
   const ids = Array.from(selectedNoteIds);
   try {
-    // все выбранные встают в НАЧАЛО очереди (v76 — новое поверх старого),
-    // сохраняя порядок выбора: первый выбранный — самый верхний
-    let base = nextTopTodoOrder() - (ids.length - 1);
-    for (const id of ids) {
-      await updateDoc(uDocRef('notes', id), { inTodo: true, todoOrder: base });
-      base += 1;
+    // v82: выбранные встают ПО УМНОМУ СКОРУ — при равном скорыше сохраняется порядок выбора:
+    // вставляем от самого скорого к самому некорому, каждый учитывает уже вставленных
+    const picked = ids.map(id => notes.find(n => n.id === id)).filter(Boolean);
+    const withSc = picked.map(n => ({ n, sc: smartScore(n) })).sort((a, b) => b.sc - a.sc);
+    for (const { n } of withSc) {
+      const order = computeSmartOrder(smartScore(n));
+      await updateDoc(uDocRef('notes', n.id), { inTodo: true, todoOrder: order });
+      n.inTodo = true; n.todoOrder = order; // следующая вставка видит уже добавленных
     }
     selectedNoteIds.clear();
     toggleSelectionMode();
@@ -3443,8 +3514,129 @@ function openEdit(id) {
     metaEl.style.display = parts.length ? 'block' : 'none';
   }
   renderModalActions(n);
+  renderSubtaskSection(n);   // v82: подзадачи + цепочка старших задач
+  renderModalImpEff(n);      // v82: важность и объём (умная сортировка)
   document.getElementById('modal').classList.add('open');
 }
+
+// ── ПОДЗАДАЧИ В РЕДАКТОРЕ (v82) ──
+// Секция: цепочка старших задач («путь на компе») → список подзадач с чекбоксами → строка добавления.
+function renderSubtaskSection(n) {
+  const box = document.getElementById('modal-subtasks');
+  if (!box) return;
+  const chain = parentChainOf(n);
+  const kids = childrenOf(n.id);
+  let html = '';
+  if (chain.length) {
+    // путь от корня к матери: каждое звено — кнопка, тап открывает старшую задачу
+    html += `<div class="sub-crumb"><span style="font-size:9.5px;color:rgba(255,255,255,0.45);text-transform:uppercase;letter-spacing:1px;margin-right:2px;">В составе:</span>` +
+      chain.map((p, i) => {
+        const short = p.text.length > 26 ? p.text.slice(0, 26) + '…' : p.text;
+        return `${i > 0 ? '<span class="crumb-sep">›</span>' : ''}<button onclick="openEdit('${p.id}')" title="Открыть старшую задачу">${escHtml(short)}</button>`;
+      }).join('') + `</div>`;
+  }
+  if (kids.length || n.inTodo === true) {
+    html += `<div style="font-size:9.5px;color:rgba(255,255,255,0.45);text-transform:uppercase;letter-spacing:1px;margin:2px 0 6px;font-family:Inter,sans-serif;">☑ Подзадачи${kids.length ? ` (${kids.filter(k => k.done === true).length}/${kids.length})` : ''}</div>`;
+  }
+  html += kids.map(k => `
+    <div class="sub-row${k.done === true ? ' is-done' : ''}" onclick="openEdit('${k.id}')">
+      <button class="sub-check${k.done === true ? ' on' : ''}" title="${k.done === true ? 'Вернуть в работу' : 'Выполнить'}" onclick="toggleSubtaskDone('${k.id}');event.stopPropagation();">${k.done === true ? '✓' : ''}</button>
+      <span class="sub-text">${escHtml(k.text)}</span>
+    </div>`).join('');
+  if (n.inTodo === true) {
+    html += `
+    <div class="sub-add-row">
+      <input type="text" id="subtask-input" placeholder="Новая подзадача — станет отдельной карточкой в тудушке...">
+      <button onclick="addSubtaskFromInput('${n.id}')" title="Добавить подзадачу">+ Добавить</button>
+    </div>`;
+  }
+  box.innerHTML = html;
+  box.style.display = (chain.length || kids.length || n.inTodo === true) ? 'block' : 'none';
+}
+
+// создание подзадачи: отдельная задача в тудушке с parentId (v82)
+async function createSubtask(parentId, text) {
+  const parent = notes.find(x => x.id === parentId);
+  if (!parent || !text || !text.trim()) return;
+  const t = text.trim();
+  try {
+    // подзадача встаёт по умному скору (лёгкое дело — ближе к верху), рядом с другими делами
+    const order = computeSmartOrder(smartScoreForFields({ scheduledDate: null, importance: null, effort: 'S' }));
+    await addDoc(notesCol(), {
+      text: t,
+      type: 'text',
+      tag: parent.tag || null,
+      inTodo: true,
+      todoOrder: order,
+      parentId: parentId,
+      done: false,
+      doneAt: null,
+      createdAt: new Date().toISOString()
+    });
+    await loadNotes();
+    renderCalendar();
+    const fresh = notes.find(x => x.id === editingId);
+    if (fresh) { renderSubtaskSection(fresh); renderModalActions(fresh); }
+    showToast('↳ Подзадача добавлена в тудушку', 2200);
+  } catch(e) { alert('Ошибка: ' + e.message); }
+}
+window.createSubtask = createSubtask;
+
+async function addSubtaskFromInput(parentId) {
+  const inp = document.getElementById('subtask-input');
+  if (!inp) return;
+  const t = inp.value.trim();
+  if (!t) return;
+  inp.value = '';
+  await createSubtask(parentId, t);
+  const inp2 = document.getElementById('subtask-input');
+  if (inp2) { inp2.focus(); inp2.addEventListener('keydown', subInputKeyHandler); }
+}
+window.addSubtaskFromInput = addSubtaskFromInput;
+
+function subInputKeyHandler(e) {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    if (editingId) addSubtaskFromInput(editingId);
+  }
+}
+
+async function toggleSubtaskDone(id) {
+  const n = notes.find(x => x.id === id);
+  if (!n) return;
+  await toggleDone(id, n.done === true);
+  const fresh = notes.find(x => x.id === editingId);
+  if (fresh && document.getElementById('modal').classList.contains('open')) {
+    renderSubtaskSection(fresh);
+    renderModalActions(fresh);
+  }
+}
+window.toggleSubtaskDone = toggleSubtaskDone;
+
+// ── ВАЖНОСТЬ И ОБЪЁМ В РЕДАКТОРЕ (v82) ──
+// Важность 1–5 и объём S/M/L питают умную сортировку («✨ Умно» и вставку новых задач по скору).
+let editingImportance = null;
+let editingEffort = null;
+function renderModalImpEff(n) {
+  // инициализация состояния из заметки (вызывается только при открытии редактора)
+  editingImportance = n.importance || null;
+  editingEffort = n.effort || null;
+  renderImpEffChips();
+}
+function renderImpEffChips() {
+  const box = document.getElementById('modal-impeff');
+  if (!box) return;
+  const effOpts = [['S','⚡ Быстро'],['M','● Средне'],['L','⛰ Большое']];
+  box.innerHTML = `
+    <span class="imp-eff-lbl">Важность:</span>
+    ${[1,2,3,4,5].map(v => `<button class="chip-btn${(editingImportance || 3) === v ? ' on' : ''}" onclick="setModalImportance(${v})" title="Важность ${v}">${v === (editingImportance || 3) ? '★' : v}</button>`).join('')}
+    <span class="imp-eff-lbl" style="margin-left:6px;">Объём:</span>
+    ${effOpts.map(([v, lbl]) => `<button class="chip-btn${(editingEffort || 'M') === v ? ' on' : ''}" onclick="setModalEffort('${v}')">${lbl}</button>`).join('')}`;
+}
+function setModalImportance(v) { editingImportance = editingImportance === v ? null : v; renderImpEffChips(); }
+function setModalEffort(v) { editingEffort = editingEffort === v ? null : v; renderImpEffChips(); }
+window.setModalImportance = setModalImportance;
+window.setModalEffort = setModalEffort;
 
 // Кнопки действий прямо в редакторе: выполнить, тудушка, копия, дубликат, удалить.
 // Не трогаем поля ввода — несохранённые правки текста остаются при действии.
@@ -3457,9 +3649,9 @@ function renderModalActions(n) {
   box.innerHTML = `
     <button onclick="modalToggleDone()" style="${st}border:0.5px solid ${isDone ? 'rgba(255,255,255,0.15)' : 'rgba(0,220,120,0.4)'};background:${isDone ? 'rgba(255,255,255,0.05)' : 'rgba(0,220,120,0.12)'};color:${isDone ? 'rgba(255,255,255,0.6)' : 'rgba(0,230,130,0.95)'};">${isDone ? '↩ Вернуть в работу' : '✓ Выполнить'}</button>
     <button onclick="modalToggleTodo()" style="${st}border:0.5px solid ${isInTodo ? 'rgba(255,80,80,0.3)' : 'rgba(108,71,255,0.4)'};background:${isInTodo ? 'rgba(255,80,80,0.08)' : 'rgba(108,71,255,0.1)'};color:${isInTodo ? 'rgba(255,110,110,0.9)' : 'rgba(139,92,246,0.95)'};">${isInTodo ? '✕ Из тудушки' : '➜ В тудушку'}</button>
-    <button onclick="modalCopyText()" style="${st}border:0.5px solid rgba(255,255,255,0.15);background:rgba(255,255,255,0.05);color:rgba(255,255,255,0.75);">${COPY_ICON_SVG} Копировать</button>
     <button onclick="modalDuplicate()" style="${st}border:0.5px solid rgba(0,212,255,0.3);background:rgba(0,212,255,0.08);color:rgba(0,212,255,0.85);">⧉ Дублировать</button>
     <button onclick="modalDelete()" style="${st}border:0.5px solid rgba(255,80,80,0.3);background:rgba(255,80,80,0.1);color:rgba(255,110,110,0.9);">🗑 Удалить</button>`;
+  // v82: кнопка «Копировать» из этого ряда убрана — теперь иконка копирования стоит рядом с текстом (правый верхний угол поля)
 }
 
 // Быстрая дата в редакторе: Сегодня / Завтра / +7 дней — одним тапом
@@ -3490,9 +3682,33 @@ async function modalToggleTodo() {
 window.modalToggleTodo = modalToggleTodo;
 
 function modalCopyText() {
-  const n = notes.find(x => x.id === editingId);
-  if (!n) return;
-  copyNoteText(n.id);
+  // v82: копируем АКТУАЛЬНЫЙ текст из поля (несохранённые правки тоже копируются)
+  const ta = document.getElementById('modal-text');
+  const txt = (ta && ta.value.trim()) ? ta.value.trim() : (() => { const n = notes.find(x => x.id === editingId); return n ? (n.text || '').trim() : ''; })();
+  if (!txt) return;
+  const legacyCopy = () => {
+    const ta2 = document.createElement('textarea');
+    ta2.value = txt;
+    ta2.style.cssText = 'position:fixed;left:-9999px;top:0;opacity:0;';
+    document.body.appendChild(ta2);
+    ta2.focus(); ta2.select();
+    let ok = false;
+    try { ok = document.execCommand('copy'); } catch(e) { ok = false; }
+    document.body.removeChild(ta2);
+    return ok;
+  };
+  (async () => {
+    let copied = false;
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(txt);
+        copied = true;
+      }
+    } catch(e) {}
+    if (!copied) copied = legacyCopy();
+    if (copied) showToast('✓ Скопировано', 2200);
+    else alert('Не удалось скопировать текст');
+  })();
 }
 window.modalCopyText = modalCopyText;
 
@@ -3560,7 +3776,9 @@ async function saveEdit() {
       tag: editingSelectedTag,
       details: detailsVal || null, // v76: расширенное тело заметки
       scheduledDate: dateVal,
-      scheduledTime: timeVal
+      scheduledTime: timeVal,
+      importance: editingImportance || null, // v82: важность 1–5 (умная сортировка)
+      effort: editingEffort || null          // v82: объём S/M/L
     });
     // САМООБУЧЕНИЕ ТЕГОВ (v76): пользователь перенёс запись в другой тег руками —
     // запоминаем пример «текст → тег», классификатор потом наследует такие правки
@@ -3577,7 +3795,13 @@ window.saveEdit = saveEdit;
 async function deleteNote(id) {
   if (!confirm('Удалить запись?')) return;
   try {
+    // v82: при удалении матери подзадачи НЕ пропадают — отсоединяются и остаются самостоятельными
+    const kids = notes.filter(n => n.parentId === id);
+    for (const k of kids) {
+      try { await updateDoc(uDocRef('notes', k.id), { parentId: null }); } catch(e) {}
+    }
     await deleteDoc(uDocRef('notes', id));
+    if (kids.length) showToast('↳ ' + kids.length + ' ' + (kids.length === 1 ? 'подзадача отсоединена' : 'подзадач отсоединено') + ' — остались самостоятельными', 3000);
     await loadNotes();
   } catch(e) { alert('Ошибка: ' + e.message); }
 }
@@ -3593,6 +3817,18 @@ async function toggleDone(id, currentDone) {
     if (willBeDone) celebrateTaskDone(); // празднуем только при завершении, не при отмене
     await loadNotes();
     renderCalendar(); // выполненные задачи исчезают из календаря
+
+    // v82: подзадача выполнена/возвращена — подтверждение + напоминание о матери;
+    // в материнской карточке прогресс «☑ N/M» обновится при перерисовке (loadNotes → рендер)
+    const subNote = notes.find(n => n.id === id);
+    if (subNote && subNote.parentId) {
+      const p = notes.find(x => x.id === subNote.parentId);
+      if (p) {
+        const pr = subProgressOf(p.id);
+        if (willBeDone && pr.total && pr.done === pr.total) showToast(`🎉 Все ${pr.total} подзадач в «${p.text.length > 26 ? p.text.slice(0, 26) + '…' : p.text}» выполнены`, 3200);
+        else showToast(willBeDone ? `↳ Подзадача отмечена в «${p.text.length > 26 ? p.text.slice(0, 26) + '…' : p.text}» (${pr.done}/${pr.total})` : `↳ Подзадача вернулась в работу (${pr.done}/${pr.total})`, 2800);
+      }
+    }
 
     // Если у заметки есть milestoneLink — синхронизируем с milestone в желании
     const note = notes.find(n => n.id === id);
@@ -3661,8 +3897,10 @@ async function toggleTodo(id, currentInTodo) {
     const willBeInTodo = !currentInTodo;
     const update = { inTodo: willBeInTodo };
     if (willBeInTodo) {
-      // v76: последняя добавленная — В НАЧАЛО очереди (новое поверх старого)
-      update.todoOrder = nextTopTodoOrder();
+      // v82: встаёт по умному скору (срочность + важность + объём + время суток),
+      // ручной порядок остальных не трогаем; поднять ▲ / пересобрать «✨ Умно»
+      const nn = notes.find(x => x.id === id);
+      update.todoOrder = computeSmartOrder(smartScore(nn || {}));
     }
     await updateDoc(uDocRef('notes', id), update);
     await loadNotes();
@@ -5899,22 +6137,28 @@ async function confirmWishSuggestion() {
       }
     }
     // Создаём задачи в тудушке для каждого milestone
-    const minMsOrder = nextTopTodoOrder() - milestones.length; // ниже текущего топа, порядок майлстоунов сохраняется
-    let msShift = 0;
+    // v82: НЕ наверх очереди, а по умному скору — чтобы шаги желания не перекрывали намеченный порядок дня;
+    // равные скоры: первый майлстоун чуть выше второго (порядок шагов сохраняется) — score убывает на 0.5
+    const msBaseSc = smartScoreForFields({ scheduledDate: null, importance: null, effort: null });
+    let msIdx = 0;
     for (const ms of milestones) {
       try {
+        const sc = msBaseSc - (msIdx++) * 0.5;
+        const todoOrder = computeSmartOrder(sc);
         const noteRef = await addDoc(notesCol(), {
           text: ms.text,
           type: 'text',
           tag: shortTag,
           inTodo: true,
-          todoOrder: minMsOrder + (msShift++), // v76: задачи майлстоунов — наверх очереди по порядку
+          todoOrder,
           done: false,
           doneAt: null,
           milestoneLink: docRef.id + '/' + ms.id,
           wishId: docRef.id,
           createdAt: new Date().toISOString(),
         });
+        // следующая вставка должна учитывать только что добавленную задачу
+        notes.push({ id: noteRef.id, text: ms.text, type: 'text', tag: shortTag, inTodo: true, todoOrder, done: false, doneAt: null, scheduledDate: null, importance: null, effort: null, createdAt: new Date().toISOString() });
         ms.noteId = noteRef.id;
       } catch(e) {
         console.warn('[Wish] failed to create todo for milestone', ms.id, e);
@@ -6027,14 +6271,14 @@ async function addMilestone(wishId) {
   const milestones = [...(w.milestones || []), newMs];
   await updateDoc(uDocRef('wishes', wishId), { milestones, state: w.state === 'dream' ? 'plan' : w.state });
 
-  // Создаём задачу в тудушке с тегом желания
+  // Создаём задачу в тудушке с тегом желания (v82: по умному скору, не перекрывая порядок дня)
   try {
     const noteRef = await addDoc(notesCol(), {
       text: text.trim(),
       type: 'text',
       tag: w.shortTag || 'желание',
       inTodo: true,
-      todoOrder: nextTopTodoOrder(), // v76: новая задача — наверх очереди
+      todoOrder: computeSmartOrder(smartScoreForFields({ scheduledDate: null, importance: null, effort: null })),
       done: false,
       doneAt: null,
       milestoneLink: wishId + '/' + msId,
@@ -6802,15 +7046,16 @@ document.getElementById('wishchat-send').addEventListener('click', async () => {
     try {
       const args = JSON.parse(call.function.arguments || '{}');
       if (args.text) {
-        // v74: в КОНЕЦ очереди — главная задача остаётся наверху
-        const maxOrder = notes.reduce((m, n) => n.inTodo ? Math.max(m, n.todoOrder || 0) : m, 0);
+        // v82: по умному скору (срочность + важность + объём + время суток) — не перекрывает порядок дня
         await addDoc(notesCol(), {
           text: args.text,
           type: 'text',
           tag: w.shortTag || args.tag || null, // тег желания — главный признак задач из желания
           wishId: currentWishId,               // связь с желанием (видно в карточке желания и при удалении)
           inTodo: true,
-          todoOrder: maxOrder + 1,
+          todoOrder: computeSmartOrder(smartScoreForFields({ scheduledDate: null, importance: args.importance, effort: args.effort })),
+          importance: clampImportance(args.importance),
+          effort: clampEffort(args.effort),
           createdAt: new Date().toISOString()
         });
         await loadNotes();
@@ -6912,6 +7157,134 @@ function getTodoQueue() {
   return notes.filter(n => n.inTodo === true && !n.done).sort((a,b) => (a.todoOrder||0) - (b.todoOrder||0));
 }
 
+// ── УМНАЯ СОРТИРОВКА (v82) ──
+// Скор задачи = срочность (срок/дедлайн) + важность (1–5) + лёгкость (S/M/L) + время суток.
+// Новые задачи встают ПО СКОРУ (не перекрывают намеченный порядок), а кнопка «✨ Умно»
+// пересобирает всю очередь разом. Ручные правки (▲ / драг) остаются как есть до следующей пересборки.
+function smartScore(n) {
+  let s = 40; // база: без срока, важность 3, объём M
+  const today = formatDateKey(new Date());
+  if (n.scheduledDate) {
+    if (n.scheduledDate < today) s = 95;                 // просрочено — первым делом
+    else if (n.scheduledDate === today) s = 88;          // сегодня
+    else {
+      const dd = Math.round((new Date(n.scheduledDate + 'T00:00:00') - new Date(today + 'T00:00:00')) / 86400000);
+      s = dd === 1 ? 74 : dd <= 3 ? 64 : dd <= 7 ? 54 : 44; // завтра / ≤3 дней / ≤недели / дальше
+    }
+  }
+  const imp = Math.min(5, Math.max(1, parseInt(n.importance, 10) || 3));
+  s += (imp - 1) * 7;                                     // важность 5 → +28, 1 → +0
+  const eff = n.effort || 'M';
+  const h = new Date().getHours();
+  let effAdj = eff === 'S' ? 8 : eff === 'L' ? -6 : 0;    // лёгкие дела в целом выше
+  if (h >= 6 && h < 11) effAdj += (eff === 'L' ? -4 : 4);        // утро: короткие разгоняющие дела
+  else if (h >= 11 && h < 18) effAdj += (eff === 'S' ? 4 : 0);   // день: рабочий ресурс, можно большие
+  else if (h >= 18) effAdj += (eff === 'S' ? 6 : eff === 'L' ? -4 : 0); // вечер: лёгкое, семейное
+  s += effAdj;
+  return s;
+}
+
+// порядок для НОВОЙ задачи со скором score: вставить перед первой задачей очереди с меньшим скором
+// (дробные todoOrder — соседей не трогаем, ручной порядок сохраняется)
+let _renormBusy = false;
+function computeSmartOrder(score) {
+  const queue = getTodoQueue().map(n => ({ order: (typeof n.todoOrder === 'number' ? n.todoOrder : 0), sc: smartScore(n) }));
+  const idx = queue.findIndex(q => q.sc < score);
+  if (idx === -1) {
+    // меньше всех — в конец
+    const maxOrder = queue.length ? Math.max(...queue.map(q => q.order)) : Date.now() - 1;
+    return maxOrder + 1;
+  }
+  const prev = idx > 0 ? queue[idx - 1].order : queue[0].order - 2;
+  const next = queue[idx].order;
+  if (Math.abs(next - prev) < 1e-6) {
+    // разряд исчерпан — перенумеровываем очередь целиком и считаем заново (редкий случай)
+    if (!_renormBusy) { _renormBusy = true; renormalizeTodoQueue().then(() => { _renormBusy = false; }); }
+    return queue[0].order - 1; // временно наверх, после ренормализации порядок поправит ✨/следующая вставка
+  }
+  return (prev + next) / 2;
+}
+
+// перенумерация очереди 1..N (сохраняя текущий визуальный порядок)
+async function renormalizeTodoQueue() {
+  const queue = getTodoQueue();
+  for (let i = 0; i < queue.length; i++) {
+    try { await updateDoc(uDocRef('notes', queue[i].id), { todoOrder: i + 1 }); } catch(e) {}
+  }
+  await loadNotes();
+}
+
+// кнопка «✨ Умно»: пересобрать ВСЮ очередь по скору (срочность + важность + объём + время суток)
+async function smartSortTodo() {
+  const queue = getTodoQueue();
+  if (queue.length < 2) { showToast('В очереди меньше двух задач — сортировать нечего 🙂', 2600); return; }
+  const sorted = [...queue].sort((a, b) => smartScore(b) - smartScore(a)); // стабильная сортировка: равные скоры сохраняют порядок
+  try {
+    for (let i = 0; i < sorted.length; i++) {
+      await updateDoc(uDocRef('notes', sorted[i].id), { todoOrder: i + 1 });
+      const loc = notes.find(n => n.id === sorted[i].id);
+      if (loc) loc.todoOrder = i + 1;
+    }
+    renderTodo();
+    renderFocusCard();
+    renderCalendar();
+    scheduleTodoPersist();
+    showToast('✨ Очередь собрана: срочное и важное — сверху', 3000);
+  } catch(e) { alert('Ошибка: ' + e.message); }
+}
+window.smartSortTodo = smartSortTodo;
+window.smartScore = smartScore;               // тесты/отладка: расчёт скора
+window.computeSmartOrder = computeSmartOrder; // тесты/отладка: позиция вставки новой задачи
+window.smartScoreForFields = smartScoreForFields; // тесты/отладка: скор по полям до создания
+
+// скор для ещё НЕ созданной задачи (поля известны до записи в базу)
+function smartScoreForFields(f) {
+  return smartScore({ scheduledDate: f.scheduledDate || null, importance: f.importance, effort: f.effort });
+}
+
+// ── ПОДЗАДАЧИ (v82) ──
+// Подзадача = обычная заметка с parentId. Живёт в тудушке/календаре/истории как самостоятельная
+// карточка, но связана с материнской: у матери — прогресс «☑ N/M», у ребёнка — бейдж «↳ мать».
+// Иерархия любой глубины (подзадача подзадачи — путь как в проводнике), сквозная для ИИ.
+function childrenOf(id) {
+  return notes.filter(n => n.parentId === id).sort((a, b) => (a.todoOrder || 0) - (b.todoOrder || 0));
+}
+// цепочка предков: [корень, ..., мать] (для breadcrumb «путь на компе»)
+function parentChainOf(n) {
+  const chain = [];
+  let cur = n;
+  let guard = 0;
+  while (cur && cur.parentId && guard++ < 10) {
+    const p = notes.find(x => x.id === cur.parentId);
+    if (!p) break; // мать удалена — цепочка обрывается
+    chain.unshift(p);
+    cur = p;
+  }
+  return chain;
+}
+function subProgressOf(id) {
+  const kids = childrenOf(id);
+  return { total: kids.length, done: kids.filter(k => k.done === true).length };
+}
+// бейджи для карточек (тудушка/история): у матери — прогресс, у ребёнка — ссылка на мать
+function subtaskBadgesHtml(n) {
+  const parts = [];
+  const kids = childrenOf(n.id);
+  if (kids.length) {
+    const done = kids.filter(k => k.done === true).length;
+    const all = done === kids.length;
+    parts.push(`<span class="sub-progress${all ? ' all-done' : ''}" title="Подзадачи: ${done} из ${kids.length} выполнено">☑ ${done}/${kids.length} подзадач</span>`);
+  }
+  if (n.parentId) {
+    const p = notes.find(x => x.id === n.parentId);
+    if (p) {
+      const short = p.text.length > 34 ? p.text.slice(0, 34) + '…' : p.text;
+      parts.push(`<span class="sub-badge" title="Подзадача задачи «${escHtml(short)}» — нажми, чтобы открыть" onclick="openEdit('${p.id}');event.stopPropagation();">↳ ${escHtml(short)}</span>`);
+    }
+  }
+  return parts.length ? `<div style="display:flex;gap:5px;margin-top:6px;flex-wrap:wrap;">${parts.join('')}</div>` : '';
+}
+
 function renderFocusCard() {
   const el = document.getElementById('focus-card-wrap');
   if (!el) return;
@@ -6926,6 +7299,13 @@ function renderFocusCard() {
     const metaBits = [];
     if (whenStr) metaBits.push(whenStr);
     if (top.tag) metaBits.push('🏷 ' + escHtml(top.tag));
+    // v82: подзадачи — путь к старшей задаче и прогресс по детям
+    if (top.parentId) {
+      const p = notes.find(x => x.id === top.parentId);
+      if (p) metaBits.push('↳ в составе «' + escHtml(p.text.length > 30 ? p.text.slice(0, 30) + '…' : p.text) + '»');
+    }
+    const tp = subProgressOf(top.id);
+    if (tp.total) metaBits.push('☑ подзадачи ' + tp.done + '/' + tp.total);
     const metaOverdue = top.scheduledDate && top.scheduledDate < formatDateKey(new Date());
     html += `
       <div class="focus-card" data-id="${top.id}">
@@ -7728,6 +8108,7 @@ function renderTodo() {
           <button class="note-copy-btn" title="Скопировать текст" onclick="copyNoteText('${n.id}');event.stopPropagation();">${COPY_ICON_SVG}</button>
         </div>
         <div class="note-text">${escHtml(n.text)}</div>
+        ${subtaskBadgesHtml(n)}
         <div class="note-actions">
           <button class="note-btn note-done" onclick="toggleDone('${n.id}', false);event.stopPropagation();">✓ Выполнено</button>
           <button class="note-btn note-undone" onclick="toggleTodo('${n.id}', true);event.stopPropagation();">✕ Убрать</button>
@@ -8077,7 +8458,10 @@ function buildChatTools() {
           wish: { type: 'string', description: 'shortTag желания из раздела ЖЕЛАНИЯ — копируй ТОЧНО как в [квадратных скобках], не переводи и не транслитерируй. Заполняй, если запись относится к желанию — запись привяжется к нему и получит его тег автоматически' },
           to_todo: { type: 'boolean', description: 'true — это ЗАДАЧА: конкретное действие, которое предстоит сделать (купить, позвонить, отправить, записаться, сделать) — сохранится сразу и попадёт в тудушку автоматически. Записи, начинающиеся с действия («настроить кнопку», «поправить фильтр», «проверить орфографию», «добавить подписи») — ВСЕГДА to_todo: true, даже если звучат как заметка о работе над проектом. false или пропуск — это ЗАМЕТКА: мысль, факт, идея без действия, дневниковая запись — добавится после подтверждения пользователя' },
           date: { type: 'string', description: 'Дата выполнения задачи YYYY-MM-DD — ТОЛЬКО если из слов пользователя ясно когда (сегодня, завтра, через неделю, в пятницу, на следующей неделе). Вычисли точную дату от текущей даты (см. СЕГОДНЯ в контексте). «На следующей неделе» = ближайший понедельник. «Через N минут/часов» = сегодняшняя дата. Срок НЕ назван — оставь пустым: никаких дат по умолчанию, «сегодня» без упоминания запрещено' },
-          time: { type: 'string', description: 'Время выполнения HH:MM в московском поясе, если пользователь назвал время («в 15:00», «в три часа дня») или сказал «через N минут/часов» — тогда считай от строки «Сейчас» в контексте. НИКОГДА не ставь время в прошлом. Если время не названо — не заполняй' }
+          time: { type: 'string', description: 'Время выполнения HH:MM в московском поясе, если пользователь назвал время («в 15:00», «в три часа дня») или сказал «через N минут/часов» — тогда считай от строки «Сейчас» в контексте. НИКОГДА не ставь время в прошлом. Если время не названо — не заполняй' },
+          importance: { type: 'integer', description: 'Важность задачи 1–5 (для умной сортировки очереди): 5 — критично важно для пользователя, 4 — очень важно, 3 — обычное дело, 2 — желательно, 1 — мелочь/можно не делать. Оцени по смыслу: деньги, здоровье, дедлайны работы — 4–5; бытовые мелочи — 1–2. Если неясно — не заполняй' },
+          effort: { type: 'string', enum: ['S','M','L'], description: 'Объём работы (для умной сортировки): S — быстро, до 15 минут (позвонить, написать, купить); M — 15–60 минут (настроить, разобрать, встретиться); L — несколько часов или больше (большой проект, поездка). Если неясно — не заполняй' },
+          parent_task: { type: 'string', description: 'Заполняй ТОЛЬКО когда пользователь просит добавить ПОДЗАДАЧУ к существующей задаче («добавь подзадачу к…», «это часть задачи…»): передай текст или узнаваемую часть текста материнской задачи из ТУДУШКИ. Подзадача станет отдельной карточкой в очереди, привязанной к старшей задаче' }
         },
         required: ['text','tag']
       }
@@ -8182,12 +8566,29 @@ async function addNoteFromChat(nd) {
   if (nd.inTodo === true) { newDoc.inTodo = true; newDoc.todoOrder = nd.todoOrder !== null && nd.todoOrder !== undefined ? nd.todoOrder : Date.now(); }
   if (nd.scheduledDate) newDoc.scheduledDate = nd.scheduledDate; // дата → задача попадёт в календарь
   if (nd.scheduledTime) newDoc.scheduledTime = nd.scheduledTime;
+  if (nd.importance) newDoc.importance = clampImportance(nd.importance); // v82: важность 1–5 (умная сортировка)
+  if (nd.effort) newDoc.effort = clampEffort(nd.effort);                 // v82: объём S/M/L
+  if (nd.parentId) newDoc.parentId = nd.parentId;                         // v82: подзадача (id материнской задачи)
+  if (nd.details) newDoc.details = nd.details;                            // v82: детали/комментарии записи (видит ИИ)
   await addDoc(notesCol(), newDoc);
   bumpProfileActivity(); // v76: отметка «пользователь пишет» для статистики владельца
   await loadNotes();
   renderCalendar();
   return newDoc;
 }
+
+// v82: нормализация важности/объёма из чата/редактора (защита от мусора от ИИ)
+function clampImportance(v) {
+  const n = parseInt(v, 10);
+  if (!n || isNaN(n)) return null;
+  return Math.min(5, Math.max(1, n));
+}
+function clampEffort(v) {
+  const s = String(v || '').toUpperCase();
+  return (s === 'S' || s === 'L') ? s : null;
+}
+window.clampImportance = clampImportance;
+window.clampEffort = clampEffort;
 
 // тест-хелпер: желание с готовыми полями (оценки/порядок) без ИИ-модалки
 async function addWishRaw(wd) {
@@ -9701,6 +10102,11 @@ function getBaseInstructions() {
 - Если посчитанная дата уже в прошлом — возьми ближайшую будущую (следующий такой день)
 - ТЕКСТ ЗАДАЧИ — БЕЗ даты и времени: не пиши в тексте «завтра», «в 15:00», «через 10 минут», «в пятницу» — срок передаётся ТОЛЬКО полями date/time (приложение само покажет его в календаре и бейдже). Пиши только суть: не «Позвонить маме завтра в 15:00», а «Позвонить маме» + date/time
 - Задача с датой автоматически попадёт в календарь на этот день — напиши об этом, если поставил дату
+- ПОДЗАДАЧИ: если пользователь просит подзадачу/шаг к существующей задаче — заполни parent_task (текст материнской задачи из ТУДУШКИ). В ТУДУШКА подзадачи показаны с отступом «↳» — это их материнские задачи. Не выдумывай материнскую задачу — только реально существующую
+
+ВАЖНОСТЬ И ОБЪЁМ (поля importance и effort у propose_note):
+- Новые задачи встают в очередь ПО УМНОМУ СКОРУ (срочность срока + важность + объём + время суток) — не наверх. Поэтому ОЦЕНИВАЙ каждую задачу: importance 1–5 (5 — критично: деньги, здоровье, дедлайн; 1 — мелочь) и effort S/M/L (S — до 15 минут, M — 15–60 минут, L — часы+)
+- Если пользователь называет важность («это важно», «срочно надо», «мелочь») — отражай в importance
 
 КОГДА ВЫЗЫВАТЬ propose_note (добавить запись):
 - Пользователь говорит о действии которое надо сделать («надо», «нужно», «сделать», «не забыть»), ставит задачу, формулирует цель или упоминает идею — сразу вызови propose_note с точным текстом и тегом
@@ -9758,7 +10164,11 @@ function buildSystemPrompt() {
 
   const notesContext = notes.slice(0,100).map(n => {
     const status = n.done ? ' [ВЫПОЛНЕНО]' : '';
-    return `[${toMoscow(n.createdAt)} МСК${n.tag?' | '+n.tag:''}]${status} ${n.text}`;
+    // v82: подзадачи и ДЕТАЛИ видны ИИ — детали это «комментарии/списки» записи (там цифры, расчёты, продолжения)
+    const parent = n.parentId ? notes.find(x => x.id === n.parentId) : null;
+    const subMark = parent ? ` (ПОДЗАДАЧА задачи «${parent.text.slice(0, 60)}»)` : '';
+    const detMark = n.details ? ` — детали: ${String(n.details).slice(0, 300)}` : '';
+    return `[${toMoscow(n.createdAt)} МСК${n.tag?' | '+n.tag:''}]${status}${subMark} ${n.text}${detMark}`;
   }).join('\n');
 
   // отдельный, заранее отфильтрованный блок "за сегодня" — не нужно искать в общей базе,
@@ -9773,13 +10183,23 @@ function buildSystemPrompt() {
         const parts = [];
         if (toMoscowDayStart(n.createdAt) === todayDay) parts.push('добавлено сегодня в ' + toMoscow(n.createdAt));
         if (n.doneAt && toMoscowDayStart(n.doneAt) === todayDay) parts.push('выполнено сегодня в ' + toMoscow(n.doneAt));
-        return `[${parts.join(', ')}${n.tag ? ' | ' + n.tag : ''}] ${n.text}`;
+        const detMark = n.details ? ' — детали: ' + String(n.details).slice(0, 200) : ''; // v82: детали видны ИИ
+        return `[${parts.join(', ')}${n.tag ? ' | ' + n.tag : ''}] ${n.text}${detMark}`;
       }).join('\n')
     : '(сегодня пока ничего не добавлено и не выполнено)';
 
   const todoQueue = getTodoQueue();
   const todoContext = todoQueue.length
-    ? todoQueue.map((n, i) => `${i+1}. ${n.text}${n.tag ? ' ('+n.tag+')' : ''}${n.scheduledDate ? ' — на ' + n.scheduledDate + (n.scheduledTime ? ' ' + n.scheduledTime : '') : ''}`).join('\n')
+    ? todoQueue.filter(n => !(n.parentId && todoQueue.some(p => p.id === n.parentId))) // дети показываются под матерью, отдельно не дублируются
+      .map((n, i) => {
+        // v82: подзадачи показываются деревом под материнской задачей (сквозная иерархия)
+        const kids = todoQueue.filter(k => k.parentId === n.id);
+        let line = `${i+1}. ${n.text}${n.tag ? ' ('+n.tag+')' : ''}${n.scheduledDate ? ' — на ' + n.scheduledDate + (n.scheduledTime ? ' ' + n.scheduledTime : '') : ''}`;
+        if (n.importance) line += ` [важность ${n.importance}/5${n.effort ? ', объём ' + ({S:'быстро',M:'средне',L:'большое'})[n.effort] : ''}]`;
+        if (n.details) line += ' — детали: ' + String(n.details).slice(0, 200);
+        if (kids.length) line += '\n' + kids.map(k => `   ↳ (подзадача${k.done ? ', ВЫПОЛНЕНА' : ''}) ${k.text}${k.scheduledDate ? ' — на ' + k.scheduledDate + (k.scheduledTime ? ' ' + k.scheduledTime : '') : ''}`).join('\n');
+        return line;
+      }).join('\n')
     : '(пусто — ничего не поставлено в очередь на выполнение сейчас)';
 
   // ЖЕЛАНИЯ — полный список с shortTag, статусом и шагами (для поля wish у propose_note)
@@ -9855,6 +10275,7 @@ ${promptRules.length ? 'ДОПОЛНИТЕЛЬНЫЕ ИНСТРУКЦИИ ОТ �
 }
 
 window.buildSystemPrompt = buildSystemPrompt; // тесты: проверка индекса второго мозга в контексте
+window.buildChatTools = buildChatTools;       // тесты v82: схема propose_note (importance/effort/parent_task)
 
 // формирует точный, заранее отфильтрованный список записей за последние N дней
 // (по дате создания ИЛИ по дате отметки "выполнено") — модель получает готовые данные, не считает сама
@@ -9875,7 +10296,8 @@ function formatPeriodContext(days) {
     const parts = [];
     if (inRange(n.createdAt)) parts.push('добавлено ' + toMoscow(n.createdAt) + ' МСК');
     if (n.doneAt && inRange(n.doneAt)) parts.push('выполнено ' + toMoscow(n.doneAt) + ' МСК');
-    return `[${parts.join(', ')}${n.tag ? ' | ' + n.tag : ''}] ${n.text}`;
+    const detMark = n.details ? ' — детали: ' + String(n.details).slice(0, 200) : ''; // v82: детали видны ИИ
+    return `[${parts.join(', ')}${n.tag ? ' | ' + n.tag : ''}] ${n.text}${detMark}`;
   });
   return `Записи за последние ${days} дней (найдено ${lines.length}):\n` + lines.join('\n');
 }
@@ -10342,7 +10764,13 @@ async function sendChatMessage(userText) {
       let inTodo = false, todoOrder = null;
       if (proposedNote.to_todo === true) {
         inTodo = true;
-        todoOrder = nextTopTodoOrder(); // v76: новая задача — наверх очереди
+        // v82: по умному скору (срочность + важность + объём + время суток) — ИИ сам сортирует,
+        // новые задачи не перекрывают намеченный порядок дня
+        todoOrder = computeSmartOrder(smartScoreForFields({
+          scheduledDate: isValidDateStr(proposedNote.date) ? proposedNote.date : null,
+          importance: proposedNote.importance,
+          effort: proposedNote.effort
+        }));
       }
       // дата/время: «через N минут/часов» считаем ТОЛЬКО локально (ИИ ошибается с поясами);
       // остальное — от ИИ с валидацией, без даты время не сохраняем
@@ -10368,9 +10796,19 @@ async function sendChatMessage(userText) {
       // ЗАДАЧА (to_todo) — ИИ сам классифицировал: сохраняем сразу, без кнопок «Да/Нет»
       if (inTodo) {
         try {
-          await addNoteFromChat({ text: noteText, tag, wishId, inTodo: true, todoOrder, scheduledDate, scheduledTime });
+          // v82: подзадача — ИИ указал parent_task (текст материнской задачи) → находим её и привязываем
+          let parentId = null;
+          if (proposedNote.parent_task) {
+            const pt = String(proposedNote.parent_task).trim().toLowerCase();
+            if (pt) {
+              const parent = notes.find(n => !n.done && n.text && n.text.trim() &&
+                (n.text.toLowerCase().includes(pt) || pt.includes(n.text.toLowerCase())));
+              if (parent) parentId = parent.id;
+            }
+          }
+          await addNoteFromChat({ text: noteText, tag, wishId, inTodo: true, todoOrder, scheduledDate, scheduledTime, importance: proposedNote.importance, effort: proposedNote.effort, parentId });
           const okText = (replyText ? replyText + '\n\n' : '') +
-            '✅ Задача добавлена в тудушку: «' + noteText + '»' + (tag ? ' [' + tag + ']' : '') + wishNote + whenStr + (scheduledDate ? ' — поставил в календарь.' : '.');
+            '✅ Задача добавлена в тудушку: «' + noteText + '»' + (tag ? ' [' + tag + ']' : '') + wishNote + whenStr + (scheduledDate ? ' — поставил в календарь.' : '.') + (parentId ? ' (подзадача «' + (notes.find(n => n.id === parentId) || {}).text + '»)' : '');
           await addChatMessage('assistant', okText);
         } catch(e) {
           await addChatMessage('assistant', 'Ошибка: ' + e.message);
@@ -11464,6 +11902,75 @@ onAuthStateChanged(auth, async (user) => {
     }
   }
 });
+
+// ── КНОПКА «НАЗАД» НА ТЕЛЕФОНЕ = ШАГ ВНУТРИ ПРИЛОЖЕНИЯ (v82) ──
+// Каждый переход goTo() и открытие/закрытие любой модалки пишутся в history API.
+// Физическая «назад» (Android) / свайп (iOS) закрывает модалку или возвращает на
+// предыдущий экран вместо выхода из приложения. Выход с главного экрана «гейтится»:
+// приложение остаётся открытым.
+(function initNavHistory() {
+  let navFromPop = false; // переход инициирован popstate — не пушим стейт и не делаем лишний back
+  let navPopBusy = false; // внутри popstate-обработчика — observer не должен звать history.back
+  const isModalEl = (el) => el && el.classList && el.classList.contains('modal-overlay');
+  const closeOpenModals = () => {
+    document.querySelectorAll('.modal-overlay.open').forEach(m => m.classList.remove('open'));
+    if (typeof editingId === 'string') editingId = null;
+  };
+
+  // 1) каждый переход между экранами — запись в историю (обёртка поверх graph-обёртки goTo)
+  const _navOrigGoTo = window.goTo;
+  window.goTo = function(screen) {
+    const res = _navOrigGoTo(screen);
+    if (!navFromPop) {
+      try { history.pushState({ hz: 1, screen }, ''); } catch(e) {}
+    }
+    return res;
+  };
+
+  // 2) модалки: открытие = push, ручное закрытие = history.back() (съедаем свою запись)
+  const phoneEl = document.getElementById('phone');
+  if (phoneEl && typeof MutationObserver !== 'undefined') {
+    const obs = new MutationObserver(muts => {
+      if (navFromPop || navPopBusy) return;
+      for (const m of muts) {
+        const el = m.target;
+        if (!isModalEl(el)) continue;
+        const had = (m.oldValue || '').includes('open');
+        const now = el.classList.contains('open');
+        if (!had && now) {
+          try { history.pushState({ hz: 1, modal: true }, ''); } catch(e) {}
+        } else if (had && !now) {
+          try { history.back(); } catch(e) {}
+        }
+      }
+    });
+    obs.observe(phoneEl, { subtree: true, attributes: true, attributeFilter: ['class'], attributeOldValue: true });
+  }
+
+  // 3) физическая «назад»: модалка открыта → закрыть её; иначе шаг на предыдущий экран
+  window.addEventListener('popstate', (e) => {
+    const st = e.state || {};
+    navFromPop = true;
+    navPopBusy = true;
+    try {
+      if (st.modal) {
+        closeOpenModals(); // обычно модалка уже закрыта пользователем — тут только подстраховка
+      } else if (st.screen) {
+        closeOpenModals();
+        _navOrigGoTo(st.screen);
+      } else {
+        // вышли за пределы нашего стека — не выпускаем из приложения (гейт)
+        history.replaceState({ hz: 1, screen: 'main' }, '');
+        history.pushState({ hz: 1, screen: 'main' }, '');
+        _navOrigGoTo('main');
+      }
+    } catch(err) {}
+    setTimeout(() => { navFromPop = false; navPopBusy = false; }, 0);
+  });
+
+  // 4) якорь: текущая запись истории помечается нашей — первый «назад» всегда обработаем сами
+  try { history.replaceState({ hz: 1, screen: 'main' }, ''); } catch(e) {}
+})();
 </script>
 
 <!-- PWA: Service Worker registration — enables offline mode + installable on mobile -->
