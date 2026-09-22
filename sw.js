@@ -1,5 +1,5 @@
 // Service Worker for Хэзэнштейн PWA
-const CACHE_NAME = 'hazenstein-hz3-v83';
+const CACHE_NAME = 'hazenstein-hz3-v84';
 const ASSETS = [
   './',
   './index.html',
@@ -24,6 +24,26 @@ self.addEventListener('activate', (event) => {
     )
   );
   self.clients.claim();
+});
+
+// Клик по системному уведомлению: фокусируем открытое приложение (и открываем карточку задачи
+// через postMessage) либо запускаем приложение с ?note=<id> — карточка откроется после загрузки.
+self.addEventListener('notificationclick', (event) => {
+  const noteId = (event.notification.data && event.notification.data.noteId) || null;
+  event.notification.close();
+  event.waitUntil((async () => {
+    const scopeUrl = new URL(self.registration.scope).href; // …/hz3/
+    const all = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    const client = all.find((c) => { try { return new URL(c.url).href.indexOf(scopeUrl) === 0; } catch (e) { return false; } });
+    if (client) {
+      try { await client.focus(); } catch (e) {}
+      try { client.postMessage({ type: 'hz3-open-note', noteId }); } catch (e) {}
+    } else {
+      try {
+        await self.clients.openWindow(scopeUrl + (noteId ? '?note=' + encodeURIComponent(noteId) : ''));
+      } catch (e) {}
+    }
+  })());
 });
 
 // Stale-while-revalidate for HTML (instant open, refresh in background), cache-first for assets
