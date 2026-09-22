@@ -390,6 +390,14 @@ body{background:#060918;font-family:'Inter',sans-serif;display:flex;justify-cont
   cursor:grab;padding:6px 4px;color:rgba(255,255,255,0.28);font-size:18px;
   touch-action:none;user-select:none;flex-shrink:0;line-height:1;margin-top:2px;
 }
+/* ▲ кнопка на карточке тудушки — поднять задачу на позицию вверх без драга */
+.todo-up-btn{
+  cursor:pointer;padding:2px 10px;border-radius:8px;border:0.5px solid rgba(255,255,255,0.1);
+  background:rgba(255,255,255,0.05);color:rgba(255,255,255,0.55);font-size:11px;line-height:1.5;
+  flex-shrink:0;touch-action:manipulation;-webkit-tap-highlight-color:transparent;
+}
+.todo-up-btn:hover{color:rgba(139,92,246,0.95);background:rgba(108,71,255,0.12);border-color:rgba(108,71,255,0.4)}
+.todo-up-btn:active{transform:scale(0.9)}
 .wish-drag-handle{
   cursor:grab;padding:4px 8px;color:rgba(255,255,255,0.3);font-size:16px;
   touch-action:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;
@@ -4103,6 +4111,7 @@ function startCalDrag() {
   document.body.appendChild(ghost);
   calDrag.ghost = ghost;
   if (calDrag.srcEl) calDrag.srcEl.classList.add('dragging-src');
+  calDrag.rafId = requestAnimationFrame(calAutoScrollTick); // палец у края — список листается сам
 }
 
 function onCalPointerMove(e) {
@@ -4115,11 +4124,44 @@ function onCalPointerMove(e) {
   }
   e.preventDefault();
   if (calDrag.ghost) { calDrag.ghost.style.left = e.clientX + 'px'; calDrag.ghost.style.top = e.clientY + 'px'; }
-  const el = document.elementFromPoint(e.clientX, e.clientY);
+  updateCalDragHover(e.clientX, e.clientY);
+}
+
+// подсветка цели под пальцем — общая для движения пальца и автоскролла
+// (при автоскролле палец стоит на месте, а контент едет — цель надо пересчитывать)
+function updateCalDragHover(x, y) {
+  if (!calDrag || !calDrag.started) return;
+  const el = document.elementFromPoint(x, y);
   const target = el && el.closest ? el.closest('[data-drop-date],[data-drop-hour],[data-drop-none]') : null;
   if (calDrag.hoverEl && calDrag.hoverEl !== target) calDrag.hoverEl.classList.remove('drop-hover');
   if (target && target !== calDrag.hoverEl) target.classList.add('drop-hover');
   calDrag.hoverEl = target;
+}
+
+// ── Автоскролл при драге задачи (как в тудушке) ──
+// Палец с карточкой у верхнего/нижнего края — #calendar-list листается сам.
+// Без этого нижние задачи из очереди «🎯 Раскидать» не дотащить до дат календаря:
+// во время драга нативный скролл заблокирован (cal-dragging + touchmove preventDefault).
+const CAL_EDGE = 70;      // зона у края списка, в которой включается автоскролл (px)
+const CAL_MAX_SPEED = 13; // скорость автоскролла (px за кадр, ~780px/с)
+
+function calAutoScrollTick() {
+  if (!calDrag || !calDrag.started) return;
+  const list = document.getElementById('calendar-list');
+  if (!list) return;
+  const rect = list.getBoundingClientRect();
+  const y = calDrag.lastY;
+  let speed = 0;
+  if (y < rect.top + CAL_EDGE) {
+    speed = -CAL_MAX_SPEED * (1 - Math.max(0, y - rect.top) / CAL_EDGE);
+  } else if (y > rect.bottom - CAL_EDGE) {
+    speed = CAL_MAX_SPEED * (1 - Math.max(0, rect.bottom - y) / CAL_EDGE);
+  }
+  if (speed !== 0) {
+    list.scrollTop += speed;
+    updateCalDragHover(calDrag.lastX, calDrag.lastY); // под пальцем теперь другая клетка
+  }
+  calDrag.rafId = requestAnimationFrame(calAutoScrollTick);
 }
 
 async function onCalPointerUp(e) {
@@ -4127,6 +4169,7 @@ async function onCalPointerUp(e) {
   clearTimeout(calDrag.timer);
   const d = calDrag;
   calDrag = null;
+  if (d.rafId) cancelAnimationFrame(d.rafId);
   if (d.started) {
     calLastDragEnd = Date.now(); // свайп-детектор не спутает отпускание карточки с жестом
     calSuppressClick = true;
@@ -6830,7 +6873,7 @@ function showMainHints() {
 window.showMainHints = showMainHints;
 
 // v76: последняя добавленная задача ложится В НАЧАЛО очереди (новое поверх старого);
-// вниз её двигают пропуском (skipTodoTask) или вручную за ⠿. Единая точка для всех 5 мест
+// вниз её двигают пропуском (skipTodoTask), вручную за ⠿ или кнопкой ▲ на карточке. Единая точка для всех 5 мест
 // добавления задач (ручная, массовая, ИИ-чат, майлстоуны, «в тудушку») — порядок всегда консистентен
 function nextTopTodoOrder() {
   const minOrder = notes.reduce((m, n) => n.inTodo ? Math.min(m, n.todoOrder ?? Infinity) : m, Infinity);
@@ -7254,6 +7297,17 @@ async function reorderTodo(id, newIndex) {
   await loadNotes(); // подтягиваем серверную правду после записи
 }
 
+// ▲ кнопка на карточке: поднять задачу на одну позицию вверх без перетаскивания —
+// нижние записи не нужно тащить через весь список. Индекс у reorderTodo считается
+// среди соседей (без самой карточки), поэтому «вверх на 1» = newIndex = idx - 1.
+function moveTodoUp(id) {
+  const queue = getTodoQueue();
+  const idx = queue.findIndex(n => n.id === id);
+  if (idx <= 0) return; // первая и так наверху
+  reorderTodo(id, idx - 1);
+}
+window.moveTodoUp = moveTodoUp;
+
 // ── DRAG-N-DROP ДЛЯ ЖЕЛАНИЙ ──
 // Тащим за ручку "⠿" в тексте карточки — порядок сохраняется в wishOrder (как todoOrder
 // в тудушке). Механика та же: тач-драг с расталкиванием соседей + автоскролл у краёв.
@@ -7562,7 +7616,10 @@ function renderTodo() {
     const staleTitle = stale ? ` title="Висит уже ${Math.floor((Date.now() - new Date(n.createdAt).getTime()) / 86400000)} дн."` : '';
     return `
     <div class="note-card${stale ? ' note-stale' : ''}" data-id="${n.id}"${staleTitle} onclick="todoCardTap('${n.id}')" style="display:flex;gap:10px;align-items:flex-start;cursor:pointer;">
-      <div class="todo-drag-handle">⠿</div>
+      <div style="display:flex;flex-direction:column;align-items:center;flex-shrink:0;gap:1px;">
+        <button class="todo-up-btn" title="Подвинуть вверх" onclick="moveTodoUp('${n.id}');event.stopPropagation();"${i === 0 ? ' style="visibility:hidden;"' : ''}>▲</button>
+        <div class="todo-drag-handle">⠿</div>
+      </div>
       <div style="flex:1;min-width:0;">
         <div class="note-meta">
           <span class="note-date"${whenStyle}>#${i+1}${n.tag ? ' · ' + n.tag : ''}${whenStr ? ' · ' + whenStr : ''}${n.details ? ' · 📝' : ''}</span>
@@ -7660,7 +7717,7 @@ function goTo(screen) {
     // Обучение в Тудушке: что это → перетаскивание → залежавшиеся
     hintChain([
       ['onb_5_todo_here', '☑️ Это Тудушка — задачи на каждый день. Тап по карточке — редактор, ✓ — выполнить.', 'todo-hint', () => notes.filter(n => n.inTodo && !n.done).length >= 1],
-      ['todo_drag', 'Тащи за ⠿ чтобы поменять порядок — соседи подвинутся сами.', 'todo-hint', () => notes.filter(n => n.inTodo && !n.done).length >= 2],
+      ['todo_drag', 'Тащи за ⠿ чтобы поменять порядок — или жми ▲ на карточке, задача поднимется вверх.', 'todo-hint', () => notes.filter(n => n.inTodo && !n.done).length >= 2],
       ['stale_tasks', '🟡 Янтарным подсвечены задачи, которые висят больше 10 дней. Пора сделать — или поставь будущий срок, и подсветка уйдёт.', 'todo-hint', () => notes.some(isStaleNote)]
     ]);
   }
