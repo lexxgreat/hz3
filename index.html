@@ -388,16 +388,22 @@ body{background:#060918;font-family:'Inter',sans-serif;display:flex;justify-cont
 
 .todo-drag-handle{
   cursor:grab;padding:6px 4px;color:rgba(255,255,255,0.28);font-size:18px;
-  touch-action:none;user-select:none;flex-shrink:0;line-height:1;margin-top:2px;
+  touch-action:none;user-select:none;flex-shrink:0;line-height:1;
 }
-/* ▲ кнопка на карточке тудушки — поднять задачу на позицию вверх без драга */
+/* ▲ кнопка на карточке тудушки (v80) — задача улетает на самый верх очереди */
 .todo-up-btn{
-  cursor:pointer;padding:2px 10px;border-radius:8px;border:0.5px solid rgba(255,255,255,0.1);
-  background:rgba(255,255,255,0.05);color:rgba(255,255,255,0.55);font-size:11px;line-height:1.5;
+  cursor:pointer;padding:4px 11px;border-radius:8px;border:0.5px solid rgba(255,255,255,0.1);
+  background:rgba(255,255,255,0.05);color:rgba(255,255,255,0.55);font-size:11px;line-height:1.4;
   flex-shrink:0;touch-action:manipulation;-webkit-tap-highlight-color:transparent;
 }
 .todo-up-btn:hover{color:rgba(139,92,246,0.95);background:rgba(108,71,255,0.12);border-color:rgba(108,71,255,0.4)}
 .todo-up-btn:active{transform:scale(0.9)}
+/* карточка, летящая наверх по ▲ — фиолетовое свечение на время полёта */
+.note-card.todo-fly{
+  border-color:rgba(139,92,246,0.8)!important;
+  box-shadow:0 0 0 1px rgba(108,71,255,0.4),0 10px 34px rgba(108,71,255,0.28);
+  z-index:5;
+}
 .wish-drag-handle{
   cursor:grab;padding:4px 8px;color:rgba(255,255,255,0.3);font-size:16px;
   touch-action:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;
@@ -7339,16 +7345,57 @@ async function reorderTodo(id, newIndex) {
   scheduleTodoPersist(); // облако — одна полная запись через 350мс тишины
 }
 
-// ▲ кнопка на карточке: поднять задачу на одну позицию вверх без перетаскивания —
-// нижние записи не нужно тащить через весь список. Индекс у reorderTodo считается
-// среди соседей (без самой карточки), поэтому «вверх на 1» = newIndex = idx - 1.
-function moveTodoUp(id) {
+// ▲ кнопка на карточке (v80): задача улетает на САМЫЙ ВЕРХ очереди — становится
+// первой и попадает в фокус-карточку на главном экране (renderFocusCard вызывается
+// внутри reorderTodo). Полёт виден глазами: FLIP-анимация — карточка стартует со
+// своего места и плавно летит наверх, соседки расступаются (тот же визуал
+// «расталкивания», что при перетаскивании за ⠿). Порядок применяется мгновенно
+// (reorderTodo — локальная мутация + рендер до сети), облако догоняет дебаунсом
+// scheduleTodoPersist. Список проскролливается к верху, чтобы полёт было видно
+// целиком даже из нижней части длинной очереди.
+let _todoFlySeq = 0;
+function moveTodoTop(id) {
   const queue = getTodoQueue();
   const idx = queue.findIndex(n => n.id === id);
   if (idx <= 0) return; // первая и так наверху
-  reorderTodo(id, idx - 1);
+  const listEl = document.getElementById('todo-list');
+  if (!listEl) { reorderTodo(id, 0); return; }
+  // FLIP-снимок: где стояли карточки ДО перестановки (viewport-координаты)
+  const oldTops = new Map();
+  listEl.querySelectorAll('.note-card').forEach(el => oldTops.set(el.dataset.id, el.getBoundingClientRect().top));
+  const wasScrolled = listEl.scrollTop;
+  reorderTodo(id, 0); // мгновенный локальный порядок + renderTodo + renderFocusCard + облако (дебаунс)
+  if (wasScrolled > 0) listEl.scrollTop = 0; // финальная сцена — верх списка перед глазами
+  // стартовые позиции: каждая карточка визуально остаётся на старом месте
+  const seq = ++_todoFlySeq;
+  const moved = [];
+  listEl.querySelectorAll('.note-card').forEach(el => {
+    const oldTop = oldTops.get(el.dataset.id);
+    if (oldTop === undefined) return;
+    const delta = oldTop - el.getBoundingClientRect().top;
+    if (Math.abs(delta) < 2) return;
+    el.style.transition = 'none';
+    el.style.transform = `translateY(${delta}px)`;
+    moved.push({ el, isMoved: el.dataset.id === id });
+  });
+  if (!moved.length) return;
+  void listEl.offsetHeight; // фиксируем стартовые позиции, иначе браузер схлопнет переход
+  moved.forEach(({ el, isMoved }) => {
+    // соседи разъезжаются так же, как при драге (0.2s ease); летящая — чуть дольше и с выхлопом
+    el.style.transition = `transform ${isMoved ? 0.38 : 0.22}s ${isMoved ? 'cubic-bezier(0.22,1,0.36,1)' : 'ease'}`;
+    el.style.transform = '';
+    if (isMoved) {
+      el.classList.add('todo-fly');
+      setTimeout(() => el.classList.remove('todo-fly'), 480);
+    }
+  });
+  setTimeout(() => { // уборка инлайн-стилей, чтобы не мешать следующему драгу/анимации
+    if (seq !== _todoFlySeq || todoDragState) return; // уже новый полёт или пользователь тащит
+    listEl.querySelectorAll('.note-card').forEach(el => { el.style.transition = ''; el.style.transform = ''; });
+  }, 600);
 }
-window.moveTodoUp = moveTodoUp;
+window.moveTodoTop = moveTodoTop;
+window.moveTodoUp = moveTodoTop; // старое имя — совместимость вызовов и тестов
 
 // ── DRAG-N-DROP ДЛЯ ЖЕЛАНИЙ ──
 // Тащим за ручку "⠿" в тексте карточки — порядок сохраняется в wishOrder (как todoOrder
@@ -7658,8 +7705,8 @@ function renderTodo() {
     const staleTitle = stale ? ` title="Висит уже ${Math.floor((Date.now() - new Date(n.createdAt).getTime()) / 86400000)} дн."` : '';
     return `
     <div class="note-card${stale ? ' note-stale' : ''}" data-id="${n.id}"${staleTitle} onclick="todoCardTap('${n.id}')" style="display:flex;gap:10px;align-items:flex-start;cursor:pointer;">
-      <div style="display:flex;flex-direction:column;align-items:center;flex-shrink:0;gap:1px;">
-        <button class="todo-up-btn" title="Подвинуть вверх" onclick="moveTodoUp('${n.id}');event.stopPropagation();"${i === 0 ? ' style="visibility:hidden;"' : ''}>▲</button>
+      <div style="display:flex;flex-direction:column;align-items:center;flex-shrink:0;gap:7px;">
+        <button class="todo-up-btn" title="Наверх — станет первой" onclick="moveTodoTop('${n.id}');event.stopPropagation();"${i === 0 ? ' style="visibility:hidden;"' : ''}>▲</button>
         <div class="todo-drag-handle">⠿</div>
       </div>
       <div style="flex:1;min-width:0;">
@@ -7759,7 +7806,8 @@ function goTo(screen) {
     // Обучение в Тудушке: что это → перетаскивание → залежавшиеся
     hintChain([
       ['onb_5_todo_here', '☑️ Это Тудушка — задачи на каждый день. Тап по карточке — редактор, ✓ — выполнить.', 'todo-hint', () => notes.filter(n => n.inTodo && !n.done).length >= 1],
-      ['todo_drag', 'Тащи за ⠿ чтобы поменять порядок — или жми ▲ на карточке, задача поднимется вверх.', 'todo-hint', () => notes.filter(n => n.inTodo && !n.done).length >= 2],
+      ['todo_drag', 'Тащи за ⠿ чтобы поменять порядок. Жми ▲ — задача улетит на самый верх очереди.', 'todo-hint', () => notes.filter(n => n.inTodo && !n.done).length >= 2],
+      ['todo_up_top', '▲ поднимает наверх сразу: карточка летит, соседки расступаются, задача становится первой — и главной на главном экране.', 'todo-hint', () => notes.filter(n => n.inTodo && !n.done).length >= 2],
       ['stale_tasks', '🟡 Янтарным подсвечены задачи, которые висят больше 10 дней. Пора сделать — или поставь будущий срок, и подсветка уйдёт.', 'todo-hint', () => notes.some(isStaleNote)]
     ]);
   }
