@@ -1543,6 +1543,7 @@ service cloud.firestore {
     <div class="modal">
       <div class="modal-title">Редактировать запись</div>
       <div id="modal-meta" style="display:none;font-size:11px;color:rgba(255,255,255,0.45);margin:0 0 8px;line-height:1.5;font-family:Inter,sans-serif;"></div>
+      <div id="modal-wish-link" style="display:none;margin:0 0 8px;"></div>
       <div style="position:relative;">
         <textarea class="modal-textarea" id="modal-text"></textarea>
         <button class="modal-copy-btn" title="Скопировать текст" onclick="modalCopyText();event.stopPropagation();"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
@@ -3514,6 +3515,7 @@ function openEdit(id) {
     metaEl.style.display = parts.length ? 'block' : 'none';
   }
   renderModalActions(n);
+  renderModalWishLink(n);    // v83: задача привязана к желанию — ссылка на само желание
   renderSubtaskSection(n);   // v82: подзадачи + цепочка старших задач
   renderModalImpEff(n);      // v82: важность и объём (умная сортировка)
   document.getElementById('modal').classList.add('open');
@@ -3560,8 +3562,9 @@ async function createSubtask(parentId, text) {
   if (!parent || !text || !text.trim()) return;
   const t = text.trim();
   try {
-    // подзадача встаёт по умному скору (лёгкое дело — ближе к верху), рядом с другими делами
-    const order = computeSmartOrder(smartScoreForFields({ scheduledDate: null, importance: null, effort: 'S' }));
+    // v83: подзадача встаёт В КОНЕЦ очереди (шаги плана пишутся по порядку 1→N и так же отображаются),
+    // а не по умному скору — иначе следующий шаг может уехать выше предыдущего
+    const order = computeAppendOrder();
     await addDoc(notesCol(), {
       text: t,
       type: 'text',
@@ -3577,7 +3580,7 @@ async function createSubtask(parentId, text) {
     renderCalendar();
     const fresh = notes.find(x => x.id === editingId);
     if (fresh) { renderSubtaskSection(fresh); renderModalActions(fresh); }
-    showToast('↳ Подзадача добавлена в тудушку', 2200);
+    showToast('↳ Подзадача добавлена в конец списка', 2200);
   } catch(e) { alert('Ошибка: ' + e.message); }
 }
 window.createSubtask = createSubtask;
@@ -3612,6 +3615,30 @@ async function toggleSubtaskDone(id) {
   }
 }
 window.toggleSubtaskDone = toggleSubtaskDone;
+
+// ── ССЫЛКА НА ЖЕЛАНИЕ В РЕДАКТОРЕ (v83) ──
+// Задача из желания (wishId или milestoneLink) — в карточке видно желание, тап открывает его.
+function renderModalWishLink(n) {
+  const el = document.getElementById('modal-wish-link');
+  if (!el) return;
+  const wishId = n.wishId || (n.milestoneLink ? n.milestoneLink.split('/')[0] : null);
+  const w = wishId ? wishes.find(x => x.id === wishId) : null;
+  if (!w) { el.style.display = 'none'; el.innerHTML = ''; return; }
+  const short = w.text.length > 40 ? w.text.slice(0, 40) + '…' : w.text;
+  el.innerHTML = `<button onclick="openWishFromEditor('${w.id}')" title="Открыть желание" style="width:100%;display:flex;align-items:center;gap:8px;padding:8px 11px;border-radius:10px;border:0.5px solid rgba(255,209,102,0.32);background:linear-gradient(115deg,rgba(255,209,102,0.10),rgba(108,71,255,0.08));color:rgba(255,225,150,0.92);font-size:12px;font-weight:600;cursor:pointer;font-family:Inter,sans-serif;text-align:left;">
+    <span style="flex-shrink:0;">🌠</span>
+    <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">Желание: ${escHtml(short)}</span>
+    <span style="flex-shrink:0;opacity:0.7;">→</span>
+  </button>`;
+  el.style.display = 'block';
+}
+
+// из карточки задачи — к самому желанию (закрываем редактор, чтобы модалки не наслаивались)
+function openWishFromEditor(wishId) {
+  closeModal();
+  setTimeout(() => openWishDetail(wishId), 120);
+}
+window.openWishFromEditor = openWishFromEditor;
 
 // ── ВАЖНОСТЬ И ОБЪЁМ В РЕДАКТОРЕ (v82) ──
 // Важность 1–5 и объём S/M/L питают умную сортировку («✨ Умно» и вставку новых задач по скору).
@@ -3788,6 +3815,21 @@ async function saveEdit() {
     closeModal();
     await loadNotes();
     renderCalendar(); // срок мог измениться — календарь сразу перерисуется
+    // v83: шаг желания правится в стандартной карточке — текст синхронизируется в план желания
+    if (oldNote && oldNote.milestoneLink) {
+      const [wId, msId] = oldNote.milestoneLink.split('/');
+      const w = wishes.find(x => x.id === wId);
+      const ms = w && w.milestones ? w.milestones.find(m => m.id === msId) : null;
+      if (ms && ms.text !== text) {
+        ms.text = text;
+        try {
+          await updateDoc(uDocRef('wishes', wId), { milestones: w.milestones });
+          renderWishes();
+          const wdm = document.getElementById('wish-detail-modal');
+          if (wdm && wdm.classList.contains('open')) openWishDetail(wId); // карточка желания открыта — обновим план
+        } catch(e) {}
+      }
+    }
   } catch(e) { alert('Ошибка: ' + e.message); }
 }
 window.saveEdit = saveEdit;
@@ -6271,14 +6313,15 @@ async function addMilestone(wishId) {
   const milestones = [...(w.milestones || []), newMs];
   await updateDoc(uDocRef('wishes', wishId), { milestones, state: w.state === 'dream' ? 'plan' : w.state });
 
-  // Создаём задачу в тудушке с тегом желания (v82: по умному скору, не перекрывая порядок дня)
+  // Создаём задачу в тудушке с тегом желания (v83: В КОНЕЦ очереди — шаги плана пишутся по порядку 1→N
+  // и отображаются так же, умный скор не должен перемешивать шаги)
   try {
     const noteRef = await addDoc(notesCol(), {
       text: text.trim(),
       type: 'text',
       tag: w.shortTag || 'желание',
       inTodo: true,
-      todoOrder: computeSmartOrder(smartScoreForFields({ scheduledDate: null, importance: null, effort: null })),
+      todoOrder: computeAppendOrder(),
       done: false,
       doneAt: null,
       milestoneLink: wishId + '/' + msId,
@@ -6312,6 +6355,88 @@ async function deleteMilestone(wishId, msId) {
   openWishDetail(wishId);
 }
 window.deleteMilestone = deleteMilestone;
+
+// ── ПОДЗАДАЧИ И РЕДАКТИРОВАНИЕ ШАГОВ В КАРТОЧКЕ ЖЕЛАНИЯ (v83) ──
+// 1) тап по шагу — стандартная карточка редактирования (у ИИ-шагов карточка-задача создаётся лениво);
+// 2) у задачи с подзадачами — кнопка разворачивания списка подзадач прямо в желании;
+// 3) подзадачи тапом открываются в редакторе, чекбокс отмечает выполненной.
+const wishSubsOpen = new Set(); // какие списки подзадач развёрнуты (переживает перерисовку модалки)
+
+function wishSubtasksHtml(noteId, wishId) {
+  const kids = childrenOf(noteId);
+  if (!kids.length) return '';
+  const doneN = kids.filter(k => k.done === true).length;
+  const open = wishSubsOpen.has(noteId);
+  return `
+    <button id="wish-subs-btn-${noteId}" onclick="toggleWishSubs('${noteId}')" title="Показать/скрыть подзадачи" style="align-self:flex-start;background:rgba(108,71,255,0.14);border:0.5px solid rgba(108,71,255,0.35);border-radius:99px;padding:3px 10px;color:rgba(139,92,246,0.95);font-size:10.5px;font-weight:600;cursor:pointer;font-family:Inter,sans-serif;">${open ? '▾' : '▸'} ↳ Подзадачи ${doneN}/${kids.length}</button>
+    <div id="wish-subs-${noteId}" style="display:${open ? 'flex' : 'none'};flex-direction:column;gap:4px;">
+      ${kids.map(k => `
+        <div style="display:flex;align-items:center;gap:8px;padding:6px 8px 6px 24px;border-radius:8px;background:rgba(255,255,255,0.02);border:0.5px solid rgba(255,255,255,0.05);">
+          <button onclick="toggleWishSubDone('${k.id}','${wishId}');event.stopPropagation();" title="${k.done === true ? 'Вернуть в работу' : 'Выполнить'}" style="flex-shrink:0;width:18px;height:18px;border-radius:50%;border:1.5px solid ${k.done === true ? 'rgba(0,255,140,0.8)' : 'rgba(255,255,255,0.3)'};background:${k.done === true ? 'rgba(0,255,140,0.8)' : 'transparent'};color:#fff;font-size:9px;cursor:pointer;display:flex;align-items:center;justify-content:center;font-weight:700;">${k.done === true ? '✓' : ''}</button>
+          <div onclick="openNoteFromWish('${k.id}')" title="Открыть карточку подзадачи" style="flex:1;min-width:0;font-size:12px;color:${k.done === true ? 'rgba(255,255,255,0.5)' : 'rgba(255,255,255,0.85)'};line-height:1.4;text-decoration:${k.done === true ? 'line-through' : 'none'};word-break:break-word;cursor:pointer;font-family:Inter,sans-serif;">${escHtml(k.text)}</div>
+        </div>`).join('')}
+    </div>`;
+}
+
+function toggleWishSubs(noteId) {
+  const box = document.getElementById('wish-subs-' + noteId);
+  if (!box) return;
+  const open = !wishSubsOpen.has(noteId);
+  if (open) wishSubsOpen.add(noteId); else wishSubsOpen.delete(noteId);
+  box.style.display = open ? 'flex' : 'none';
+  const kids = childrenOf(noteId);
+  const doneN = kids.filter(k => k.done === true).length;
+  const btn = document.getElementById('wish-subs-btn-' + noteId);
+  if (btn) btn.innerHTML = (open ? '▾' : '▸') + ' ↳ Подзадачи ' + doneN + '/' + kids.length;
+}
+window.toggleWishSubs = toggleWishSubs;
+
+async function toggleWishSubDone(id, wishId) {
+  const n = notes.find(x => x.id === id);
+  if (!n) return;
+  await toggleDone(id, n.done === true);
+  openWishDetail(wishId); // перерисовка с новым статусом и счётчиком
+}
+window.toggleWishSubDone = toggleWishSubDone;
+
+// открыть карточку задачи/подзадачи из желания (закрываем карточку желания — модалки не наслаиваются)
+function openNoteFromWish(id) {
+  closeWishDetail();
+  setTimeout(() => openEdit(id), 120);
+}
+window.openNoteFromWish = openNoteFromWish;
+
+// тап по шагу плана — стандартная карточка редактирования. У шага ещё нет задачи в тудушке
+// (шаги из ИИ-предложений) — создаём лениво, шаг становится полноценной задачей.
+async function editMilestone(wishId, msId) {
+  const w = wishes.find(x => x.id === wishId);
+  if (!w || !w.milestones) return;
+  const ms = w.milestones.find(m => m.id === msId);
+  if (!ms) return;
+  if (!ms.noteId || !notes.find(x => x.id === ms.noteId)) {
+    try {
+      const noteRef = await addDoc(notesCol(), {
+        text: ms.text,
+        type: 'text',
+        tag: w.shortTag || 'желание',
+        inTodo: true,
+        todoOrder: computeAppendOrder(), // v83: шаг — в конец очереди (порядок 1→N)
+        done: ms.done === true,
+        doneAt: ms.done === true ? (ms.completedAt || new Date().toISOString()) : null,
+        milestoneLink: wishId + '/' + msId,
+        wishId: wishId,
+        createdAt: new Date().toISOString(),
+      });
+      ms.noteId = noteRef.id;
+      await updateDoc(uDocRef('wishes', wishId), { milestones: w.milestones });
+      await loadWishes();
+      await loadNotes();
+    } catch(e) { alert('Ошибка: ' + e.message); return; }
+  }
+  closeWishDetail();
+  setTimeout(() => openEdit(ms.noteId), 120);
+}
+window.editMilestone = editMilestone;
 
 async function regenerateWishMoodImage(wishId) {
   const w = wishes.find(x => x.id === wishId);
@@ -6454,10 +6579,13 @@ async function openWishDetail(id) {
           ${totalMs === 0 ? '<div style="font-size:12px;color:rgba(255,255,255,0.4);padding:10px;text-align:center;background:rgba(255,255,255,0.02);border-radius:8px;">Пока нет шагов. Добавь первый!</div>' : ''}
           <div style="display:flex;flex-direction:column;gap:6px;">
             ${(w.milestones || []).map(m => `
-              <div style="display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:8px;background:rgba(255,255,255,0.03);border:0.5px solid rgba(255,255,255,0.06);">
-                <button onclick="toggleMilestone('${w.id}','${m.id}')" style="flex-shrink:0;width:22px;height:22px;border-radius:50%;border:1.5px solid ${m.done ? 'rgba(0,255,140,0.8)' : 'rgba(255,255,255,0.3)'};background:${m.done ? 'rgba(0,255,140,0.8)' : 'transparent'};color:#fff;font-size:11px;cursor:pointer;display:flex;align-items:center;justify-content:center;font-weight:700;">${m.done ? '✓' : ''}</button>
-                <div style="flex:1;font-size:12.5px;color:${m.done ? 'rgba(255,255,255,0.5)' : 'rgba(255,255,255,0.9)'};line-height:1.4;text-decoration:${m.done ? 'line-through' : 'none'};font-family:Inter,sans-serif;">${escHtml(m.text)}</div>
-                <button onclick="deleteMilestone('${w.id}','${m.id}')" style="flex-shrink:0;background:none;border:none;color:rgba(255,80,80,0.5);font-size:14px;cursor:pointer;padding:2px;">🗑</button>
+              <div style="display:flex;flex-direction:column;gap:4px;">
+                <div style="display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:8px;background:rgba(255,255,255,0.03);border:0.5px solid rgba(255,255,255,0.06);">
+                  <button onclick="toggleMilestone('${w.id}','${m.id}')" style="flex-shrink:0;width:22px;height:22px;border-radius:50%;border:1.5px solid ${m.done ? 'rgba(0,255,140,0.8)' : 'rgba(255,255,255,0.3)'};background:${m.done ? 'rgba(0,255,140,0.8)' : 'transparent'};color:#fff;font-size:11px;cursor:pointer;display:flex;align-items:center;justify-content:center;font-weight:700;">${m.done ? '✓' : ''}</button>
+                  <div onclick="editMilestone('${w.id}','${m.id}')" title="Открыть карточку шага" style="flex:1;min-width:0;font-size:12.5px;color:${m.done ? 'rgba(255,255,255,0.5)' : 'rgba(255,255,255,0.9)'};line-height:1.4;text-decoration:${m.done ? 'line-through' : 'none'};word-break:break-word;cursor:pointer;font-family:Inter,sans-serif;">${escHtml(m.text)}</div>
+                  <button onclick="deleteMilestone('${w.id}','${m.id}')" style="flex-shrink:0;background:none;border:none;color:rgba(255,80,80,0.5);font-size:14px;cursor:pointer;padding:2px;">🗑</button>
+                </div>
+                ${m.noteId ? wishSubtasksHtml(m.noteId, w.id) : ''}
               </div>
             `).join('')}
           </div>
@@ -6473,9 +6601,12 @@ async function openWishDetail(id) {
             <div style="font-size:10px;color:rgba(255,255,255,0.5);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;font-family:Inter,sans-serif;">Задачи из чата · осталось ${openN}/${linked.length}</div>
             <div style="display:flex;flex-direction:column;gap:6px;">
               ${linked.map(n => `
-                <div style="display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:8px;background:rgba(108,71,255,0.05);border:0.5px solid rgba(108,71,255,0.15);">
-                  <button onclick="toggleWishTask('${w.id}','${n.id}', ${n.done})" style="flex-shrink:0;width:22px;height:22px;border-radius:50%;border:1.5px solid ${n.done ? 'rgba(0,255,140,0.8)' : 'rgba(255,255,255,0.3)'};background:${n.done ? 'rgba(0,255,140,0.8)' : 'transparent'};color:#fff;font-size:11px;cursor:pointer;display:flex;align-items:center;justify-content:center;font-weight:700;">${n.done ? '✓' : ''}</button>
-                  <div style="flex:1;min-width:0;font-size:12.5px;color:${n.done ? 'rgba(255,255,255,0.5)' : 'rgba(255,255,255,0.9)'};line-height:1.4;text-decoration:${n.done ? 'line-through' : 'none'};word-break:break-word;font-family:Inter,sans-serif;">${escHtml(n.text)}${n.scheduledDate ? '<span style="font-size:10px;color:rgba(139,92,246,0.7);margin-left:6px;">📅 ' + n.scheduledDate + (n.scheduledTime ? ' ' + n.scheduledTime.slice(0,5) : '') + '</span>' : ''}</div>
+                <div style="display:flex;flex-direction:column;gap:4px;">
+                  <div style="display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:8px;background:rgba(108,71,255,0.05);border:0.5px solid rgba(108,71,255,0.15);">
+                    <button onclick="toggleWishTask('${w.id}','${n.id}', ${n.done})" style="flex-shrink:0;width:22px;height:22px;border-radius:50%;border:1.5px solid ${n.done ? 'rgba(0,255,140,0.8)' : 'rgba(255,255,255,0.3)'};background:${n.done ? 'rgba(0,255,140,0.8)' : 'transparent'};color:#fff;font-size:11px;cursor:pointer;display:flex;align-items:center;justify-content:center;font-weight:700;">${n.done ? '✓' : ''}</button>
+                    <div onclick="openNoteFromWish('${n.id}')" title="Открыть карточку задачи" style="flex:1;min-width:0;font-size:12.5px;color:${n.done ? 'rgba(255,255,255,0.5)' : 'rgba(255,255,255,0.9)'};line-height:1.4;text-decoration:${n.done ? 'line-through' : 'none'};word-break:break-word;cursor:pointer;font-family:Inter,sans-serif;">${escHtml(n.text)}${n.scheduledDate ? '<span style="font-size:10px;color:rgba(139,92,246,0.7);margin-left:6px;">📅 ' + n.scheduledDate + (n.scheduledTime ? ' ' + n.scheduledTime.slice(0,5) : '') + '</span>' : ''}</div>
+                  </div>
+                  ${wishSubtasksHtml(n.id, w.id)}
                 </div>
               `).join('')}
             </div>
@@ -7205,6 +7336,14 @@ function computeSmartOrder(score) {
   return (prev + next) / 2;
 }
 
+// v83: порядок «в конец списка» — максимальный todoOrder всех записей + 1.
+// Шаги плана (подзадачи/майлстоуны) пользователь пишет по порядку 1→N — каждый новый
+// должен попадать В КОНЕЦ, а не перескакивать по умному скору (иначе шаг 2 уедет выше шага 1).
+function computeAppendOrder() {
+  const orders = notes.filter(n => typeof n.todoOrder === 'number').map(n => n.todoOrder);
+  return (orders.length ? Math.max(...orders) : 0) + 1;
+}
+
 // перенумерация очереди 1..N (сохраняя текущий визуальный порядок)
 async function renormalizeTodoQueue() {
   const queue = getTodoQueue();
@@ -7235,6 +7374,7 @@ async function smartSortTodo() {
 window.smartSortTodo = smartSortTodo;
 window.smartScore = smartScore;               // тесты/отладка: расчёт скора
 window.computeSmartOrder = computeSmartOrder; // тесты/отладка: позиция вставки новой задачи
+window.computeAppendOrder = computeAppendOrder; // тесты/отладка: порядок «в конец списка» (v83)
 window.smartScoreForFields = smartScoreForFields; // тесты/отладка: скор по полям до создания
 
 // скор для ещё НЕ созданной задачи (поля известны до записи в базу)
@@ -8563,7 +8703,11 @@ async function addNoteFromChat(nd) {
     createdAt: new Date().toISOString()
   };
   if (nd.wishId) newDoc.wishId = nd.wishId; // привязка к желанию (тег уже = тегу желания)
-  if (nd.inTodo === true) { newDoc.inTodo = true; newDoc.todoOrder = nd.todoOrder !== null && nd.todoOrder !== undefined ? nd.todoOrder : Date.now(); }
+  if (nd.inTodo === true) {
+    newDoc.inTodo = true;
+    // v83: подзадача (parentId) — всегда в конец очереди: шаги плана 1→N не перемешиваются скором
+    newDoc.todoOrder = nd.parentId ? computeAppendOrder() : (nd.todoOrder !== null && nd.todoOrder !== undefined ? nd.todoOrder : Date.now());
+  }
   if (nd.scheduledDate) newDoc.scheduledDate = nd.scheduledDate; // дата → задача попадёт в календарь
   if (nd.scheduledTime) newDoc.scheduledTime = nd.scheduledTime;
   if (nd.importance) newDoc.importance = clampImportance(nd.importance); // v82: важность 1–5 (умная сортировка)
