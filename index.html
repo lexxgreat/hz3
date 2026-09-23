@@ -7755,19 +7755,22 @@ function initTodoDrag() {
   // живой сдвиг соседей — расталкиваются, пока перетаскиваемая карточка "проходит" сквозь них
   function updateLiveShift(scrolled) {
     if (!todoDragState) return;
-    const { itemsSnapshot, id, startIndexAmongOthers, draggedHeight } = todoDragState;
+    const { itemsSnapshot, id, startIndexAmongOthers, draggedHeight, grabOffset, cardH } = todoDragState;
     const fingerY = todoDragState.lastClientY;
     const others = itemsSnapshot.filter(s => s.id !== id);
 
     let targetIndex = others.length;
     for (let i = 0; i < others.length; i++) {
-      // v85: асимметрия порогов — как просил пользователь. Вверх карточка и так
-      // «меняется» приятно: порог — ЦЕНТР карточки сверху. Вниз раньше срабатывало
-      // слишком рано (центр нижней = ещё полкарты не пройдено) — теперь нижняя
-      // уступает только когда тащим ДО КОНЦА её (нижний край, центр + h/2).
+      // v86: честная СИММЕТРИЯ по КРАЯМ перетаскиваемой карточки, а не по пальцу:
+      // своп только когда ведущий край (вниз — нижний, вверх — верхний) дойдёт до
+      // ПОЛОВИНЫ соседней карточки. Раньше порог считался по пальцу — где схватишь
+      // за ручку ⠿, там и порог: краешком наехал на соседку — уже перелистнуло,
+      // или карточка целиком ложилась на неё («кладу карточку на карточку»).
+      // Геометрия: fingerY = верхКарточки + grabOffset + d, нижнийКрай = верхКарточки
+      // + cardH + d ⇒ «нижний край = центр соседа» ⇔ fingerY = mid + grabOffset − cardH.
       const passY = (i >= startIndexAmongOthers)
-        ? others[i].midY + (others[i].h || 0) / 2
-        : others[i].midY;
+        ? others[i].midY + grabOffset - cardH // вниз: нижний край дошёл до центра соседа
+        : others[i].midY + grabOffset;        // вверх: верхний край дошёл до центра соседа
       const adjY = passY - scrolled;
       if (fingerY < adjY) { targetIndex = i; break; }
     }
@@ -7823,12 +7826,18 @@ function initTodoDrag() {
     });
     const startFullIndex = itemsSnapshot.findIndex(s => s.id === card.dataset.id);
     const cardRect = card.getBoundingClientRect();
+    const draggedSnap = itemsSnapshot[startFullIndex];
     todoDragState = {
       id: card.dataset.id, startY: clientY, lastClientY: clientY,
       pointerType,
       itemEl: card, itemsSnapshot, startScrollTop: listEl.scrollTop,
       startIndexAmongOthers: startFullIndex, // среди "others" позиции до неё те же, что и в полном списке
       draggedHeight: cardRect.height + 8, // +8 = margin-bottom карточки (реальный шаг сетки)
+      // v86: точка захвата внутри карточки (от её верхнего края) и её реальная высота —
+      // пороги свопа в updateLiveShift считаются по КРАЯМ карточки, поэтому неважно,
+      // за какое место ручки взялись: перелистывание всегда на половине соседней.
+      grabOffset: clientY - (draggedSnap.midY - draggedSnap.h / 2),
+      cardH: draggedSnap.h,
       currentTargetIndex: startFullIndex
     };
     card.classList.add('todo-dragging');
