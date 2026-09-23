@@ -65,7 +65,7 @@ body{background:#060918;font-family:'Inter',sans-serif;display:flex;justify-cont
 /* On desktop preview (>=500px) we don't want safe-area padding — restore fixed phone frame */
 @media(min-width:500px){
   .phone{
-    width:390px;height:844px;border-radius:48px;
+    width:390px;height:min(844px, calc(100dvh - 24px));border-radius:48px;
     border:1px solid rgba(108,71,255,0.25);
     box-shadow:0 0 0 1px rgba(0,0,0,0.9),0 40px 80px rgba(0,0,0,0.8),0 0 100px rgba(108,71,255,0.08);
     /* Reset safe-area padding on desktop frame */
@@ -78,6 +78,37 @@ body{background:#060918;font-family:'Inter',sans-serif;display:flex;justify-cont
     background:rgba(255,255,255,0.02);
   }
   body{align-items:center}
+}
+
+/* ── v85: ВЕБ-ВЕРСИЯ ДЛЯ КОМПА (>=1024px) ──
+   Вместо узкой «мокап-рамки 390×844» (на низких экранах обрезалась) — широкий
+   столбец приложения: видно больше, горизонтальная ориентация экрана живая,
+   вокруг — фирменный фон с фиолетово-циановым свечением. Тач-версии это
+   не касается вообще (media-блоки ниже 1024px не меняются). */
+@media(min-width:1024px){
+  body{
+    background:
+      radial-gradient(900px 520px at 18% -10%, rgba(108,71,255,0.16), transparent 60%),
+      radial-gradient(760px 480px at 85% 112%, rgba(0,212,255,0.10), transparent 60%),
+      radial-gradient(620px 400px at 82% 2%, rgba(255,209,102,0.05), transparent 55%),
+      #060918;
+  }
+  .phone{
+    width:min(620px, calc(100vw - 56px));
+    max-width:none; /* базовый max-width:430px больше не ограничивает широкий столбец */
+    height:min(920px, calc(100dvh - 44px));
+    border-radius:26px;
+    border:1px solid rgba(139,92,246,0.28);
+    box-shadow:0 0 0 1px rgba(0,0,0,0.85),0 50px 110px rgba(0,0,0,0.75),0 0 130px rgba(108,71,255,0.10);
+  }
+  /* тонкие неброские скроллбары внутри списков */
+  .phone ::-webkit-scrollbar{width:8px;height:8px}
+  .phone ::-webkit-scrollbar-track{background:transparent}
+  .phone ::-webkit-scrollbar-thumb{background:rgba(139,92,246,0.22);border-radius:8px}
+  .phone ::-webkit-scrollbar-thumb:hover{background:rgba(139,92,246,0.45)}
+  /* мышь должна видеть, что кликабельно */
+  .note-card{cursor:pointer}
+  .dock-item{cursor:pointer}
 }
 
 /* orbs */
@@ -436,6 +467,8 @@ body[data-theme="dream"] .chip-btn.on{background:rgba(236,150,235,0.16);border-c
   cursor:grab;padding:6px 4px;color:rgba(255,255,255,0.28);font-size:18px;
   touch-action:none;user-select:none;flex-shrink:0;line-height:1;
 }
+body.todo-mouse-dragging{cursor:grabbing !important}
+body.todo-mouse-dragging *{cursor:grabbing !important}
 /* ▲ кнопка на карточке тудушки (v80) — задача улетает на самый верх очереди */
 .todo-up-btn{
   cursor:pointer;padding:4px 11px;border-radius:8px;border:0.5px solid rgba(255,255,255,0.1);
@@ -7728,8 +7761,15 @@ function initTodoDrag() {
 
     let targetIndex = others.length;
     for (let i = 0; i < others.length; i++) {
-      const adjMidY = others[i].midY - scrolled;
-      if (fingerY < adjMidY) { targetIndex = i; break; }
+      // v85: асимметрия порогов — как просил пользователь. Вверх карточка и так
+      // «меняется» приятно: порог — ЦЕНТР карточки сверху. Вниз раньше срабатывало
+      // слишком рано (центр нижней = ещё полкарты не пройдено) — теперь нижняя
+      // уступает только когда тащим ДО КОНЦА её (нижний край, центр + h/2).
+      const passY = (i >= startIndexAmongOthers)
+        ? others[i].midY + (others[i].h || 0) / 2
+        : others[i].midY;
+      const adjY = passY - scrolled;
+      if (fingerY < adjY) { targetIndex = i; break; }
     }
     if (targetIndex === todoDragState.currentTargetIndex) return;
     todoDragState.currentTargetIndex = targetIndex;
@@ -7774,28 +7814,42 @@ function initTodoDrag() {
     todoDragState.rafId = requestAnimationFrame(autoScrollTick);
   }
 
-  listEl.addEventListener('touchstart', (e) => {
-    const handle = e.target.closest('.todo-drag-handle');
-    if (!handle) return;
-    const card = handle.closest('.note-card');
-    if (!card) return;
-    const touch = e.touches[0];
+  // v85: общая инициализация драга для пальца (touchstart) и мыши (mousedown)
+  function beginDrag(clientY, card, pointerType) {
     const items = Array.from(listEl.querySelectorAll('.note-card'));
     const itemsSnapshot = items.map(elm => {
       const r = elm.getBoundingClientRect();
-      return { id: elm.dataset.id, midY: r.top + r.height / 2 };
+      return { id: elm.dataset.id, midY: r.top + r.height / 2, h: r.height };
     });
     const startFullIndex = itemsSnapshot.findIndex(s => s.id === card.dataset.id);
     const cardRect = card.getBoundingClientRect();
     todoDragState = {
-      id: card.dataset.id, startY: touch.clientY, lastClientY: touch.clientY,
+      id: card.dataset.id, startY: clientY, lastClientY: clientY,
+      pointerType,
       itemEl: card, itemsSnapshot, startScrollTop: listEl.scrollTop,
       startIndexAmongOthers: startFullIndex, // среди "others" позиции до неё те же, что и в полном списке
       draggedHeight: cardRect.height + 8, // +8 = margin-bottom карточки (реальный шаг сетки)
       currentTargetIndex: startFullIndex
     };
     card.classList.add('todo-dragging');
+    if (pointerType === 'mouse') {
+      document.body.style.userSelect = 'none';
+      document.body.classList.add('todo-mouse-dragging');
+    }
     todoDragState.rafId = requestAnimationFrame(autoScrollTick);
+  }
+
+  function endMouseDragVisual() {
+    document.body.style.userSelect = '';
+    document.body.classList.remove('todo-mouse-dragging');
+  }
+
+  listEl.addEventListener('touchstart', (e) => {
+    const handle = e.target.closest('.todo-drag-handle');
+    if (!handle) return;
+    const card = handle.closest('.note-card');
+    if (!card) return;
+    beginDrag(e.touches[0].clientY, card, 'touch');
   }, { passive: true });
 
   listEl.addEventListener('touchmove', (e) => {
@@ -7819,14 +7873,56 @@ function initTodoDrag() {
     reorderTodo(draggedId, finalIndex);
   }
 
-  listEl.addEventListener('touchend', () => finishDrag());
+  listEl.addEventListener('touchend', () => {
+    window.__lastTouchEndTs = Date.now();
+    finishDrag();
+  });
 
   listEl.addEventListener('touchcancel', () => {
+    window.__lastTouchEndTs = Date.now();
     if (!todoDragState) return;
     cancelAnimationFrame(todoDragState.rafId);
     resetShifts();
     todoDragState.itemEl.style.transform = '';
     todoDragState.itemEl.classList.remove('todo-dragging');
+    endMouseDragVisual();
+    todoDragState = null;
+  });
+
+  // ── v85: МЫШЬ на компе ──
+  listEl.addEventListener('mousedown', (e) => {
+    if (e.button !== 0) return;
+    // на тачскринах после touchend браузер шлёт синтетический mousedown — не начинаем драг заново
+    if (Date.now() - (window.__lastTouchEndTs || 0) < 700) return;
+    const handle = e.target.closest('.todo-drag-handle');
+    if (!handle) return;
+    const card = handle.closest('.note-card');
+    if (!card) return;
+    e.preventDefault(); // без этого выделяется текст при протаскивании
+    beginDrag(e.clientY, card, 'mouse');
+  });
+
+  document.addEventListener('mousemove', (e) => {
+    if (!todoDragState || todoDragState.pointerType !== 'mouse') return;
+    e.preventDefault(); // никакой подачи текста/дрэга ссылок под летящей карточкой
+    todoDragState.lastClientY = e.clientY;
+    updateDragVisual();
+  });
+
+  document.addEventListener('mouseup', () => {
+    if (!todoDragState || todoDragState.pointerType !== 'mouse') return;
+    endMouseDragVisual();
+    finishDrag();
+  });
+
+  // мышь ушла из окна/окно потеряло фокус — драг откатывается как touchcancel
+  window.addEventListener('blur', () => {
+    if (!todoDragState || todoDragState.pointerType !== 'mouse') return;
+    cancelAnimationFrame(todoDragState.rafId);
+    resetShifts();
+    todoDragState.itemEl.style.transform = '';
+    todoDragState.itemEl.classList.remove('todo-dragging');
+    endMouseDragVisual();
     todoDragState = null;
   });
 }
@@ -8495,7 +8591,14 @@ window.isOwner = isOwner;
 
 // Профиль пользователя в users/{uid} (сам документ, не подколлекции) — для счётчика:
 // каждый пишет только свой документ; владелец потом делает count по коллекции users
+
+// v85: e2e-тесты помечают себя параметром ?hz3test=1 — в этом режиме НЕ создаём и
+// не апаем users/{uid}: счётчики «пишут»/«зарегистрированы» больше не загрязняются
+// тестовым мусором (заметки в своей подколлекции тесты продолжают писать — rules требуют auth)
+const HZ3_TEST_RUN = /[?&]hz3test=1/.test(location.search);
+
 async function upsertProfileDoc(user) {
+  if (HZ3_TEST_RUN) return;
   try {
     const ref = doc(db, 'users', user.uid);
     const snap = await getDoc(ref);
@@ -8558,7 +8661,7 @@ window.refreshWritersCount = refreshWritersCount;
 function bumpProfileActivity() {
   try {
     const u = auth.currentUser;
-    if (!u) return;
+    if (!u || HZ3_TEST_RUN) return;
     setDoc(doc(db, 'users', u.uid), {
       lastSeen: serverTimestamp(),
       lastNoteAt: serverTimestamp(),
@@ -11900,6 +12003,7 @@ window.__t = {
   fireReminder,
   maybeOfferNotifications,
   openNoteByIdAfterLoad,
+  testRun: HZ3_TEST_RUN,
 };
 
 // ── REGISTER PROMPT — показываем после 10 заметок или 1 желания ──
