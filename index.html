@@ -844,10 +844,139 @@ body[data-theme="business"] .sphere-core::after{
 }
 @keyframes sphereSpin{to{transform:rotate(360deg)}}
 
+/* ═══ v87: НЕБЕСНЫЕ ФОНАРИКИ — летят вверх по экрану (тема «Фонарики») ═══ */
+#theme-lanterns{
+  position:absolute;inset:0;z-index:0;pointer-events:none;display:none;overflow:hidden;
+}
+#theme-lanterns.on{display:block}
+.t-lantern{
+  position:absolute;bottom:-9%;
+  width:13px;height:19px;border-radius:4px 4px 7px 7px;
+  background:linear-gradient(180deg,#FFE2AE 0%,#FFB65A 45%,#E8833A 100%);
+  box-shadow:0 0 12px rgba(255,182,90,0.85),0 0 34px rgba(255,140,40,0.3);
+  opacity:0;animation:lanternFly linear infinite;
+}
+.t-lantern::after{ /* живой огонёк внутри */
+  content:'';position:absolute;inset:2px 3px;border-radius:3px;
+  background:radial-gradient(circle at 50% 68%, rgba(255,244,210,0.95), transparent 72%);
+  animation:lanternFlicker 1.7s ease-in-out infinite;
+}
+@keyframes lanternFly{
+  0%{transform:translate(0,0) rotate(-3deg);opacity:0}
+  8%{opacity:0.92}
+  50%{transform:translate(3vw,-58vh) rotate(3deg)}
+  90%{opacity:0.7}
+  100%{transform:translate(-2vw,-116vh) rotate(-2deg);opacity:0}
+}
+@keyframes lanternFlicker{0%,100%{opacity:0.5}50%{opacity:1}}
+.t-lantern:nth-child(1){left:7%;animation-duration:25s;animation-delay:0s;width:11px;height:16px}
+.t-lantern:nth-child(2){left:22%;animation-duration:31s;animation-delay:6s;width:15px;height:21px}
+.t-lantern:nth-child(3){left:38%;animation-duration:22s;animation-delay:12s;width:10px;height:15px}
+.t-lantern:nth-child(4){left:52%;animation-duration:34s;animation-delay:3s;width:14px;height:20px}
+.t-lantern:nth-child(5){left:66%;animation-duration:27s;animation-delay:9s;width:12px;height:17px}
+.t-lantern:nth-child(6){left:79%;animation-duration:29s;animation-delay:15s;width:16px;height:22px}
+.t-lantern:nth-child(7){left:90%;animation-duration:24s;animation-delay:19s;width:10px;height:15px}
+@media (prefers-reduced-motion: reduce){ .t-lantern{animation-play-state:paused} }
+
+/* ═══ Тема «Минимализм»: чёрное на чёрном, без эффектов, кнопка-сквиркл ═══ */
+body[data-theme="minimal"]{--acc:225,225,230;--acc2:150,150,160}
+body[data-theme="minimal"] .phone{background:#0B0B0D}
+body[data-theme="minimal"] #aurora,
+body[data-theme="minimal"] .orb,
+body[data-theme="minimal"] .chaos-glow,
+body[data-theme="minimal"] .chaos-petals{opacity:0 !important}
+body[data-theme="minimal"] .note-card,body[data-theme="minimal"] .focus-card{
+  background:#141416;border-color:rgba(255,255,255,0.09);box-shadow:0 4px 18px rgba(0,0,0,0.45);
+}
+body[data-theme="minimal"] .note-card:hover{border-color:rgba(255,255,255,0.22)}
+body[data-theme="minimal"] .note-card::before{background:linear-gradient(to bottom,#E8E8EA,#8E8E96)}
+body[data-theme="minimal"] .focus-badge{background:linear-gradient(135deg,#3C3C42,#1B1B1F);box-shadow:0 0 14px rgba(255,255,255,0.14)}
+body[data-theme="minimal"] .focus-eyebrow{color:rgba(235,235,240,0.85)}
+body[data-theme="minimal"] .bubble-user{background:rgba(255,255,255,0.13)}
+body[data-theme="minimal"] .bubble-ai{background:rgba(255,255,255,0.05)}
+body[data-theme="minimal"] .dock{background:rgba(11,11,13,0.88)}
+body[data-theme="minimal"] .chaos-img-wrap{
+  animation:none;border-radius:30%;
+  box-shadow:0 0 0 1px rgba(255,255,255,0.22),0 8px 26px rgba(0,0,0,0.65);
+  border:1px solid rgba(255,255,255,0.2);
+}
+body[data-theme="minimal"] .chaos-img{filter:grayscale(1) brightness(0.72) contrast(1.06)}
+
+/* ═══ Тема «Фонарики»: тёплая ночь, летящие фонарики, кнопка-фонарик ═══ */
+body[data-theme="lanterns"]{--acc:255,182,90;--acc2:0,212,255}
+body[data-theme="lanterns"] .phone{background:linear-gradient(180deg,#170C05 0%,#0E0704 55%,#0A0503 100%)}
+body[data-theme="lanterns"] #aurora{
+  background:
+    radial-gradient(52% 40% at calc(30% + var(--px,0)*8%) calc(20% + var(--py,0)*8%), rgba(255,160,60,0.14), transparent 68%),
+    radial-gradient(46% 36% at calc(74% - var(--px,0)*7%) calc(48% - var(--py,0)*7%), rgba(255,120,40,0.1), transparent 66%),
+    radial-gradient(56% 44% at calc(50% + var(--px,0)*6%) calc(88% + var(--py,0)*6%), rgba(255,200,120,0.08), transparent 70%),
+    radial-gradient(40% 30% at calc(62% - var(--px,0)*9%) calc(8% + var(--py,0)*5%), rgba(255,90,40,0.08), transparent 70%);
+}
+body[data-theme="lanterns"] .note-card,body[data-theme="lanterns"] .focus-card{
+  background:linear-gradient(155deg,rgba(48,26,12,0.97),rgba(26,14,7,0.97));
+  border-color:rgba(255,182,90,0.22);
+  box-shadow:0 5px 22px rgba(10,4,0,0.55);
+}
+body[data-theme="lanterns"] .note-card:hover{border-color:rgba(255,182,90,0.45)}
+body[data-theme="lanterns"] .note-card::before{background:linear-gradient(to bottom,#FFB65A,#FF8C3A)}
+body[data-theme="lanterns"] .focus-badge{background:linear-gradient(135deg,#FFB65A,#E8833A);box-shadow:0 0 20px rgba(255,182,90,0.45), inset 0 1px 0 rgba(255,255,255,0.25)}
+body[data-theme="lanterns"] .focus-eyebrow{color:rgba(255,205,150,0.9)}
+body[data-theme="lanterns"] .bubble-user{background:rgba(232,131,58,0.24)}
+body[data-theme="lanterns"] .bubble-ai{background:rgba(255,255,255,0.06)}
+body[data-theme="lanterns"] .dock{background:rgba(22,12,5,0.84)}
+body[data-theme="lanterns"] .chaos-img-wrap{
+  border-radius:46% 46% 42% 42% / 55% 55% 40% 40%;
+  box-shadow:0 0 26px rgba(255,170,70,0.55),0 0 70px rgba(255,120,30,0.25),inset 0 0 22px rgba(255,200,120,0.16);
+  border:1px solid rgba(255,210,140,0.3);
+}
+body[data-theme="lanterns"] .chaos-img{filter:sepia(0.45) saturate(1.5) brightness(0.92) hue-rotate(-8deg)}
+/* рёбра бумажного фонарика + тёмные крышки сверху/снизу */
+.lantern-core{position:absolute;inset:0;border-radius:inherit;display:none;pointer-events:none}
+body[data-theme="lanterns"] .lantern-core{display:block;overflow:hidden}
+body[data-theme="lanterns"] .lantern-core::before{
+  content:'';position:absolute;inset:0;
+  background:repeating-linear-gradient(0deg,transparent 0 13.5%,rgba(70,26,0,0.38) 13.5% 15.5%);
+}
+body[data-theme="lanterns"] .lantern-core::after{
+  content:'';position:absolute;inset:0;border-radius:inherit;
+  background:linear-gradient(180deg,rgba(70,28,4,0.9) 0 4.5%,transparent 4.5% 95%,rgba(70,28,4,0.9) 95% 100%);
+}
+
+/* ═══ Тема «Космос»: туманность, звёзды (канвас), кнопка-гексагон ═══ */
+body[data-theme="cosmos"]{--acc:0,212,255;--acc2:168,85,247}
+body[data-theme="cosmos"] .phone{
+  background:
+    radial-gradient(46% 38% at 22% 18%, rgba(124,58,237,0.3), transparent 70%),
+    radial-gradient(40% 34% at 82% 30%, rgba(236,72,153,0.16), transparent 70%),
+    radial-gradient(52% 44% at 64% 84%, rgba(0,120,255,0.19), transparent 72%),
+    radial-gradient(38% 30% at 18% 78%, rgba(0,212,255,0.13), transparent 70%),
+    linear-gradient(180deg,#0B1030 0%,#0E0A2E 55%,#070620 100%);
+}
+body[data-theme="cosmos"] #aurora{opacity:0.35}
+body[data-theme="cosmos"] .note-card,body[data-theme="cosmos"] .focus-card{
+  background:linear-gradient(155deg,rgba(20,22,58,0.96),rgba(12,10,40,0.96));
+  border-color:rgba(0,212,255,0.2);
+  box-shadow:0 5px 22px rgba(2,4,20,0.6);
+}
+body[data-theme="cosmos"] .note-card:hover{border-color:rgba(0,212,255,0.45)}
+body[data-theme="cosmos"] .note-card::before{background:linear-gradient(to bottom,#00D4FF,#7C3AED)}
+body[data-theme="cosmos"] .focus-badge{background:linear-gradient(135deg,#00D4FF,#6C47FF);box-shadow:0 0 20px rgba(0,212,255,0.45), inset 0 1px 0 rgba(255,255,255,0.25)}
+body[data-theme="cosmos"] .focus-eyebrow{color:rgba(150,225,255,0.9)}
+body[data-theme="cosmos"] .bubble-user{background:rgba(0,150,255,0.22)}
+body[data-theme="cosmos"] .bubble-ai{background:rgba(255,255,255,0.06)}
+body[data-theme="cosmos"] .dock{background:rgba(10,12,36,0.84)}
+/* шестиугольная кнопка (не круг) с циановым свечением */
+body[data-theme="cosmos"] .chaos-img-wrap{
+  clip-path:polygon(25% 3%,75% 3%,100% 50%,75% 97%,25% 97%,0% 50%);
+  border-radius:0;border:none;box-shadow:none;animation:none;
+  filter:drop-shadow(0 0 16px rgba(0,212,255,0.5)) drop-shadow(0 0 46px rgba(108,71,255,0.3));
+}
+body[data-theme="cosmos"] .chaos-img{filter:saturate(1.3) hue-rotate(16deg) brightness(0.95)}
+
 /* ── Карточка выбора темы в настройках ── */
-.theme-grid{display:flex;gap:8px;margin-top:10px}
+.theme-grid{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap} /* v87: 6 тем — две строки */
 .theme-tile{
-  flex:1;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.1);
+  flex:1 1 30%;min-width:96px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.1);
   border-radius:14px;padding:10px 6px 9px;cursor:pointer;text-align:center;
   transition:all .2s;font-family:Inter,sans-serif;position:relative;
 }
@@ -961,6 +1090,10 @@ body[data-theme="business"] .cap-mic.recording{box-shadow:0 0 10px rgba(140,176,
   <div id="aurora" aria-hidden="true"></div>
   <!-- звёздное небо (тема «Мечтательная») и полноэкранные волны диктовки -->
   <canvas id="theme-stars" aria-hidden="true"></canvas>
+  <!-- v87: небесные фонарики (тема «Фонарики») — летят вверх за карточками -->
+  <div id="theme-lanterns" aria-hidden="true">
+    <span class="t-lantern"></span><span class="t-lantern"></span><span class="t-lantern"></span><span class="t-lantern"></span><span class="t-lantern"></span><span class="t-lantern"></span><span class="t-lantern"></span>
+  </div>
   <canvas id="rec-waves" aria-hidden="true"></canvas>
 
   <!-- REC VIZ: волновая визуализация при записи голоса (все экраны) -->
@@ -1084,6 +1217,7 @@ body[data-theme="business"] .cap-mic.recording{box-shadow:0 0 10px rgba(140,176,
         <!-- ядра кнопки для тем (показываются только в своей теме) -->
         <div class="galaxy-core" aria-hidden="true"></div>
         <div class="sphere-core" aria-hidden="true"></div>
+        <div class="lantern-core" aria-hidden="true"></div>
       </button>
 
       <div class="chaos-hint">
@@ -1347,6 +1481,36 @@ body[data-theme="business"] .cap-mic.recording{box-shadow:0 0 10px rgba(140,176,
             <div class="theme-name">Деловая</div>
             <div class="theme-desc">графит · минимализм</div>
           </div>
+          <div class="theme-tile" data-theme-opt="minimal" onclick="setTheme('minimal')" role="button" tabindex="0">
+            <span class="theme-check">✓</span>
+            <div class="theme-swatch" style="background:linear-gradient(135deg,#2A2A2E,#0C0C0E 70%,#E8E8EA)"></div>
+            <div class="theme-name">Минимализм</div>
+            <div class="theme-desc">чёрное · белое</div>
+          </div>
+          <div class="theme-tile" data-theme-opt="lanterns" onclick="setTheme('lanterns')" role="button" tabindex="0">
+            <span class="theme-check">✓</span>
+            <div class="theme-swatch" style="background:linear-gradient(135deg,#3A1D08,#120A06 60%,#FFB65A)"></div>
+            <div class="theme-name">Фонарики</div>
+            <div class="theme-desc">тёплая ночь · эффекты</div>
+          </div>
+          <div class="theme-tile" data-theme-opt="cosmos" onclick="setTheme('cosmos')" role="button" tabindex="0">
+            <span class="theme-check">✓</span>
+            <div class="theme-swatch" style="background:linear-gradient(135deg,#0B1030,#1A0B38 55%,#00D4FF)"></div>
+            <div class="theme-name">Космос</div>
+            <div class="theme-desc">туманность · звёзды</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <!-- ── БАЗА ЗНАНИЙ (метод Карпати, v87): общий файл + папки по областям + память диалогов ── -->
+    <div style="padding:12px 16px 0;">
+      <div style="background:rgba(255,255,255,0.04);border:0.5px solid rgba(255,255,255,0.1);border-radius:12px;padding:12px 14px;">
+        <div style="display:flex;align-items:center;gap:7px;font-size:12.5px;font-weight:600;color:rgba(255,255,255,0.8);font-family:Inter,sans-serif;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/><path d="M9 7h6"/><path d="M9 11h6"/></svg>База знаний — память ИИ</div>
+        <div style="font-size:11px;color:rgba(255,255,255,0.45);margin-top:5px;line-height:1.5;">Сжатые знания по методу Карпати: общий файл о тебе + папки по областям + выжимка переписок. ИИ читает базу знаний первой и обращается к конкретным записям, когда нужны детали.</div>
+        <div id="kb-status" style="font-size:10.5px;color:rgba(0,212,255,0.65);margin-top:6px;">…</div>
+        <div style="display:flex;gap:8px;margin-top:9px;">
+          <button onclick="rebuildKnowledgeBase()" style="flex:1;display:inline-flex;align-items:center;justify-content:center;gap:5px;background:rgba(108,71,255,0.12);border:0.5px solid rgba(108,71,255,0.45);border-radius:10px;padding:8px 6px;color:rgba(180,160,255,0.95);font-size:11.5px;font-weight:500;cursor:pointer;font-family:'Inter',sans-serif;white-space:nowrap;">🧠 Обновить базу</button>
+          <button onclick="showKnowledgeBaseModal()" style="flex:1;display:inline-flex;align-items:center;justify-content:center;gap:5px;background:rgba(255,255,255,0.04);border:0.5px solid rgba(255,255,255,0.12);border-radius:10px;padding:8px 6px;color:rgba(255,255,255,0.7);font-size:11.5px;font-weight:500;cursor:pointer;font-family:'Inter',sans-serif;white-space:nowrap;">Посмотреть</button>
         </div>
       </div>
     </div>
@@ -1680,7 +1844,7 @@ service cloud.firestore {
 <!-- Firebase -->
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-import { getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, addDoc, getDocs, getDoc, updateDoc, deleteDoc, doc, orderBy, query, where, setDoc, serverTimestamp, getCountFromServer, onSnapshot, arrayUnion, increment } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+import { getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, addDoc, getDocs, getDoc, updateDoc, deleteDoc, doc, orderBy, query, where, setDoc, serverTimestamp, getCountFromServer, onSnapshot, arrayUnion, increment, limit } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, signInAnonymously, linkWithCredential, EmailAuthProvider } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 
 const firebaseConfig = {
@@ -2310,7 +2474,8 @@ function stopRecWaves(){
 }
 
 // ── ТЕМЫ ОФОРМЛЕНИЯ: стандарт / мечтательная / деловая ──
-const THEME_NAMES = ['standard', 'dream', 'business'];
+const THEME_NAMES = ['standard', 'dream', 'business', 'minimal', 'lanterns', 'cosmos'];
+const STAR_THEMES = ['dream', 'cosmos']; // v87: звёздное небо — в двух темах (палитра разная)
 function setTheme(t){
   if (!THEME_NAMES.includes(t)) t = 'standard';
   document.body.dataset.theme = t;
@@ -2318,7 +2483,9 @@ function setTheme(t){
   document.querySelectorAll('.theme-tile').forEach(el => {
     el.classList.toggle('active', el.dataset.themeOpt === t);
   });
-  if (t === 'dream') initThemeStars(); else stopThemeStars();
+  if (STAR_THEMES.includes(t)) initThemeStars(); else stopThemeStars();
+  const lc = document.getElementById('theme-lanterns'); // v87: фонарики — только в своей теме
+  if (lc) lc.classList.toggle('on', t === 'lanterns');
 }
 function getTheme(){ return document.body.dataset.theme || 'standard'; }
 
@@ -2327,7 +2494,7 @@ const themeStars = { pts: [], shoot: null, nextShoot: 0, raf: null, inited: fals
 function initThemeStars(){
   const cv = document.getElementById('theme-stars');
   if (!cv) return;
-  if (document.body.dataset.theme !== 'dream') return;
+  if (document.body.dataset.theme !== 'dream' && document.body.dataset.theme !== 'cosmos') return;
   cv.classList.add('on');
   if (!themeStars.inited) {
     themeStars.inited = true;
@@ -2343,13 +2510,14 @@ function initThemeStars(){
     const seedStars = (w, h) => {
       themeStars.pts = [];
       const n = 95;
+      const cosmos = document.body.dataset.theme === 'cosmos'; // v87: палитра под тему
       for (let i = 0; i < n; i++) {
         themeStars.pts.push({
           x: Math.random() * w, y: Math.random() * h * 0.85,
           r: (Math.random() < 0.85 ? 0.5 + Math.random() * 0.9 : 1.3 + Math.random() * 0.9),
           ph: Math.random() * 6.28, spd: 0.5 + Math.random() * 1.3,
           depth: 0.35 + Math.random() * 0.65, // глубина для параллакса наклона
-          warm: Math.random() < 0.22 // часть звёзд тёплые золотистые
+          warm: Math.random() < (cosmos ? 0.4 : 0.22) // cosmos — больше холодных звёзд, dream — тёплых золотистых
         });
       }
     };
@@ -2359,8 +2527,8 @@ function initThemeStars(){
       themeStars.raf = requestAnimationFrame(loop);
       const theme = document.body.dataset.theme;
       const on = cv.classList.contains('on');
-      if (theme !== 'dream' || !on) {
-        if (theme !== 'dream' && on) cv.classList.remove('on');
+      if (!STAR_THEMES.includes(theme) || !on) {
+        if (!STAR_THEMES.includes(theme) && on) cv.classList.remove('on');
         return; // тема сменилась — гаснем, цикл держим фоном (дешевле пересоздания)
       }
       const ctx = cv.getContext('2d');
@@ -2369,11 +2537,12 @@ function initThemeStars(){
       // звёзды мерцают + чуть плывут при наклоне (--px/--py от initParallax)
       const px = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--px')) || 0;
       const py = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--py')) || 0;
+      const cool = theme === 'cosmos'; // v87: холодная палитра для космоса
       for (const s of themeStars.pts) {
         const tw = 0.45 + 0.55 * (0.5 + 0.5 * Math.sin(ts / 1000 * s.spd + s.ph));
         const sx = s.x + px * 16 * s.depth, sy = s.y + py * 12 * s.depth;
         ctx.globalAlpha = tw * (0.3 + s.depth * 0.65);
-        ctx.fillStyle = s.warm ? '255,214,140' : '235,238,255';
+        ctx.fillStyle = cool ? (s.warm ? '190,225,255' : '225,235,255') : (s.warm ? '255,214,140' : '235,238,255');
         ctx.beginPath(); ctx.arc(sx, sy, s.r, 0, 6.2832); ctx.fill();
       }
       ctx.globalAlpha = 1;
@@ -2417,11 +2586,14 @@ function stopThemeStars(){
 (function initThemeBoot(){
   let t = 'standard';
   try { t = localStorage.getItem('hz3-theme') || 'standard'; } catch (e) {}
+  if (!THEME_NAMES.includes(t)) t = 'standard'; // v87: старые локальные значения не ломают
   document.body.dataset.theme = t;
   document.querySelectorAll('.theme-tile').forEach(el => {
     el.classList.toggle('active', el.dataset.themeOpt === t);
   });
-  if (t === 'dream') initThemeStars();
+  if (STAR_THEMES.includes(t)) initThemeStars();
+  const lc = document.getElementById('theme-lanterns');
+  if (lc) lc.classList.toggle('on', t === 'lanterns');
 })();
 window.setTheme = setTheme;
 window.getTheme = getTheme;
@@ -3136,6 +3308,15 @@ async function loadNotes() {
     renderFocusCard(); // карточка "сейчас важно" на главном экране тоже
     renderQuickTags(); // чипы тегов на главном: топ-6 по употребляемости (счётчики могли измениться)
     setTimeout(maybeOfferTagWizard, 1200); // мастер тегов: предложение после ~50 записей (раз за сессию)
+    // v87: первая успешная загрузка заметок — данные готовы, можно честно решать,
+    // пустой день или нет. Здесь догоняем отложенную проверку итога дня (если она была).
+    if (!window.__notesLoadedOnce) {
+      window.__notesLoadedOnce = true;
+      if (pendingDailySummaryCheck) {
+        pendingDailySummaryCheck = false;
+        setTimeout(() => { checkAndGenerateDailySummary().catch(() => {}); }, 1200);
+      }
+    }
   } catch(e) {
     document.getElementById('hist-list').innerHTML = '<div class="hist-empty"><div>⚠️</div>Ошибка загрузки</div>';
   }
@@ -7323,6 +7504,27 @@ function getTodoQueue() {
   return notes.filter(n => n.inTodo === true && !n.done).sort((a,b) => (a.todoOrder||0) - (b.todoOrder||0));
 }
 
+// ── v87: ДВА ТИРА ОЧЕРЕДИ — «сегодня» и «потом» ──
+// Задачи с датой в будущем (завтра и позже) НЕ должны попадаться на сегодня:
+// пользователь просил «чтобы мне сегодня не попадались задачи, которые на завтра,
+// или были ниже в списке по крайней мере». Делим очередь:
+//   Тир A (главная очередь) — просрочено, сегодня и без даты: живёт по ручному/умному порядку.
+//   Тир B («на потом») — дата строго в будущем: ВСЕГДА ниже тира A, отсортированы по дате.
+// Наступает день задачи — она сама переезжает в тир A (сортировка динамическая).
+function isFutureTodo(n) {
+  return !!(n && n.scheduledDate && n.scheduledDate > formatDateKey(new Date()));
+}
+function getTodoMainQueue() { // тир A — то, что реально требует внимания сегодня
+  return getTodoQueue().filter(n => !isFutureTodo(n));
+}
+function splitTodoQueue() { // визуальный порядок списка: тир A, потом тир B по дате/времени
+  const q = getTodoQueue();
+  const main = q.filter(n => !isFutureTodo(n));
+  const future = q.filter(isFutureTodo).sort((a, b) =>
+    ((a.scheduledDate + (a.scheduledTime || '')) || '').localeCompare((b.scheduledDate + (b.scheduledTime || '')) || ''));
+  return { main, future };
+}
+
 // ── УМНАЯ СОРТИРОВКА (v82) ──
 // Скор задачи = срочность (срок/дедлайн) + важность (1–5) + лёгкость (S/M/L) + время суток.
 // Новые задачи встают ПО СКОРУ (не перекрывают намеченный порядок), а кнопка «✨ Умно»
@@ -7354,7 +7556,10 @@ function smartScore(n) {
 // (дробные todoOrder — соседей не трогаем, ручной порядок сохраняется)
 let _renormBusy = false;
 function computeSmartOrder(score) {
-  const queue = getTodoQueue().map(n => ({ order: (typeof n.todoOrder === 'number' ? n.todoOrder : 0), sc: smartScore(n) }));
+  // v87: позиция новой задачи считается только среди тира A (сегодня/просроч/без даты).
+  // Задачи на потом теперь живут ниже разделителя — скор будущей задачи не должен
+  // поднимать её выше сегодняшних дел (именно так задача «на 2 недели вперёд» оказалась первой).
+  const queue = getTodoMainQueue().map(n => ({ order: (typeof n.todoOrder === 'number' ? n.todoOrder : 0), sc: smartScore(n) }));
   const idx = queue.findIndex(q => q.sc < score);
   if (idx === -1) {
     // меньше всех — в конец
@@ -7390,9 +7595,14 @@ async function renormalizeTodoQueue() {
 
 // кнопка «✨ Умно»: пересобрать ВСЮ очередь по скору (срочность + важность + объём + время суток)
 async function smartSortTodo() {
-  const queue = getTodoQueue();
-  if (queue.length < 2) { showToast('В очереди меньше двух задач — сортировать нечего 🙂', 2600); return; }
-  const sorted = [...queue].sort((a, b) => smartScore(b) - smartScore(a)); // стабильная сортировка: равные скоры сохраняют порядок
+  const { main, future } = splitTodoQueue();
+  if (main.length + future.length < 2) { showToast('В очереди меньше двух задач — сортировать нечего 🙂', 2600); return; }
+  // v87: тир A — по скору; тир B («на потом») — всегда ниже и по датам: скор будущей
+  // задачи больше не выбивает её наверх очереди сегодняшних дел
+  const sorted = [
+    ...[...main].sort((a, b) => smartScore(b) - smartScore(a)), // стабильная сортировка: равные скоры сохраняют порядок
+    ...future, // splitTodoQueue уже отсортировал их по дате/времени
+  ];
   try {
     for (let i = 0; i < sorted.length; i++) {
       await updateDoc(uDocRef('notes', sorted[i].id), { todoOrder: i + 1 });
@@ -7465,7 +7675,7 @@ function renderFocusCard() {
   if (!el) return;
   let html = '';
 
-  const queue = getTodoQueue();
+  const queue = getTodoMainQueue(); // v87: фокус — только «сегодняшний» тир, задачи на потом не звонят в фокусе
   if (queue.length) {
     const top = queue[0];
     const restCount = queue.length - 1;
@@ -7755,12 +7965,15 @@ function initTodoDrag() {
   // живой сдвиг соседей — расталкиваются, пока перетаскиваемая карточка "проходит" сквозь них
   function updateLiveShift(scrolled) {
     if (!todoDragState) return;
-    const { itemsSnapshot, id, startIndexAmongOthers, draggedHeight, grabOffset, cardH } = todoDragState;
+    const { itemsSnapshot, id, startIndexAmongOthers, draggedHeight, grabOffset, cardH, dragFut } = todoDragState;
     const fingerY = todoDragState.lastClientY;
     const others = itemsSnapshot.filter(s => s.id !== id);
 
     let targetIndex = others.length;
     for (let i = 0; i < others.length; i++) {
+      // v87: граница тиров А/«на потом» — стена. Драг не перелистывает через неё:
+      // первый чужой тир = стоп ровно на этой позиции (карточка остаётся в своём тире).
+      if (others[i].fut !== dragFut) { targetIndex = i; break; }
       // v86: честная СИММЕТРИЯ по КРАЯМ перетаскиваемой карточки, а не по пальцу:
       // своп только когда ведущий край (вниз — нижний, вверх — верхний) дойдёт до
       // ПОЛОВИНЫ соседней карточки. Раньше порог считался по пальцу — где схватишь
@@ -7820,9 +8033,12 @@ function initTodoDrag() {
   // v85: общая инициализация драга для пальца (touchstart) и мыши (mousedown)
   function beginDrag(clientY, card, pointerType) {
     const items = Array.from(listEl.querySelectorAll('.note-card'));
+    const noteById = {}; // v87: тир каждой карточки (future/now) для стены между тирами
+    notes.forEach(n => { noteById[n.id] = n; });
     const itemsSnapshot = items.map(elm => {
       const r = elm.getBoundingClientRect();
-      return { id: elm.dataset.id, midY: r.top + r.height / 2, h: r.height };
+      const nn = noteById[elm.dataset.id];
+      return { id: elm.dataset.id, midY: r.top + r.height / 2, h: r.height, fut: isFutureTodo(nn) };
     });
     const startFullIndex = itemsSnapshot.findIndex(s => s.id === card.dataset.id);
     const cardRect = card.getBoundingClientRect();
@@ -7838,6 +8054,7 @@ function initTodoDrag() {
       // за какое место ручки взялись: перелистывание всегда на половине соседней.
       grabOffset: clientY - (draggedSnap.midY - draggedSnap.h / 2),
       cardH: draggedSnap.h,
+      dragFut: draggedSnap.fut, // v87: тир перетаскиваемой карточки (стена между тирами)
       currentTargetIndex: startFullIndex
     };
     card.classList.add('todo-dragging');
@@ -7958,8 +8175,9 @@ async function persistTodoOrderNow() {
   if (_todoPersistBusy) { scheduleTodoPersist(); return; } // запись идёт — переназначим на неё
   _todoPersistBusy = true;
   try {
-    const queue = getTodoQueue();
-    await Promise.all(queue.map((n, i) => updateDoc(uDocRef('notes', n.id), { todoOrder: i + 1 })));
+    const { main, future } = splitTodoQueue();
+    const visual = main.concat(future); // v87: пишем порядок В ВИЗУАЛЬНОМ виде (тир A → тир B)
+    await Promise.all(visual.map((n, i) => updateDoc(uDocRef('notes', n.id), { todoOrder: i + 1 })));
   } catch(e) { alert('Ошибка сортировки: ' + e.message); }
   _todoPersistBusy = false;
 }
@@ -7973,10 +8191,17 @@ async function reorderTodo(id, newIndex) {
   // Оптимистичный порядок: карточка мгновенно остаётся там, куда её утащили.
   // Локальный state мутируется ДО любых await, рендер синхронный — сеть вообще
   // не участвует в мгновенной перестановке карточек.
-  const queue = getTodoQueue();
-  const dragged = queue.find(n => n.id === id);
+  const { main, future } = splitTodoQueue();
+  const visual = main.concat(future); // v87: работаем в визуальном порядке (тир A → тир B)
+  const dragged = visual.find(n => n.id === id);
   if (!dragged) return;
-  const rest = queue.filter(n => n.id !== id);
+  const dragFut = isFutureTodo(dragged);
+  // v87: страховка границы тиров — карточка не может выйти за пределы своего тира
+  // (стена в updateLiveShift уже не пускает, но reorder вызывается и из других мест)
+  const mainRestCount = main.filter(n => n.id !== id).length;
+  if (dragFut) { if (newIndex < mainRestCount) newIndex = mainRestCount; }
+  else if (newIndex > mainRestCount) newIndex = mainRestCount;
+  const rest = visual.filter(n => n.id !== id);
   rest.splice(newIndex, 0, dragged);
   rest.forEach((n, i) => {
     n.todoOrder = i + 1; // getTodoQueue() возвращает те же ссылки — порядок уже новый
@@ -7996,7 +8221,9 @@ async function reorderTodo(id, newIndex) {
 // где был — уезжает только карточка, даже если верх списка вне экрана.
 let _todoFlySeq = 0;
 function moveTodoTop(id) {
-  const queue = getTodoQueue();
+  const me = notes.find(n => n.id === id);
+  if (isFutureTodo(me)) return; // v87: задачи «на потом» не поднимаются — только через дату в редакторе
+  const queue = getTodoMainQueue();
   const idx = queue.findIndex(n => n.id === id);
   if (idx <= 0) return; // первая и так наверху
   const listEl = document.getElementById('todo-list');
@@ -8320,6 +8547,21 @@ function isStaleNote(n) {
   return true;
 }
 
+// v87: ЗАВИСШИЕ (вторая ступень залежавшести) — в тудушке, не выполнены, без будущего срока
+// и висят уже больше 14 дней (первая ступень — подсветка после 10 дней). Такие задачи
+// попадают в дневной отчёт: ИИ разбирает, почему они не делаются, и предлагает
+// разделить их на маленькие шаги.
+const LONG_STALE_DAYS = 14;
+function getLongStaleNotes() {
+  const today = formatDateKey(new Date());
+  return notes
+    .filter(n => n.inTodo === true && n.done !== true && n.createdAt &&
+      !(n.scheduledDate && n.scheduledDate > today) &&
+      Date.now() - new Date(n.createdAt).getTime() > LONG_STALE_DAYS * 86400000)
+    .sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt))); // дольше всего висит — выше
+}
+function longStaleDays(n) { return Math.floor((Date.now() - new Date(n.createdAt).getTime()) / 86400000); }
+
 function whenBadgeStr(n) {
   if (!n.scheduledDate) return '';
   const dd = parseDayKey(n.scheduledDate);
@@ -8332,22 +8574,26 @@ function whenBadgeStr(n) {
 function renderTodo() {
   const el = document.getElementById('todo-list');
   if (!el) return;
-  const queue = getTodoQueue();
-  document.getElementById('todo-count').textContent = queue.length + ' в очереди';
-  if (!queue.length) {
+  const { main, future } = splitTodoQueue();
+  document.getElementById('todo-count').textContent =
+    main.length + ' в очереди' + (future.length ? ' · ' + future.length + ' на потом' : '');
+  if (!main.length && !future.length) {
     el.innerHTML = '<div class="hist-empty"><div class="hist-empty-icon">📋</div>Список пуст — напиши задачу на главном, ИИ сам поставит её сюда. Или добавь из Истории кнопкой «В тудулист»</div>';
     return;
   }
-  el.innerHTML = queue.map((n, i) => {
+  const cardHtml = (n, i) => {
     const whenStr = whenBadgeStr(n);
     const whenStyle = n.scheduledDate && n.scheduledDate < formatDateKey(new Date()) ? ' style="color:rgba(255,110,110,0.9);"' : '';
     const stale = isStaleNote(n);
     const staleTitle = stale ? ` title="Висит уже ${Math.floor((Date.now() - new Date(n.createdAt).getTime()) / 86400000)} дн."` : '';
+    const isFut = isFutureTodo(n);
+    // v87: у задач «на потом» нет ▲ и ⠿ — тир B сортируется по дате сам,
+    // а «поднять на сегодня» = снять/переназначить дату в редакторе
     return `
     <div class="note-card${stale ? ' note-stale' : ''}" data-id="${n.id}"${staleTitle} onclick="todoCardTap('${n.id}')" style="display:flex;gap:10px;align-items:flex-start;cursor:pointer;">
       <div style="display:flex;flex-direction:column;align-items:center;flex-shrink:0;gap:7px;">
-        <button class="todo-up-btn" title="Наверх — станет первой" onclick="moveTodoTop('${n.id}');event.stopPropagation();"${i === 0 ? ' style="visibility:hidden;"' : ''}>▲</button>
-        <div class="todo-drag-handle">⠿</div>
+        <button class="todo-up-btn" title="Наверх — станет первой" onclick="moveTodoTop('${n.id}');event.stopPropagation();"${(i === 0 || isFut) ? ' style="visibility:hidden;"' : ''}>▲</button>
+        <div class="todo-drag-handle"${isFut ? ' style="visibility:hidden;"' : ''}>⠿</div>
       </div>
       <div style="flex:1;min-width:0;">
         <div class="note-meta">
@@ -8362,7 +8608,19 @@ function renderTodo() {
         </div>
       </div>
     </div>
-  `; }).join('');
+  `;
+  };
+  let html = main.map((n, i) => cardHtml(n, i)).join('');
+  if (future.length) {
+    html += `
+    <div class="todo-future-divider" style="display:flex;align-items:center;gap:10px;margin:14px 0 10px;">
+      <div style="flex:1;height:0.5px;background:rgba(255,255,255,0.12);"></div>
+      <div style="font-size:10.5px;letter-spacing:0.6px;text-transform:uppercase;font-weight:600;color:rgba(255,209,102,0.75);white-space:nowrap;">📅 На потом — по датам (${future.length})</div>
+      <div style="flex:1;height:0.5px;background:rgba(255,255,255,0.12);"></div>
+    </div>`;
+    html += future.map((n, j) => cardHtml(n, main.length + j)).join('');
+  }
+  el.innerHTML = html;
 }
 // тап по карточке тудушки = редактор (сразу после драга не срабатывает — защита от синтетического клика)
 function todoCardTap(id) {
@@ -8887,6 +9145,12 @@ async function addChatMessage(role, content, confirmData) {
   const msg = { role, content, time: new Date().toISOString() };
   if (confirmData) msg.confirmData = confirmData;
   chatHistory.push(msg);
+  // v87: сжатие диалогов в базу знаний — копим счётчик пользовательских сообщений;
+  // сами диалоги и так логируются полностью (Firestore), выжимка обновляется по триггеру
+  if (role === 'user') {
+    try { localStorage.setItem('hz3_kb_dlg_cnt', String((parseInt(localStorage.getItem('hz3_kb_dlg_cnt') || '0', 10) || 0) + 1)); } catch(e) {}
+    setTimeout(() => { maybeCompressDialogs().catch(() => {}); }, 5000); // fire-and-forget
+  }
   // сохраняем в Firestore БЕЗ confirmData — кнопки только в памяти
   const firestoreMsg = { role, content, time: msg.time };
   try {
@@ -8921,6 +9185,7 @@ function msUntilNext2200Msk() {
 }
 
 let dailySummaryTimer = null;
+let pendingDailySummaryCheck = false; // v87: проверка пришла раньше данных — повторим после загрузки заметок
 function scheduleDailySummaryTick() {
   if (dailySummaryTimer) clearTimeout(dailySummaryTimer);
   dailySummaryTimer = setTimeout(async () => {
@@ -9295,6 +9560,11 @@ function openDailySummaryModal(day) {
   if (planned.length) parts.push('<div style="background:rgba(255,160,0,0.05);border:0.5px solid rgba(255,160,0,0.2);border-radius:12px;padding:10px 12px;margin-bottom:8px;">'
     + '<div style="font-size:11px;font-weight:700;color:rgba(255,160,0,0.8);margin-bottom:5px;">📅 ПЛАН НА ЭТОТ ДЕНЬ — не выполнен (' + planned.length + ')</div>'
     + dsListHtml(planned.map(n => n.text), '', 4) + '</div>');
+  // v87: зависшие задачи — ИИ разберёт их в отчёте (почему не делаются + маленькие шаги)
+  const longStale = getLongStaleNotes();
+  if (longStale.length) parts.push('<div style="background:rgba(255,70,70,0.06);border:0.5px solid rgba(255,70,70,0.25);border-radius:12px;padding:10px 12px;margin-bottom:8px;">'
+    + '<div style="font-size:11px;font-weight:700;color:rgba(255,110,110,0.9);margin-bottom:5px;">🔒 ВИСЯТ БЕЗ ДВИЖЕНИЯ — ИИ разберёт в итоге (' + longStale.length + ')</div>'
+    + dsListHtml(longStale.map(n => n.text + ' · ' + longStaleDays(n) + ' дн.'), '', 4) + '</div>');
   document.getElementById('ds-stats').innerHTML = parts.join('');
   document.getElementById('ds-title').textContent = '📊 Итог дня — ' + dLbl;
   modal.classList.add('open');
@@ -9341,6 +9611,15 @@ function buildLocalDailySummary(day, doneNotes, doneMs, added, planned, mood, mo
     }
   }
   if (planned.length) L.push('📅 Не успело: ' + planned.map(n => n.text).join('; ') + ' — ничего страшного, перенесём.');
+  // v87: зависшие — локальный фолбэк тоже подсказывает разбор
+  const longStale = getLongStaleNotes();
+  if (longStale.length) {
+    L.push('');
+    L.push('🔒 Висят без движения (разбери сам(а) или попроси ИИ в чате: «разбей ⟨задача⟩ на шаги»):');
+    for (const n of longStale.slice(0, 5)) {
+      L.push('  • ' + n.text + ' — висит ' + longStaleDays(n) + ' дн. Попробуй: выделить 10 минут на первый микрошаг или честно снять задачу.');
+    }
+  }
   if (moneyNotes.length || money !== null) {
     L.push('💰 Финансы: ' + (money !== null ? 'ручной ввод ' + money + ' ₽. ' : '') + (moneyNotes.length ? moneyNotes.map(n => n.text).join('; ') : ''));
   }
@@ -9402,10 +9681,11 @@ async function generateDailySummary() {
 1️⃣ ЦИФРЫ одной строкой: добавлено N, выполнено M, шагов желаний K (если были). НЕ перечисляй все заметки подряд — только количество.
 2️⃣ ПО СФЕРАМ: возьми сферы из списка СФЕРЫ. По каждой непустой сфере — 1-2 предложения: что сделано, что записано. Сфера с одной записью — одна фраза. Пустых сфер и «Без области» не упоминай вообще. Если сфер нет — пропусти этот блок.
 3️⃣ ЧТО НЕ ВЫШЛО: из НЕ ВЫПОЛНЕНО — мягко, без упрёков, 1 фраза (упомяни только главное, не все пункты). Ничего не висит — пропусти.
-4️⃣ 💰 ДЕНЬГИ: если в ДЕНЬГИ-операциях или ручном вводе есть суммы — расскажи в 1-2 предложениях, куда ушли. Ничего нет — пропусти блок.
-5️⃣ 🌟 ИТОГ: 2-3 предложения ВДОХНОВЛЯЮЩЕГО ИТОГА: поддержи человека, подчеркни продвижение к желаниям (шаги желаний), дай мягкий позитивный вектор на завтра. Без пафоса, без фальши, на «ты».
+4️⃣ 🔍 ЗАВИСШИЕ: для КАЖДОЙ задачи из списка ЗАВИСШИЕ (висят дольше 14 дней) — 2-3 предложения: мягкая гипотеза, почему она не делается (слишком большая и неясная? страшно браться? уже не актуальна? ждёт чего-то?) и затем 2-4 КОНКРЕТНЫХ маленьких шага для старта (каждый — на 5-30 минут, начинай с глагола: «написать…», «позвонить…», «разбить на 3 пункта в редакторе»). Напомни, что шаги можно добавить подзадачами в карточке задачи. Список пуст — пропусти блок.
+5️⃣ 💰 ДЕНЬГИ: если в ДЕНЬГИ-операциях или ручном вводе есть суммы — расскажи в 1-2 предложениях, куда ушли. Ничего нет — пропусти блок.
+6️⃣ 🌟 ИТОГ: 2-3 предложения ВДОХНОВЛЯЮЩЕГО ИТОГА: поддержи человека, подчеркни продвижение к желаниям (шаги желаний), дай мягкий позитивный вектор на завтра. Без пафоса, без фальши, на «ты».
 🙂 Настроение и ⏱ фокус — если указаны, впиши одной короткой строкой.
-Объём 90-170 слов. Пиши тепло и живо.`;
+Объём 110-200 слов. Пиши тепло и живо.`;
     const userPrompt = `ЦИФРЫ: добавлено ${added.length}, выполнено ${doneNotes.length}${doneMs.length ? ', шагов желаний ' + doneMs.length : ''}${planned.length ? ', не выполнено ' + planned.length : ''}.
 
 СФЕРЫ (по областям жизни):
@@ -9413,6 +9693,9 @@ ${areasText}
 
 НЕ ВЫПОЛНЕНО (план на день, висит):
 ${mk(planned, n => '- ' + String(n.text || '').slice(0, 80).replace(/\s+/g, ' ').trim())}
+
+ЗАВИСШИЕ (в тудушке дольше ${LONG_STALE_DAYS} дней, без будущего срока — разбери каждый):
+${(() => { const ls = getLongStaleNotes(); return ls.length ? ls.map(n => { const kids = notes.filter(k => k.parentId === n.id); return '- «' + String(n.text || '').slice(0, 90).replace(/\s+/g, ' ').trim() + '» (висит ' + longStaleDays(n) + ' дн.' + (n.tag ? ', сфера: ' + n.tag : '') + (n.importance ? ', важность ' + n.importance + '/5' : '') + ', подзадач: ' + kids.length + ')'; }).join('\n') : '— (зависших нет)'; })()}
 
 ШАГИ ЖЕЛАНИЙ (выполнены):
 ${mk(doneMs, m => '- ' + m.text + ' (желание: ' + m.wish + ')')}
@@ -9426,7 +9709,7 @@ ${moneyText}
     text = await callPolzaAI([
       { role: 'system', content: systemPrompt },
       { role: 'user', content: userPrompt }
-    ], { max_tokens: 600, temperature: 0.7 });
+    ], { max_tokens: 800, temperature: 0.7 });
   } catch(e) { console.error('[Daily Summary] AI error:', e); }
   if (!text) text = buildLocalDailySummary(day, doneNotes, doneMs, added, planned, mood, money, time);
 
@@ -9440,6 +9723,16 @@ window.openDailySummaryModal = openDailySummaryModal; // тесты
 
 async function checkAndGenerateDailySummary() {
   if (!currentUid) return;
+  // v87 ФИКС пропавшего отчёта: догон срабатывал через 2с после открытия приложения,
+  // когда Firestore-заметки ещё не успели загрузиться → getNotesForDate() возвращал
+  // пусто → «пустой день» молча списывался (бронь ставилась, диалог НЕ показывался) —
+  // итог дня терялся навсегда. Теперь если заметки ещё не загружены — откладываем
+  // проверку и повторяем сразу после первого успешного loadNotes (см. loadNotes).
+  if (!window.__notesLoadedOnce) {
+    pendingDailySummaryCheck = true;
+    console.log('[DS] notes not loaded yet — deferred until loadNotes');
+    return;
+  }
   const today = getTodayDateString();
   const hour = mskNow().getUTCHours();
 
@@ -10488,6 +10781,172 @@ function getBaseInstructions() {
 - Если ТУДУШКА пуста — так и скажи, а не подменяй ответ случайными записями из общей базы`;
 }
 
+// ════════ БАЗА ЗНАНИЙ (метод Карпати, v87) ════════
+// Сжатое знание о пользователе, чтобы ИИ не приходилось просматривать всю базу:
+//   1. ОБЩИЙ ФАЙЛ (master) — главное: кто человек, чем живёт, что важно, привычки, контекст.
+//   2. ПАПКИ ПО ОБЛАСТЯМ (areas) — краткая выжимка по каждой сфере жизни (теги/области).
+//   3. ВЫЖИМКА ИЗ ДИАЛОГОВ (dialogs) — память о переписке: диалоги логируются полностью
+//      (subcollection chat), ИИ держит их сжатую выжимку и при необходимости поднимает
+//      конкретные сообщения из истории.
+// Хранение: meta/kb (один документ). Индекс базы (v72) и полная БАЗА ДАННЫХ в промпте остаются.
+const kbState = { master: '', areas: {}, dialogs: '', masterAt: null, dialogsAt: null };
+
+async function loadKnowledgeBase() {
+  try {
+    const snap = await getDoc(uDocRef('meta', 'kb'));
+    if (snap.exists()) {
+      const d = snap.data();
+      kbState.master = typeof d.master === 'string' ? d.master : '';
+      kbState.areas = d.areas && typeof d.areas === 'object' ? d.areas : {};
+      kbState.dialogs = typeof d.dialogs === 'string' ? d.dialogs : '';
+      kbState.masterAt = d.masterAt || null;
+      kbState.dialogsAt = d.dialogsAt || null;
+    }
+  } catch(e) {}
+}
+window.loadKnowledgeBase = loadKnowledgeBase; // тесты
+
+async function saveKnowledgeBasePatch(patch) {
+  try { await setDoc(uDocRef('meta', 'kb'), patch, { merge: true }); } catch(e) {}
+}
+
+// сжатый контекст для промпта чата
+function buildKbContext() {
+  const hasAny = kbState.master || (kbState.areas && Object.keys(kbState.areas).length) || kbState.dialogs;
+  if (!hasAny) return '(база знаний ещё не собрана — краткие знания о пользователе появятся после «Обновить базу знаний» в настройках или после ~10 сообщений в чате)';
+  const parts = [];
+  if (kbState.master) parts.push('ОБЩЕЕ (главный файл знаний):\n' + kbState.master);
+  const areas = Object.entries(kbState.areas || {});
+  if (areas.length) parts.push('ПАПКИ ПО ОБЛАСТЯМ (краткие выжимки; детали — в БАЗЕ ДАННЫХ ниже):\n' + areas.map(([a, t]) => `• ${a}: ${t}`).join('\n'));
+  if (kbState.dialogs) parts.push('ВЫЖИМКА ИЗ ПЕРЕПИСКИ (полные диалоги — в истории чата; если нужно уточнение — спроси или подними конкретную запись):\n' + kbState.dialogs);
+  return parts.join('\n\n');
+}
+window.buildKbContext = buildKbContext; // тесты
+
+// ── Полная пересборка базы (кнопка в настройках) ──
+async function rebuildKnowledgeBase() {
+  if (!currentUid) { setStatus('Войди, чтобы собрать базу знаний', 3000); return; }
+  setStatus('🧠 Собираю базу знаний…', 12000);
+  try {
+    const areaOf = n => (n.area || n.tag || '').trim() || 'Разное';
+    const areasMap = {};
+    for (const n of notes) { const a = areaOf(n); (areasMap[a] = areasMap[a] || []).push(n); }
+    const areaList = Object.entries(areasMap).sort((x, y) => y[1].length - x[1].length).slice(0, 12);
+    const material = areaList.map(([a, arr]) => {
+      const sample = arr.slice(0, 12).map(n => '- ' + String(n.text || '').slice(0, 140).replace(/\s+/g, ' ').trim()).join('\n');
+      const doneCnt = arr.filter(n => n.done).length;
+      return `ОБЛАСТЬ «${a}» (${arr.length} записей, выполнено ${doneCnt}):\n${sample}`;
+    }).join('\n\n') || '— записей пока нет';
+    const wishesMat = wishes.length
+      ? 'ЖЕЛАНИЯ:\n' + wishes.map(w => `- ${w.text} [статус: ${w.state || 'active'}${(w.milestones || []).length ? ', шагов ' + w.milestones.filter(m => m.done).length + '/' + w.milestones.length : ''}]`).join('\n')
+      : '';
+    const nameRule = (promptRules || []).find(r => /зовут/i.test(r.text || ''));
+    // 1) общий файл знаний
+    let master = '';
+    try {
+      master = await callPolzaAI([
+        { role: 'system', content: 'Ты — ведущий базы знаний личного помощника (метод Карпати). Составь КОРОТКИЙ общий файл знаний о пользователе из его записей: кто он, чем занимается, ключевые факты, привычки, текущие приоритеты, важные решения. Только факты из данных, ничего не выдумывай. Пиши сжато, пунктами, по-русски, максимум 220 слов. Без вступлений и обращений.' },
+        { role: 'user', content: (nameRule ? 'Имя пользователя: ' + nameRule.text + '\n\n' : '') + material + (wishesMat ? '\n\n' + wishesMat : '') }
+      ], { max_tokens: 550, temperature: 0.4 });
+    } catch(e) {}
+    // 2) папки по областям — одним вызовом, JSON
+    let areas = {};
+    try {
+      const raw = await callPolzaAI([
+        { role: 'system', content: 'Ты — ведущий базы знаний (метод Карпати). Для каждой области жизни составь краткую выжимку-папку: суть сферы, важные факты, текущее состояние, к чему стремится человек. Ответь ТОЛЬКО валидным JSON без markdown: {"ОБЛАСТЬ": "выжимка до 70 слов", ...}. Только факты из данных.' },
+        { role: 'user', content: material }
+      ], { max_tokens: 800, temperature: 0.4 });
+      const m = String(raw || '').match(/\{[\s\S]*\}/);
+      if (m) { const parsed = JSON.parse(m[0]); if (parsed && typeof parsed === 'object') areas = parsed; }
+    } catch(e) {}
+    if (master || Object.keys(areas).length) {
+      kbState.master = master || kbState.master;
+      kbState.areas = Object.keys(areas).length ? areas : kbState.areas;
+      kbState.masterAt = new Date().toISOString();
+      await saveKnowledgeBasePatch({ master: kbState.master, areas: kbState.areas, masterAt: kbState.masterAt });
+      setStatus('🧠 База знаний собрана: общий файл' + (Object.keys(kbState.areas).length ? ' + ' + Object.keys(kbState.areas).length + ' областей' : ''), 4500);
+      renderKbStatus();
+    } else {
+      setStatus('Не удалось собрать базу (сервис ИИ недоступен) — попробуй позже', 4000);
+    }
+  } catch(e) { setStatus('Ошибка: ' + e.message, 4000); }
+}
+window.rebuildKnowledgeBase = rebuildKnowledgeBase; // тесты
+
+// ── Автосжатие диалогов: диалоги и так логируются полностью (chat subcollection),
+// здесь ИИ держит СЖАТУЮ ВЫЖИМКУ, чтобы помнить суть переписки. Триггер: каждые 10
+// новых сообщений пользователя и не чаще раза в 6 часов — fire-and-forget. ──
+let _kbCompressBusy = false;
+async function maybeCompressDialogs(force) {
+  if (!currentUid || _kbCompressBusy) return;
+  let cnt = 0, ts = 0;
+  try { cnt = parseInt(localStorage.getItem('hz3_kb_dlg_cnt') || '0', 10); ts = parseInt(localStorage.getItem('hz3_kb_dlg_ts') || '0', 10); } catch(e) {}
+  const SIX_H = 6 * 60 * 60 * 1000;
+  if (!force) {
+    if (Date.now() - ts < SIX_H) return;
+    if (cnt < 10) return;
+  }
+  _kbCompressBusy = true;
+  try {
+    const q = query(chatCol(), orderBy('time', 'desc'), limit(40));
+    const snap = await getDocs(q);
+    const msgs = snap.docs.map(d => d.data()).reverse();
+    if (msgs.length >= 4) {
+      const dialogText = msgs.map(m => (m.role === 'user' ? 'Пользователь: ' : 'ИИ: ') + String(m.content || '').slice(0, 400)).join('\n').slice(-9000);
+      let summary = '';
+      try {
+        summary = await callPolzaAI([
+          { role: 'system', content: 'Ты — память диалогов личного помощника (метод Карпати). Обнови сжатую выжимку переписки: о чём говорили, какие решения приняты, что обещал сделать пользователь, важные факты и настроения. Сохрани главное из СТАРОЙ выжимки, добавь новое из свежих сообщений. Пиши сжато, пунктами, по-русски, максимум 300 слов. Без вступлений.' },
+          { role: 'user', content: (kbState.dialogs ? 'СТАРАЯ ВЫЖИМКА:\n' + kbState.dialogs + '\n\nСВЕЖИЕ СООБЩЕНИЯ (новые внизу):\n' : 'СООБЩЕНИЯ (новые внизу):\n') + dialogText }
+        ], { max_tokens: 600, temperature: 0.4 });
+      } catch(e) {}
+      if (summary) {
+        kbState.dialogs = summary;
+        kbState.dialogsAt = new Date().toISOString();
+        await saveKnowledgeBasePatch({ dialogs: summary, dialogsAt: kbState.dialogsAt });
+      }
+    }
+    try { localStorage.setItem('hz3_kb_dlg_cnt', '0'); localStorage.setItem('hz3_kb_dlg_ts', String(Date.now())); } catch(e) {}
+  } finally { _kbCompressBusy = false; }
+}
+window.maybeCompressDialogs = maybeCompressDialogs; // тесты
+
+// статус в настройках
+function renderKbStatus() {
+  const el = document.getElementById('kb-status');
+  if (!el) return;
+  const fmt = iso => { try { return new Date(iso).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }); } catch(e) { return ''; } };
+  const bits = [];
+  bits.push('Общий файл: ' + (kbState.masterAt ? 'обновлён ' + fmt(kbState.masterAt) : 'не собран'));
+  bits.push('Областей: ' + Object.keys(kbState.areas || {}).length);
+  bits.push('Выжимка диалогов: ' + (kbState.dialogsAt ? fmt(kbState.dialogsAt) : 'пока нет'));
+  el.textContent = bits.join(' · ');
+}
+
+// просмотр базы — модалка
+window.showKnowledgeBaseModal = function() {
+  let m = document.getElementById('kb-modal');
+  if (!m) {
+    m = document.createElement('div');
+    m.id = 'kb-modal';
+    m.className = 'modal-overlay';
+    m.innerHTML = `
+      <div class="modal" style="max-width:460px;max-height:86vh;overflow-y:auto;">
+        <div class="modal-title">🧠 База знаний</div>
+        <div id="kb-view" style="font-size:12.5px;line-height:1.55;color:rgba(255,255,255,0.78);white-space:pre-wrap;word-break:break-word;"></div>
+        <div class="modal-btns"><button class="modal-cancel" onclick="document.getElementById('kb-modal').classList.remove('open')">Закрыть</button></div>
+      </div>`;
+    document.body.appendChild(m);
+  }
+  const parts = [];
+  parts.push('━━ ОБЩЕЕ ━━\n' + (kbState.master || '(ещё не собрано)'));
+  const areas = Object.entries(kbState.areas || {});
+  if (areas.length) parts.push('━━ ОБЛАСТИ ━━\n' + areas.map(([a, t]) => '📁 ' + a + ':\n' + t).join('\n\n'));
+  parts.push('━━ ВЫЖИМКА ИЗ ДИАЛОГОВ ━━\n' + (kbState.dialogs || '(пока нет — накопится после ~10 сообщений в чате)'));
+  document.getElementById('kb-view').textContent = parts.join('\n\n');
+  m.classList.add('open');
+};
+
 function buildSystemPrompt() {
   const now = new Date();
   now.setTime(now.getTime() + 3 * 60 * 60 * 1000);
@@ -10581,6 +11040,10 @@ function buildSystemPrompt() {
   if (decisionsCtx) idxParts.push('НЕДАВНИЕ РЕШЕНИЯ (сравнивай с ними новые — не предлагай уже отвергнутое, опирайся на выбор):\n' + decisionsCtx);
   const indexContext = idxParts.length ? '\nИНДЕКС БАЗЫ (карта записей — используй для понимания контекста и закономерностей):\n- ' + idxParts.join('\n- ') : '';
 
+  // v87: БАЗА ЗНАНИЙ (метод Карпати) — сжатое знание: общий файл + папки по областям + выжимка диалогов.
+  // ИИ читает её ПЕРВОЙ, а за деталями идёт в конкретные записи БАЗЫ ДАННЫХ и историю чата.
+  const kbContext = buildKbContext();
+
   return `Ты — личный ИИ-ассистент пользователя в приложении Hazenstein. Сейчас: ${todayStr}.
 СЕГОДНЯ (машиночитаемо, для вычисления сроков задач в поле date): ${todayKeyStr}.
 
@@ -10595,6 +11058,9 @@ ${calendarContext}
 ЖЕЛАНИЯ (цели пользователя; shortTag в [скобках] — это значение для поля wish функции propose_note; шаги: [x] выполнен, [ ] нет):
 ${wishesContext}
 ${indexContext}
+
+БАЗА ЗНАНИЙ (метод Карпати — сжатое знание о пользователе; используй её ПЕРВОЙ, а за деталями обращайся к конкретным записям из БАЗЫ ДАННЫХ ниже и к истории переписки):
+${kbContext}
 
 ЗА СЕГОДНЯ (добавлено или выполнено сегодня — этот список уже точно отфильтрован по сегодняшнему дню, используй его напрямую для любых вопросов про "сегодня", не нужно искать это в общей базе ниже):
 ${todayContext}
@@ -12012,6 +12478,17 @@ window.__t = {
   fireReminder,
   maybeOfferNotifications,
   openNoteByIdAfterLoad,
+  // v87: тиры тудушки, зависшие, база знаний, темы
+  isFutureTodo,
+  splitTodoQueue,
+  getLongStaleNotes,
+  longStaleDays,
+  kbGet: () => kbState,
+  kbSet: (patch) => { Object.assign(kbState, patch); renderKbStatus(); },
+  checkAndGenerateDailySummary,
+  openDailySummaryModal,
+  setTheme,
+  getTheme,
   testRun: HZ3_TEST_RUN,
 };
 
@@ -12162,6 +12639,7 @@ async function initUserData() {
     loadChatHistory(),
     loadNotes(), // сама рендерит Историю, Тудушку и карточку фокуса по завершении
     loadWishes(),
+    loadKnowledgeBase().then(() => renderKbStatus()), // v87: база знаний (метод Карпати)
   ]);
   checkTagSuggestions(); // не блокируем интерфейс — проверяем в фоне, банер появится когда будет готов
   // Самолечение картинок желаний: желания без moodImage (сорвавшаяся генерация,
