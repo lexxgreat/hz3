@@ -1509,7 +1509,7 @@ body[data-theme="business"] .cap-mic.recording{box-shadow:0 0 10px rgba(140,176,
         <div style="font-size:11px;color:rgba(255,255,255,0.45);margin-top:5px;line-height:1.5;">Сжатые знания по методу Карпати: общий файл о тебе + папки по областям + выжимка переписок. ИИ читает базу знаний первой и обращается к конкретным записям, когда нужны детали.</div>
         <div id="kb-status" style="font-size:10.5px;color:rgba(0,212,255,0.65);margin-top:6px;">…</div>
         <div style="display:flex;gap:8px;margin-top:9px;">
-          <button onclick="rebuildKnowledgeBase()" style="flex:1;display:inline-flex;align-items:center;justify-content:center;gap:5px;background:rgba(108,71,255,0.12);border:0.5px solid rgba(108,71,255,0.45);border-radius:10px;padding:8px 6px;color:rgba(180,160,255,0.95);font-size:11.5px;font-weight:500;cursor:pointer;font-family:'Inter',sans-serif;white-space:nowrap;">🧠 Обновить базу</button>
+          <button id="kb-rebuild-btn" onclick="rebuildKnowledgeBase()" style="flex:1;display:inline-flex;align-items:center;justify-content:center;gap:5px;background:rgba(108,71,255,0.12);border:0.5px solid rgba(108,71,255,0.45);border-radius:10px;padding:8px 6px;color:rgba(180,160,255,0.95);font-size:11.5px;font-weight:500;cursor:pointer;font-family:'Inter',sans-serif;white-space:nowrap;">🧠 Обновить базу</button>
           <button onclick="showKnowledgeBaseModal()" style="flex:1;display:inline-flex;align-items:center;justify-content:center;gap:5px;background:rgba(255,255,255,0.04);border:0.5px solid rgba(255,255,255,0.12);border-radius:10px;padding:8px 6px;color:rgba(255,255,255,0.7);font-size:11.5px;font-weight:500;cursor:pointer;font-family:'Inter',sans-serif;white-space:nowrap;">Посмотреть</button>
         </div>
       </div>
@@ -10807,7 +10807,7 @@ async function loadKnowledgeBase() {
 window.loadKnowledgeBase = loadKnowledgeBase; // тесты
 
 async function saveKnowledgeBasePatch(patch) {
-  try { await setDoc(uDocRef('meta', 'kb'), patch, { merge: true }); } catch(e) {}
+  try { await setDoc(uDocRef('meta', 'kb'), patch, { merge: true }); return true; } catch(e) { return false; }
 }
 
 // сжатый контекст для промпта чата
@@ -10824,10 +10824,21 @@ function buildKbContext() {
 window.buildKbContext = buildKbContext; // тесты
 
 // ── Полная пересборка базы (кнопка в настройках) ──
+// v88 ФИКС «кнопка не работает»: setStatus виден ТОЛЬКО на главном экране (см. комментарий
+// у showToast) — в настройках все сообщения кнопки были невидимы, при ошибке ИИ вообще тишина.
+// Теперь: прогресс сразу в строке #kb-status (рядом с кнопкой) + глобальный тост + кнопка
+// блокируется на время сборки + двойной клик не запускает вторую сборку + ошибки не глотаются.
+let kbRebuildBusy = false;
 async function rebuildKnowledgeBase() {
-  if (!currentUid) { setStatus('Войди, чтобы собрать базу знаний', 3000); return; }
-  setStatus('🧠 Собираю базу знаний…', 12000);
+  if (kbRebuildBusy) return; // уже собираем — второй клик игнорируем
+  if (!currentUid) { showToast('Сначала войди в приложение', 3000); return; }
+  kbRebuildBusy = true;
+  const btn = document.getElementById('kb-rebuild-btn');
+  const oldLabel = btn ? btn.textContent : '';
+  if (btn) { btn.disabled = true; btn.style.opacity = '0.55'; btn.textContent = 'Собираю…'; }
+  const line = t => { const el = document.getElementById('kb-status'); if (el) el.textContent = t; };
   try {
+    line('🧠 Собираю базу — шаг 1/2: общий файл (может занять до минуты)…');
     const areaOf = n => (n.area || n.tag || '').trim() || 'Разное';
     const areasMap = {};
     for (const n of notes) { const a = areaOf(n); (areasMap[a] = areasMap[a] || []).push(n); }
@@ -10842,15 +10853,16 @@ async function rebuildKnowledgeBase() {
       : '';
     const nameRule = (promptRules || []).find(r => /зовут/i.test(r.text || ''));
     // 1) общий файл знаний
-    let master = '';
+    let master = '', err1 = null;
     try {
       master = await callPolzaAI([
         { role: 'system', content: 'Ты — ведущий базы знаний личного помощника (метод Карпати). Составь КОРОТКИЙ общий файл знаний о пользователе из его записей: кто он, чем занимается, ключевые факты, привычки, текущие приоритеты, важные решения. Только факты из данных, ничего не выдумывай. Пиши сжато, пунктами, по-русски, максимум 220 слов. Без вступлений и обращений.' },
         { role: 'user', content: (nameRule ? 'Имя пользователя: ' + nameRule.text + '\n\n' : '') + material + (wishesMat ? '\n\n' + wishesMat : '') }
       ], { max_tokens: 550, temperature: 0.4 });
-    } catch(e) {}
+    } catch(e) { err1 = e; }
     // 2) папки по областям — одним вызовом, JSON
-    let areas = {};
+    line('🧠 Шаг 2/2: папки по областям…');
+    let areas = {}, err2 = null;
     try {
       const raw = await callPolzaAI([
         { role: 'system', content: 'Ты — ведущий базы знаний (метод Карпати). Для каждой области жизни составь краткую выжимку-папку: суть сферы, важные факты, текущее состояние, к чему стремится человек. Ответь ТОЛЬКО валидным JSON без markdown: {"ОБЛАСТЬ": "выжимка до 70 слов", ...}. Только факты из данных.' },
@@ -10858,18 +10870,32 @@ async function rebuildKnowledgeBase() {
       ], { max_tokens: 800, temperature: 0.4 });
       const m = String(raw || '').match(/\{[\s\S]*\}/);
       if (m) { const parsed = JSON.parse(m[0]); if (parsed && typeof parsed === 'object') areas = parsed; }
-    } catch(e) {}
+    } catch(e) { err2 = e; }
     if (master || Object.keys(areas).length) {
       kbState.master = master || kbState.master;
       kbState.areas = Object.keys(areas).length ? areas : kbState.areas;
       kbState.masterAt = new Date().toISOString();
-      await saveKnowledgeBasePatch({ master: kbState.master, areas: kbState.areas, masterAt: kbState.masterAt });
-      setStatus('🧠 База знаний собрана: общий файл' + (Object.keys(kbState.areas).length ? ' + ' + Object.keys(kbState.areas).length + ' областей' : ''), 4500);
+      const saved = await saveKnowledgeBasePatch({ master: kbState.master, areas: kbState.areas, masterAt: kbState.masterAt });
       renderKbStatus();
+      const what = 'общий файл' + (Object.keys(kbState.areas).length ? ' + ' + Object.keys(kbState.areas).length + ' обл.' : '');
+      if (saved === false) {
+        line('⚠️ Собрано (' + what + '), но НЕ сохранилось в облако — проверь интернет и нажми ещё раз');
+        showToast('⚠️ База собрана, но не сохранилась в облако', 4500);
+      } else {
+        showToast('🧠 База знаний собрана: ' + what, 4500);
+      }
     } else {
-      setStatus('Не удалось собрать базу (сервис ИИ недоступен) — попробуй позже', 4000);
+      const why = (err1 && err1.message) || (err2 && err2.message) || 'сервис ИИ недоступен';
+      line('⚠️ Не получилось собрать базу: ' + why + ' — нажми ещё раз чуть позже');
+      showToast('⚠️ Не получилось: ' + why, 5000);
     }
-  } catch(e) { setStatus('Ошибка: ' + e.message, 4000); }
+  } catch(e) {
+    line('⚠️ Ошибка: ' + e.message + ' — попробуй ещё раз');
+    showToast('⚠️ Ошибка: ' + e.message, 4000);
+  } finally {
+    kbRebuildBusy = false;
+    if (btn) { btn.disabled = false; btn.style.opacity = ''; btn.textContent = oldLabel || '🧠 Обновить базу'; }
+  }
 }
 window.rebuildKnowledgeBase = rebuildKnowledgeBase; // тесты
 
