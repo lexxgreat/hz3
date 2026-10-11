@@ -1241,6 +1241,7 @@ body[data-theme="business"] .cap-mic.recording{box-shadow:0 0 10px rgba(140,176,
       </div>
     </div>
     <div id="todo-hint" style="padding:0 16px;"></div>
+    <div id="todo-tags" style="display:none;padding:8px 16px 0;gap:6px;overflow-x:auto;white-space:nowrap;-webkit-overflow-scrolling:touch;scrollbar-width:none;"></div>
     <div class="hist-list" id="todo-list" style="padding-top:8px;">
       <div class="hist-empty"><div class="hist-empty-icon">📋</div>Список пуст — напиши задачу на главном, ИИ сам поставит её сюда. Или добавь из Истории кнопкой «В тудулист»</div>
     </div>
@@ -1449,6 +1450,7 @@ body[data-theme="business"] .cap-mic.recording{box-shadow:0 0 10px rgba(140,176,
 
   <!-- ── PROMPT SCREEN ── -->
   <div class="screen" id="screen-prompt">
+    <div id="prompt-hint" style="padding:10px 16px 0;"></div>
     <div class="chat-header">
       <button class="chat-clear-btn" onclick="goTo('chat')" title="Назад">←</button>
       <div class="chat-title-wrap">
@@ -1568,6 +1570,11 @@ body[data-theme="business"] .cap-mic.recording{box-shadow:0 0 10px rgba(140,176,
         <span style="display:inline-flex;align-items:center;gap:7px;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="3"/><path d="M22 7l-8.5 6a2 2 0 0 1-3 0L2 7"/></svg>Написать разработчику</span>
         <span id="devchat-dot" style="display:none;width:8px;height:8px;border-radius:50%;background:#00D4FF;box-shadow:0 0 6px rgba(0,212,255,0.8);"></span>
       </button>
+      <!-- v89: прямые каналы связи (Н8) -->
+      <div style="display:flex;gap:8px;margin-top:8px;">
+        <a href="https://t.me/+79167404343" target="_blank" rel="noopener" style="flex:1;text-decoration:none;background:rgba(0,212,255,0.07);border:0.5px solid rgba(0,212,255,0.25);border-radius:10px;padding:8px;color:rgba(160,225,255,0.92);font-size:12px;font-weight:600;text-align:center;font-family:'Inter',sans-serif;">Telegram</a>
+        <a href="https://wa.me/79167404343" target="_blank" rel="noopener" style="flex:1;text-decoration:none;background:rgba(0,200,120,0.07);border:0.5px solid rgba(0,200,120,0.3);border-radius:10px;padding:8px;color:rgba(120,230,180,0.92);font-size:12px;font-weight:600;text-align:center;font-family:'Inter',sans-serif;">WhatsApp</a>
+      </div>
     </div>
     <!-- Account status / Register button -->
     <div id="account-widget" style="display:none;padding:12px 16px 0;">
@@ -1618,6 +1625,9 @@ body[data-theme="business"] .cap-mic.recording{box-shadow:0 0 10px rgba(140,176,
         <div class="chat-title">Разработчик</div>
         <div class="chat-subtitle">Идея, баг, что-то не работает — пиши</div>
       </div>
+      <!-- v89: прямые каналы (Н8) -->
+      <a href="https://t.me/+79167404343" target="_blank" rel="noopener" title="Написать в Telegram" style="flex-shrink:0;display:flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:50%;background:rgba(0,212,255,0.12);border:0.5px solid rgba(0,212,255,0.35);color:rgba(160,225,255,0.95);text-decoration:none;font-size:14px;">✈️</a>
+      <a href="https://wa.me/79167404343" target="_blank" rel="noopener" title="Написать в WhatsApp" style="flex-shrink:0;display:flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:50%;background:rgba(0,200,120,0.12);border:0.5px solid rgba(0,200,120,0.4);color:rgba(120,230,180,0.95);text-decoration:none;font-size:14px;">📞</a>
     </div>
     <div class="chat-messages" id="devchat-messages"></div>
     <div class="chat-input-wrap">
@@ -2226,14 +2236,44 @@ async function restorePunctuationAI(text) {
     const raw = (typeof window.__punctAIHook === 'function')
       ? await window.__punctAIHook(text)
       : await callPolzaAI([
-          { role: 'system', content: 'Ты корректор русских диктовок. Тебе дают текст, распознанный из речи, в котором потерялись знаки препинания. Верни ТОТ ЖЕ текст, расставив точки, запятые, вопросительные и восклицательные знаки. Строгие правила: не меняй, не добавляй и не удаляй ни одного слова; не исправляй слова и не перефразируй; сохраняй все числа и имена; заглавная буква — только в начале предложений и в именах собственных. Ответ — только готовый текст, без пояснений и кавычек.' },
+          { role: 'system', content: 'Ты корректор русских диктовок. Тебе дают текст, распознанный из речи, в котором потерялись знаки препинания. Верни ТОТ ЖЕ текст, расставив точки, запятые, вопросительные и восклицательные знаки. Строгие правила: не меняй, не добавляй и не удаляй ни одного слова; не исправляй слова и не перефразируй; НЕ СКЛЕИВАЙ и не разделяй слова (например «и и» оставь как «и и», НЕ превращай в «ИИ»); сохраняй все числа и имена; заглавная буква — только в начале предложений и в именах собственных. Ответ — только готовый текст, без пояснений и кавычек.' },
           { role: 'user', content: text }
         ], { max_tokens: 600, temperature: 0, timeoutMs: 9000 });
     const out = (raw || '').trim().replace(/^["«]|["»]$/g, '').trim();
     if (!out) return null;
-    // отбраковка: ИИ имеет право только на пунктуацию/регистр — состав и порядок слов обязан совпасть
+    // отбраковка: ИИ имеет право только на пунктуацию/регистр — состав и порядок слов обязан совпасть.
+    // v89 Н2: точечный допуск для шума распознавания — СКЛЕЙКА/разделение повторной одиночной буквы
+    // («и и» → «ии»): строгий валидатор браковал годный результат, и пунктуация молча не ставилась.
+    // Подмены слов («был»→«сидел») по-прежнему отбраковываются (гарантия v45).
     const wordsOf = (s) => s.toLowerCase().replace(/[^a-zа-яё0-9\s-]/gi, ' ').split(/\s+/).filter(Boolean);
-    if (JSON.stringify(wordsOf(out)) !== JSON.stringify(wordsOf(text))) return null;
+    const singlesOf = (arr) => arr.filter(w => w.length === 1 && !/[0-9]/.test(w));
+    const stripFn = (arr) => arr.filter(w => w.length > 1 || /[0-9]/.test(w));
+    const seqEq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+    const wa = wordsOf(text), wb = wordsOf(out);
+    let okWords = seqEq(wa, wb) || seqEq(stripFn(wa), stripFn(wb));
+    if (!okWords) {
+      const A = stripFn(wa), B = stripFn(wb);
+      const waSingles = singlesOf(wa), wbSingles = singlesOf(wb);
+      // склейка: у ИИ на 1 токен меньше, лишний — двойная одиночная буква из исходника
+      if (B.length === A.length + 1) {
+        for (let i = 0; i < B.length && !okWords; i++) {
+          if (/^(.)\1$/u.test(B[i]) && waSingles.includes(B[i][0])) {
+            const rest = B.slice(0, i).concat(B.slice(i + 1));
+            if (seqEq(rest, A)) okWords = true;
+          }
+        }
+      }
+      // разделение: у ИИ на 1 токен больше — дубль одиночной буквы развозванился
+      if (!okWords && A.length === B.length + 1) {
+        for (let i = 0; i < A.length && !okWords; i++) {
+          if (/^(.)\1$/u.test(A[i]) && wbSingles.includes(A[i][0])) {
+            const rest = A.slice(0, i).concat(A.slice(i + 1));
+            if (seqEq(rest, B)) okWords = true;
+          }
+        }
+      }
+    }
+    if (!okWords) return null;
     return out;
   } catch (e) {
     return null; // таймаут/сеть/баланс — тихо используем локальный вариант
@@ -2807,6 +2847,7 @@ async function saveNote(text, type) {
     await loadNotes();
     maybeShowInstallBanner(); // PWA: предложить установку после первой записи (один раз)
     // AI auto-linking — для только что созданной заметки (в фоне, не блокируя UI)
+    // v89 Н2: пунктуация голосовых УЖЕ живёт в ensurePunctuation (до saveNote) — здесь только линки и разбор
     const newNote = notes.find(n => n.id === docRef.id);
     if (newNote) {
       setTimeout(() => findAndSaveLinksForNote(newNote), 100);
@@ -3139,6 +3180,8 @@ window.matchAreaByExemplars = matchAreaByExemplars; // тесты
 window.startsLikeAction = startsLikeAction; // тесты
 window.getWizardState = () => wizardState; // тесты
 
+// v89 Н2: пунктуация голосовых заметок — см. restorePunctuationAI (усиленная валидация + подсказка ИИ)
+
 async function classifyAndRouteNote(note) {
   if (!note || !note.id || !note.text) return;
   if (note.inTodo === true) return; // уже в тудушке
@@ -3163,8 +3206,9 @@ async function classifyAndRouteNote(note) {
   const clusterNames = [...clList].sort((a,b)=>(b.count||0)-(a.count||0)).slice(0, 30).map(c => c.name);
   try {
     const resp = await callBrainAI([
-      { role: 'system', content: 'Ты — классификатор записей личного дневника-трекера. Ответь ТОЛЬКО валидным JSON без markdown: {"task": true/false, "date": "YYYY-MM-DD" или null, "time": "HH:MM" или null, "area": "..." или null, "newArea": {"name":"...","icon":"эмодзи"} или null, "kind": "мысль|событие|решение|идея|вопрос|дело", "cluster": "..." или null}. '
+      { role: 'system', content: 'Ты — классификатор записей личного дневника-трекера. Ответь ТОЛЬКО валидным JSON без markdown: {"task": true/false, "date": "YYYY-MM-DD" или null, "time": "HH:MM" или null, "area": "..." или null, "newArea": {"name":"...","icon":"эмодзи"} или null, "kind": "мысль|событие|решение|идея|вопрос|дело", "cluster": "..." или null, "wish": true/false, "urgent": true/false}. '
         + 'task: true — если запись это конкретное действие, которое предстоит сделать и потом можно поставить галочку (купить, позвонить, записаться, отправить, сделать, не забыть); false — мысль, факт, идея без действия, дневниковая запись, справка. Сомневаешься — true: лучше поставить в тудушку, чем потерять дело. Запись, начинающаяся с действия/инфинитива («Настроить кнопку», «Проверить фильтр», «Добавить подписи») — ВСЕГДА task: true, даже если звучит как заметка о работе над проектом. '
+        + 'wish: true — если запись выражает ЖЕЛАНИЕ или мечту на будущее («хочу научиться рисовать», «мечтаю съездить в Марокко», «своё кафе»), а не конкретное дело на сегодня; иначе false. urgent: true — если в тексте есть «срочно», «прямо сейчас», «как можно быстрее», «немедленно»; иначе false. '
         + 'area: ОДНА область жизни из списка [' + areaNames.join(' | ') + ']. Подходит хоть одна — верни её точное имя. Ни одна не подходит — area: null и newArea: {"name": "1-2 слова, существительное", "icon": "один эмодзи"}. '
         + (areaExemplars ? 'Примеры записей пользователя по областям — наследуй область по СХОДСТВУ с примерами: если новая запись похожа на примеры какой-то области — верни именно её (особенно записи про это самое приложение, его интерфейс, функции, баги и доработки — они относятся к области, где таких записей больше всего): ' + areaExemplars + '. ' : '')
         + tagLogText
@@ -3237,6 +3281,7 @@ async function classifyAndRouteNote(note) {
         if (fn) Object.assign(fn, dimsPatch);
       } catch (e) { console.warn('[Classify] dims save failed', e); }
     }
+    maybeOfferWishFromNote(note, parsed); // v89 Н7: «хочу…» → предложение оформить как желание
     return; // заметка — остаётся в истории, ничего не делаем
   }
   // дата/время: «через N минут/часов» — ТОЛЬКО локальный расчёт (ИИ ошибается с поясами);
@@ -3259,11 +3304,15 @@ async function classifyAndRouteNote(note) {
   // перепроверка актуального состояния (могли изменить с другого устройства пока думали)
   const fresh = notes.find(n => n.id === note.id);
   if (!fresh || fresh.inTodo === true || fresh.done) return;
+  // v89 Н6: «срочно» — флаг сверху очереди (ИИ + локальная эвристика)
+  const urgentRe = /(срочно|прямо сейчас|как можно быстрее|немедленно|не откладывая)/i;
+  const isUrgent = (parsed && parsed.urgent === true) || urgentRe.test(note.text || '');
   // v82: новая задача встаёт ПО УМНОМУ СКОРУ (срочность + важность + объём + время суток) —
   // не перекрывает намеченный порядок; вверх её всегда можно поднять ▲ или «✨ Умно»
-  const todoOrder = computeSmartOrder(smartScoreForFields({ scheduledDate, importance: note.importance, effort: note.effort }));
+  const todoOrder = computeSmartOrder(smartScoreForFields({ scheduledDate, importance: note.importance, effort: note.effort, urgent: isUrgent }));
   try {
     const patch = { inTodo: true, todoOrder };
+    if (isUrgent) patch.urgent = true;
     if (dimsPatch) Object.assign(patch, dimsPatch); // разметка едет вместе с роутингом — один вызов
     if (scheduledDate) patch.scheduledDate = scheduledDate; // задача с датой → в календарь
     if (scheduledTime) patch.scheduledTime = scheduledTime;
@@ -3280,6 +3329,132 @@ async function classifyAndRouteNote(note) {
     const when = scheduledDate ? ' на ' + scheduledDate.slice(8,10) + '.' + scheduledDate.slice(5,7) + (scheduledTime ? ' ' + scheduledTime : '') : '';
     setStatus('✅ Определил как задачу — поставил в тудушку: «' + short + '»' + when, 4000);
   } catch(e) { console.warn('[Classify] failed to add to todo:', e); }
+}
+
+// ── v89 Н7: «хочу…» → предложение оформить как желание (или добавить в тудушку) ──
+// Оффер эфемерный: в рамках сессии, один раз на заметку; заметка остаётся заметкой, если проигнорировать.
+const _wishOffered = new Set();
+let _wishOfferPending = null; // оффер, пойманный на другом экране — покажем на главном
+function maybeOfferWishFromNote(note, parsed) {
+  if (!note || !note.id || note.wishId || note.inTodo === true) return;
+  if (_wishOffered.has(note.id)) return;
+  const looksWish = (parsed && parsed.wish === true) ||
+    /^(хочу|мечтаю|хотел(?:а)? бы|мечтал[аи]?)/i.test(String(note.text || '').trim());
+  if (!looksWish) return;
+  _wishOffered.add(note.id);
+  const offer = { id: note.id, text: note.text };
+  const active = document.querySelector('.screen.active');
+  if (active && active.id === 'screen-main') renderWishOffer(offer);
+  else _wishOfferPending = offer;
+}
+function renderWishOffer(offer) {
+  const el = document.getElementById('main-hint');
+  if (!el || activeHintId) return;
+  const short = offer.text.length > 60 ? offer.text.slice(0, 60) + '…' : offer.text;
+  el.innerHTML = `<div class="note-card hint-card" style="border-color:rgba(255,209,102,0.5);background:linear-gradient(135deg,rgba(255,209,102,0.10),rgba(108,71,255,0.08));">
+    <div class="note-text">🌠 Похоже на желание: <b>«${escHtml(short)}»</b><br><span style="font-size:11.5px;color:rgba(255,255,255,0.55);">Оформить как желание с шагами — или это задача?</span></div>
+    <div class="note-actions" style="flex-wrap:wrap;gap:6px;">
+      <button class="note-btn note-done" onclick="wishOfferCreate('${offer.id}')">🌠 Желание</button>
+      <button class="note-btn note-undone" onclick="wishOfferTodo('${offer.id}')">☑️ В Тудушку</button>
+      <button class="note-btn note-undone" onclick="wishOfferClose()" style="opacity:0.6;">Нет</button>
+    </div></div>`;
+  activeHintId = 'wish_offer_' + offer.id;
+}
+function wishOfferClose() { hideActiveHint(); setTimeout(() => refreshHintsNow(), 200); }
+async function wishOfferCreate(noteId) {
+  wishOfferClose();
+  const n = notes.find(x => x.id === noteId);
+  const text = n ? n.text : '';
+  goTo('wishes');
+  setTimeout(() => {
+    const inp = document.getElementById('wish-input');
+    const btn = document.getElementById('wish-add-btn');
+    if (inp && btn) { inp.value = text; btn.click(); } // полный конвейер желания: ИИ разберёт, предложит шаги
+  }, 400);
+}
+async function wishOfferTodo(noteId) {
+  wishOfferClose();
+  const n = notes.find(x => x.id === noteId);
+  if (!n) return;
+  try {
+    await updateDoc(uDocRef('notes', noteId), { inTodo: true, todoOrder: computeSmartOrder(smartScoreForFields({ scheduledDate: n.scheduledDate || null, importance: n.importance || null, effort: n.effort || null, urgent: false })) });
+    await loadNotes();
+    showToast('☑️ Задача добавлена в Тудушку', 2400);
+  } catch(e) { showToast('Ошибка: ' + e.message, 3000); }
+}
+window.wishOfferCreate = wishOfferCreate;
+window.wishOfferTodo = wishOfferTodo;
+window.wishOfferClose = wishOfferClose;
+
+// ── v89 Н9: предложение тега по однотипным записям БЕЗ тега (не желания!) ──
+// ИИ-разметка уже складывает записи в кластеры; когда в кластере набирается 3+ записей
+// без тега и без привязки к желаниям — предлагаем создать тег одним тапом.
+let _tagSuggestChecked = false;
+async function maybeSuggestTag() {
+  if (_tagSuggestChecked || !currentUid || activeHintId) return;
+  if (notes.length < 8) return;
+  const cands = notes.filter(n => !n.tag && !n.wishId && !n.noTag && n.cluster);
+  if (!cands.length) return;
+  const groups = {};
+  cands.forEach(n => { const k = String(n.cluster).trim(); (groups[k] = groups[k] || []).push(n); });
+  let best = null;
+  for (const [name, arr] of Object.entries(groups)) {
+    if (arr.length >= 3 && (!best || arr.length > best.arr.length)) best = { name, arr };
+  }
+  if (!best) return;
+  _tagSuggestChecked = true; // одна попытка за сессию — не приставаем
+  let meta = { dismissed: [], created: [] };
+  try {
+    const snap = await getDocs(uCol('meta'));
+    const d = snap.docs.find(x => x.id === 'tag_suggestions');
+    if (d) meta = { dismissed: d.data().dismissed || [], created: d.data().created || [] };
+  } catch(e) {}
+  if (meta.dismissed.includes(best.name) || meta.created.includes(best.name)) return;
+  if (tags.some(t => normDim(t.label) === normDim(best.name))) return; // такой тег уже есть
+  const el = document.getElementById('main-hint');
+  if (!el || activeHintId) return;
+  if (!questSkipped() && currentQuestStep()) return; // квест важнее — тег подождёт
+  const short = best.name.length > 30 ? best.name.slice(0, 30) + '…' : best.name;
+  el.innerHTML = `<div class="note-card hint-card" style="border-color:rgba(0,212,255,0.4);background:rgba(0,212,255,0.06);">
+    <div class="note-text">🏷 Вижу ${best.arr.length} записи про <b>«${escHtml(short)}»</b> без тега. Создать тег — будет удобно фильтровать?</div>
+    <div class="note-actions" style="flex-wrap:wrap;gap:6px;">
+      <button class="note-btn note-done" onclick="createTagFromSuggestion('${escHtml(best.name).replace(/'/g, "\\'")}')">🏷 Создать тег</button>
+      <button class="note-btn note-undone" onclick="dismissTagSuggestion('${escHtml(best.name).replace(/'/g, "\\'")}')" style="opacity:0.6;">Не надо</button>
+    </div></div>`;
+  activeHintId = 'tag_suggest';
+  window.__tagSuggestData = best;
+}
+async function createTagFromSuggestion(name) {
+  const best = window.__tagSuggestData;
+  hideActiveHint();
+  if (!best) return;
+  try {
+    const a = await ensureArea(best.name, '🏷');
+    const tagVal = a ? a.label : best.name;
+    for (const n of best.arr) {
+      try { await updateDoc(uDocRef('notes', n.id), { tag: tagVal, area: tagVal }); } catch(e) {}
+    }
+    await _tagSuggestMeta(m => { m.created.push(best.name); });
+    await loadNotes();
+    showToast('🏷 Тег «' + tagVal + '» создан — назначен на ' + best.arr.length + ' записей', 3000);
+  } catch(e) { showToast('Не вышло: ' + e.message, 3000); }
+}
+window.createTagFromSuggestion = createTagFromSuggestion;
+async function dismissTagSuggestion(name) {
+  hideActiveHint();
+  try { await _tagSuggestMeta(m => { m.dismissed.push(name); }); } catch(e) {}
+  setTimeout(() => refreshHintsNow(), 200);
+}
+window.dismissTagSuggestion = dismissTagSuggestion;
+async function _tagSuggestMeta(mut) {
+  let meta = { dismissed: [], created: [] };
+  try {
+    const snap = await getDocs(uCol('meta'));
+    const d = snap.docs.find(x => x.id === 'tag_suggestions');
+    if (d) meta = { dismissed: d.data().dismissed || [], created: d.data().created || [] };
+  } catch(e) {}
+  mut(meta);
+  try { await setDoc(uDocRef('meta', 'tag_suggestions'), meta); } catch(e) {}
 }
 
 // ── ЗАГРУЗКА ──
@@ -3307,7 +3482,9 @@ async function loadNotes() {
     renderTodo(); // тудушка всегда синхронна с общей базой записей
     renderFocusCard(); // карточка "сейчас важно" на главном экране тоже
     renderQuickTags(); // чипы тегов на главном: топ-6 по употребляемости (счётчики могли измениться)
+    try { if (hintsLoaded && notes.length >= 1) window.__questEvent('first-note'); } catch(e) {} // v89: квест-шаг 2
     setTimeout(maybeOfferTagWizard, 1200); // мастер тегов: предложение после ~50 записей (раз за сессию)
+    setTimeout(() => { maybeSuggestTag().catch(() => {}); }, 2400); // v89 Н9: предложение тега по однотипным записям
     // v87: первая успешная загрузка заметок — данные готовы, можно честно решать,
     // пустой день или нет. Здесь догоняем отложенную проверку итога дня (если она была).
     if (!window.__notesLoadedOnce) {
@@ -3859,10 +4036,12 @@ window.openWishFromEditor = openWishFromEditor;
 // Важность 1–5 и объём S/M/L питают умную сортировку («✨ Умно» и вставку новых задач по скору).
 let editingImportance = null;
 let editingEffort = null;
+let editingUrgent = false; // v89 Н6: флаг «срочно» в редакторе
 function renderModalImpEff(n) {
   // инициализация состояния из заметки (вызывается только при открытии редактора)
   editingImportance = n.importance || null;
   editingEffort = n.effort || null;
+  editingUrgent = n.urgent === true; // v89 Н6: флаг «срочно» — редактируется вручную
   renderImpEffChips();
 }
 function renderImpEffChips() {
@@ -3873,8 +4052,11 @@ function renderImpEffChips() {
     <span class="imp-eff-lbl">Важность:</span>
     ${[1,2,3,4,5].map(v => `<button class="chip-btn${(editingImportance || 3) === v ? ' on' : ''}" onclick="setModalImportance(${v})" title="Важность ${v}">${v === (editingImportance || 3) ? '★' : v}</button>`).join('')}
     <span class="imp-eff-lbl" style="margin-left:6px;">Объём:</span>
-    ${effOpts.map(([v, lbl]) => `<button class="chip-btn${(editingEffort || 'M') === v ? ' on' : ''}" onclick="setModalEffort('${v}')">${lbl}</button>`).join('')}`;
+    ${effOpts.map(([v, lbl]) => `<button class="chip-btn${(editingEffort || 'M') === v ? ' on' : ''}" onclick="setModalEffort('${v}')">${lbl}</button>`).join('')}
+    <button class="chip-btn${editingUrgent ? ' on' : ''}" onclick="setModalUrgent()" title="Прибить к самому верху очереди" style="${editingUrgent ? 'border-color:rgba(255,90,90,0.55);color:rgba(255,110,110,0.95);background:rgba(255,80,80,0.10);' : ''}">🔥 Срочно</button>`;
 }
+function setModalUrgent() { editingUrgent = !editingUrgent; renderImpEffChips(); }
+window.setModalUrgent = setModalUrgent;
 function setModalImportance(v) { editingImportance = editingImportance === v ? null : v; renderImpEffChips(); }
 function setModalEffort(v) { editingEffort = editingEffort === v ? null : v; renderImpEffChips(); }
 window.setModalImportance = setModalImportance;
@@ -4020,7 +4202,8 @@ async function saveEdit() {
       scheduledDate: dateVal,
       scheduledTime: timeVal,
       importance: editingImportance || null, // v82: важность 1–5 (умная сортировка)
-      effort: editingEffort || null          // v82: объём S/M/L
+      effort: editingEffort || null,         // v82: объём S/M/L
+      urgent: editingUrgent === true ? true : null // v89 Н6: «срочно» — самый верх очереди (null снимает флаг)
     });
     // САМООБУЧЕНИЕ ТЕГОВ (v76): пользователь перенёс запись в другой тег руками —
     // запоминаем пример «текст → тег», классификатор потом наследует такие правки
@@ -4071,7 +4254,7 @@ async function toggleDone(id, currentDone) {
       done: willBeDone,
       doneAt: willBeDone ? new Date().toISOString() : null
     });
-    if (willBeDone) celebrateTaskDone(); // празднуем только при завершении, не при отмене
+    if (willBeDone) { celebrateTaskDone(); try { window.__questEvent('task-gesture'); } catch(e) {} } // празднуем только при завершении, не при отмене; v89: жест = шаг квеста 5
     await loadNotes();
     renderCalendar(); // выполненные задачи исчезают из календаря
 
@@ -6031,8 +6214,45 @@ async function loadWishes() {
       wishes.forEach(w => { if (w.wishOrder == null) w.wishOrder = ++maxOrder; });
     }
     wishes.sort((a, b) => (a.wishOrder || 0) - (b.wishOrder || 0));
+    // v89 Н10: конвейер шагов — в Тудушке у каждого желания ровно ОДИН активный шаг.
+    // Идемпотентно: пишет в базу только там, где правило нарушено.
+    normalizeAllWishTodos().catch(() => {});
   } catch(e) { wishes = []; }
 }
+
+// ── v89 Н10: конвейер шагов желания ──
+// Активен ПЕРВЫЙ невыполненный шаг плана (по порядку массива milestones). Выполнили его —
+// заезжает следующий. Остальные ждут в карточке желания. Задачи из чата (wishId без
+// milestoneLink) не трогаем — это самостоятельные дела.
+async function normalizeWishTodos(wishId) {
+  const w = wishes.find(x => x.id === wishId);
+  if (!w || !w.milestones) return;
+  let seenActive = false;
+  let changed = false;
+  for (const ms of w.milestones) {
+    if (!ms.noteId) continue;
+    const n = notes.find(x => x.id === ms.noteId);
+    if (!n) continue;
+    const shouldBeActive = !ms.done && !seenActive;
+    if (shouldBeActive) seenActive = true;
+    if (n.inTodo === true && !shouldBeActive) {
+      n.inTodo = false; n.todoOrder = null; changed = true;
+      try { await updateDoc(uDocRef('notes', n.id), { inTodo: false, todoOrder: null }); } catch(e) {}
+    } else if (n.inTodo !== true && shouldBeActive) {
+      n.inTodo = true;
+      const order = computeAppendOrder();
+      n.todoOrder = order; changed = true;
+      try { await updateDoc(uDocRef('notes', n.id), { inTodo: true, todoOrder: order }); } catch(e) {}
+    }
+  }
+  if (changed) { renderTodo(); renderFocusCard(); renderCalendar(); }
+}
+async function normalizeAllWishTodos() {
+  for (const w of wishes) {
+    if (w.milestones && w.milestones.length) await normalizeWishTodos(w.id);
+  }
+}
+window.normalizeAllWishTodos = normalizeAllWishTodos; // тесты
 
 // новое желание — в конец списка (после максимального wishOrder)
 function nextWishOrder() {
@@ -6394,20 +6614,20 @@ async function confirmWishSuggestion() {
         } catch(e) { console.warn('[Wish] score log save failed', e); }
       }
     }
-    // Создаём задачи в тудушке для каждого milestone
-    // v82: НЕ наверх очереди, а по умному скору — чтобы шаги желания не перекрывали намеченный порядок дня;
-    // равные скоры: первый майлстоун чуть выше второго (порядок шагов сохраняется) — score убывает на 0.5
-    const msBaseSc = smartScoreForFields({ scheduledDate: null, importance: null, effort: null });
-    let msIdx = 0;
+    // Создаём записи-майлстоуны. v89 Н10: в Тудушке у желания висит ТОЛЬКО ОДИН шаг —
+    // первый невыполненный по порядку плана. Остальные создаются с inTodo:false и заезжают
+    // по одному (normalizeWishTodos), когда предыдущий шаг выполнен — Тудушка не засоряется.
+    let msActiveGiven = false;
     for (const ms of milestones) {
       try {
-        const sc = msBaseSc - (msIdx++) * 0.5;
-        const todoOrder = computeSmartOrder(sc);
+        const makeActive = !msActiveGiven && !ms.done;
+        if (makeActive) msActiveGiven = true;
+        const todoOrder = makeActive ? computeSmartOrder(smartScoreForFields({ scheduledDate: null, importance: null, effort: null })) : null;
         const noteRef = await addDoc(notesCol(), {
           text: ms.text,
           type: 'text',
           tag: shortTag,
-          inTodo: true,
+          inTodo: makeActive,
           todoOrder,
           done: false,
           doneAt: null,
@@ -6416,7 +6636,7 @@ async function confirmWishSuggestion() {
           createdAt: new Date().toISOString(),
         });
         // следующая вставка должна учитывать только что добавленную задачу
-        notes.push({ id: noteRef.id, text: ms.text, type: 'text', tag: shortTag, inTodo: true, todoOrder, done: false, doneAt: null, scheduledDate: null, importance: null, effort: null, createdAt: new Date().toISOString() });
+        notes.push({ id: noteRef.id, text: ms.text, type: 'text', tag: shortTag, inTodo: makeActive, todoOrder, done: false, doneAt: null, scheduledDate: null, importance: null, effort: null, createdAt: new Date().toISOString() });
         ms.noteId = noteRef.id;
       } catch(e) {
         console.warn('[Wish] failed to create todo for milestone', ms.id, e);
@@ -6527,17 +6747,19 @@ async function addMilestone(wishId) {
   const msId = 'ms_' + Date.now() + '_' + Math.random().toString(36).slice(2,7);
   const newMs = { id: msId, text: text.trim(), done: false, completedAt: null, noteId: null };
   const milestones = [...(w.milestones || []), newMs];
+  // v89 Н10: новый шаг в конце плана становится активным ТОЛЬКО если активных шагов нет
+  const hasActiveMs = notes.some(n => n.wishId === wishId && n.milestoneLink && n.inTodo === true && !n.done);
   await updateDoc(uDocRef('wishes', wishId), { milestones, state: w.state === 'dream' ? 'plan' : w.state });
 
-  // Создаём задачу в тудушке с тегом желания (v83: В КОНЕЦ очереди — шаги плана пишутся по порядку 1→N
-  // и отображаются так же, умный скор не должен перемешивать шаги)
+  // Создаём задачу в тудушке с тегом желания (v89 Н10: только если активного шага ещё нет;
+  // иначе шаг ждёт в карточке желания и заедет по конвейеру после выполнения предыдущего)
   try {
     const noteRef = await addDoc(notesCol(), {
       text: text.trim(),
       type: 'text',
       tag: w.shortTag || 'желание',
-      inTodo: true,
-      todoOrder: computeAppendOrder(),
+      inTodo: !hasActiveMs,
+      todoOrder: !hasActiveMs ? computeAppendOrder() : null,
       done: false,
       doneAt: null,
       milestoneLink: wishId + '/' + msId,
@@ -6631,12 +6853,14 @@ async function editMilestone(wishId, msId) {
   if (!ms) return;
   if (!ms.noteId || !notes.find(x => x.id === ms.noteId)) {
     try {
+      // v89 Н10: ленивая карточка шага — активна только если активных шагов нет
+      const hasActiveMs = notes.some(n => n.wishId === wishId && n.milestoneLink && n.inTodo === true && !n.done);
       const noteRef = await addDoc(notesCol(), {
         text: ms.text,
         type: 'text',
         tag: w.shortTag || 'желание',
-        inTodo: true,
-        todoOrder: computeAppendOrder(), // v83: шаг — в конец очереди (порядок 1→N)
+        inTodo: !hasActiveMs && ms.done !== true,
+        todoOrder: !hasActiveMs && ms.done !== true ? computeAppendOrder() : null, // v83: шаг — в конец очереди (порядок 1→N)
         done: ms.done === true,
         doneAt: ms.done === true ? (ms.completedAt || new Date().toISOString()) : null,
         milestoneLink: wishId + '/' + msId,
@@ -6717,6 +6941,7 @@ window.regenerateWishMoodImage = regenerateWishMoodImage;
 
 // ── WISH DETAIL MODAL — большая красивая карточка с milestones, state, perspectives ──
 async function openWishDetail(id) {
+  try { window.__questEvent('open-wish-detail'); } catch(e) {} // v89: квест-шаг 9
   const w = wishes.find(x => x.id === id);
   if (!w) return;
   const cat = WISH_CATEGORIES[w.category] || WISH_CATEGORIES.other;
@@ -6795,10 +7020,11 @@ async function openWishDetail(id) {
           ${totalMs === 0 ? '<div style="font-size:12px;color:rgba(255,255,255,0.4);padding:10px;text-align:center;background:rgba(255,255,255,0.02);border-radius:8px;">Пока нет шагов. Добавь первый!</div>' : ''}
           <div style="display:flex;flex-direction:column;gap:6px;">
             ${(w.milestones || []).map(m => `
-              <div style="display:flex;flex-direction:column;gap:4px;">
+              <div data-ms-row style="display:flex;flex-direction:column;gap:4px;">
                 <div style="display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:8px;background:rgba(255,255,255,0.03);border:0.5px solid rgba(255,255,255,0.06);">
+                  <div onpointerdown="msDragStart(event,'${w.id}','${m.id}')" title="Перетащить — поменять порядок шагов" style="flex-shrink:0;cursor:grab;color:rgba(255,255,255,0.32);font-size:13px;padding:0 1px;touch-action:none;user-select:none;-webkit-user-select:none;">⠿</div>
                   <button onclick="toggleMilestone('${w.id}','${m.id}')" style="flex-shrink:0;width:22px;height:22px;border-radius:50%;border:1.5px solid ${m.done ? 'rgba(0,255,140,0.8)' : 'rgba(255,255,255,0.3)'};background:${m.done ? 'rgba(0,255,140,0.8)' : 'transparent'};color:#fff;font-size:11px;cursor:pointer;display:flex;align-items:center;justify-content:center;font-weight:700;">${m.done ? '✓' : ''}</button>
-                  <div onclick="editMilestone('${w.id}','${m.id}')" title="Открыть карточку шага" style="flex:1;min-width:0;font-size:12.5px;color:${m.done ? 'rgba(255,255,255,0.5)' : 'rgba(255,255,255,0.9)'};line-height:1.4;text-decoration:${m.done ? 'line-through' : 'none'};word-break:break-word;cursor:pointer;font-family:Inter,sans-serif;">${escHtml(m.text)}</div>
+                  <div onclick="editMilestone('${w.id}','${m.id}')" title="Открыть карточку шага" style="flex:1;min-width:0;font-size:12.5px;color:${m.done ? 'rgba(255,255,255,0.5)' : 'rgba(255,255,255,0.9)'};line-height:1.4;text-decoration:${m.done ? 'line-through' : 'none'};word-break:break-word;cursor:pointer;font-family:Inter,sans-serif;">${escHtml(m.text)}${((w.milestones || []).findIndex(x => x.id === m.id) === 0 && !m.done) ? '<span style="font-size:10px;color:rgba(139,92,246,0.8);margin-left:6px;white-space:nowrap;">· в Тудушке</span>' : ''}</div>
                   <button onclick="deleteMilestone('${w.id}','${m.id}')" style="flex-shrink:0;background:none;border:none;color:rgba(255,80,80,0.5);font-size:14px;cursor:pointer;padding:2px;">🗑</button>
                 </div>
                 ${m.noteId ? wishSubtasksHtml(m.noteId, w.id) : ''}
@@ -6845,6 +7071,12 @@ async function openWishDetail(id) {
             <div style="font-size:11px;color:rgba(255,255,255,0.7);line-height:1.5;font-family:Inter,sans-serif;">${escHtml(w.moodImagePrompt)}</div>
           </div>
         ` : ''}
+
+        <!-- v89 Н3: явные кнопки внизу карточки желания -->
+        <div style="display:flex;gap:8px;margin-top:16px;">
+          <button onclick="closeWishDetail()" style="flex:1;padding:11px;border-radius:12px;border:0.5px solid rgba(255,255,255,0.18);background:rgba(255,255,255,0.05);color:rgba(255,255,255,0.75);font-size:13px;font-weight:600;cursor:pointer;font-family:Inter,sans-serif;">← Отмена</button>
+          <button id="wd-save-btn" onclick="wishDetailSave()" style="flex:2;padding:11px;border-radius:12px;border:none;background:linear-gradient(135deg,rgba(108,71,255,0.65),rgba(139,92,246,0.65));color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:Inter,sans-serif;">💾 Сохранить</button>
+        </div>
       </div>
     </div>`;
   // v77: пэд оценок в карточке — правки сначала ЧЕРНОВИК: случайные задевания
@@ -6889,6 +7121,77 @@ function closeWishDetail() {
   if (modal) modal.classList.remove('open');
 }
 window.closeWishDetail = closeWishDetail;
+
+// v89 Н3: «Сохранить» внизу карточки — подтверждение и закрытие (правки состояния/оценок
+// применяются сразу; кнопка даёт привычную точку завершения, как в редакторе записи)
+window.wishDetailSave = function() {
+  const btn = document.getElementById('wd-save-btn');
+  if (btn) { btn.textContent = '✓ Сохранено'; btn.disabled = true; }
+  showToast('💾 Карточка сохранена', 1800);
+  setTimeout(() => closeWishDetail(), 480);
+};
+
+// ── v89 Н4: перетаскивание шагов плана внутри карточки желания ──
+// Драг за ⠿ (pointer events). По отпусканию: новый порядок пишется в wish.milestones,
+// конвейер тудушки пересчитывается (первый невыполненный шаг мог смениться).
+let _msDrag = null;
+function msDragStart(ev, wishId, msId) {
+  ev.preventDefault();
+  ev.stopPropagation();
+  if (_msDrag) return;
+  const w = wishes.find(x => x.id === wishId);
+  if (!w || !w.milestones || w.milestones.length < 2) return;
+  const row = ev.currentTarget.closest('[data-ms-row]');
+  if (!row) return;
+  const listEl = row.parentElement;
+  const rows = Array.from(listEl.querySelectorAll('[data-ms-row]'));
+  const startIndex = rows.indexOf(row);
+  if (startIndex < 0) return;
+  const startY = ev.clientY;
+  let curIndex = startIndex;
+  row.style.zIndex = '60';
+  row.style.position = 'relative';
+  row.style.boxShadow = '0 10px 30px rgba(0,0,0,0.5)';
+  row.style.background = 'rgba(30,26,60,0.97)';
+  _msDrag = { wishId, msId, row };
+  const move = (e) => {
+    if (!_msDrag) return;
+    e.preventDefault();
+    const dy = e.clientY - startY;
+    row.style.transform = 'translateY(' + dy + 'px)';
+    const rect = row.getBoundingClientRect();
+    const mid = rect.top + rect.height / 2;
+    rows.forEach((r, i) => {
+      if (r === row) return;
+      const rr = r.getBoundingClientRect();
+      const rm = rr.top + rr.height / 2;
+      if (i > curIndex && mid > rm) { listEl.insertBefore(row, r.nextSibling); curIndex = i; }
+      else if (i < curIndex && mid < rm) { listEl.insertBefore(row, r); curIndex = i; }
+    });
+  };
+  const up = async () => {
+    window.removeEventListener('pointermove', move);
+    window.removeEventListener('pointerup', up);
+    window.removeEventListener('pointercancel', up);
+    row.style.transform = ''; row.style.zIndex = ''; row.style.position = '';
+    row.style.boxShadow = ''; row.style.background = '';
+    _msDrag = null;
+    if (curIndex !== startIndex) {
+      const arr = w.milestones;
+      const moved = arr.splice(startIndex, 1);
+      arr.splice(curIndex, 0, moved[0]);
+      try {
+        await updateDoc(uDocRef('wishes', wishId), { milestones: arr });
+        await normalizeWishTodos(wishId); // первый невыполненный шаг мог смениться
+      } catch(e) { showToast('Не сохранилось: ' + e.message, 2600); }
+    }
+    openWishDetail(wishId); // перерисовка в новом порядке
+  };
+  window.addEventListener('pointermove', move, { passive: false });
+  window.addEventListener('pointerup', up);
+  window.addEventListener('pointercancel', up);
+}
+window.msDragStart = msDragStart;
 
 // Редактирование промпта для картинки — модалка с textarea
 function editWishMoodPrompt(wishId) {
@@ -7429,66 +7732,213 @@ document.getElementById('wishchat-send').addEventListener('click', async () => {
 });
 document.getElementById('wishchat-input').addEventListener('keydown', e => { if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();document.getElementById('wishchat-send').click();} });
 
-// ── ПРОГРЕССИВНЫЕ ПОДСКАЗКИ (показываются один раз при выполнении условия) ──
+// ── КВЕСТ-ОНБОРДИНГ + ПОДСКАЗКИ (v89) ──
+// Правила: карточка висит ПОКА не нажато «Понял» (автоскрытия больше нет);
+// на экране живёт РОВНО одна подсказка (приоритет у квеста);
+// «Пропустить квест» доступен с любого шага; прогресс хранится в облаке meta/hints_shown.
 let hintsShown = new Set();
 let hintsLoaded = false; // до загрузки hintsShown из Firestore ничего не показываем (иначе повтор)
+let activeHintId = null; // id карточки, которая сейчас на экране
 async function loadHints() {
   try { const snap = await getDocs(uCol('meta')); const d = snap.docs.find(x=>x.id==='hints_shown'); hintsShown = new Set(d ? (d.data().ids||[]) : []); } catch(e) {}
   hintsLoaded = true;
+  // Приложение уже установлено (запущено из-под иконки) — шаг установки засчитан сам
+  try {
+    const standalone = window.matchMedia('(display-mode: standalone)').matches || window.matchMedia('(display-mode: minimal-ui)').matches || window.navigator.standalone === true;
+    if (standalone && !hintsShown.has('q1')) { hintsShown.add('q1'); setTimeout(persistHints, 800); }
+  } catch(e) {}
 }
-// id — уникальный идентификатор подсказки
-// text — текст (с эмодзи)
-// elId — id контейнера куда вставлять
-// condition — optional функция, возвращает true если контекст подходящий
-// возвращает true, если подсказка реально показана (для цепочек)
-function showHintOnce(id, text, elId, condition = null) {
-  if (hintsShown.has(id)) return false;
-  if (condition && typeof condition === 'function' && !condition()) return false;  // контекст не подходит
+async function persistHints() {
+  try { await setDoc(uDocRef('meta','hints_shown'), { ids:[...hintsShown] }); } catch(e) {}
+}
+const HINT_CONTAINERS = ['todo-hint','main-hint','focus-hint','wishes-hint','hist-hint','graph-hint','cloud-hint','calendar-hint','prompt-hint'];
+// какой экран владеет контейнером — карточки рендерим только в ВИДИМЫЙ экран
+const HINT_EL_SCREEN = { 'main-hint':'main','focus-hint':'main','todo-hint':'todo','wishes-hint':'wishes','hist-hint':'hist','calendar-hint':'calendar','cloud-hint':'cloud','graph-hint':'graph','prompt-hint':'prompt' };
+function hideActiveHint() {
+  HINT_CONTAINERS.forEach(hid => { const el = document.getElementById(hid); if (el) el.innerHTML = ''; });
+  activeHintId = null;
+}
+function hintNotInDom(id) { return activeHintId !== id; }
+
+// Карточка-подсказка: обычная (💡) или квестовая (🎯 ШАГ N ИЗ 9)
+function buildHintCard(id, text, opts = {}) {
+  const dots = opts.quest ? Array.from({length: opts.questLast}, (_, i) =>
+    `<span style="width:${i+1 === opts.questN ? '14px' : '6px'};height:6px;border-radius:99px;background:${i+1 < opts.questN ? 'rgba(139,92,246,0.95)' : i+1 === opts.questN ? 'rgba(0,212,255,0.95)' : 'rgba(255,255,255,0.14)'};transition:width .25s;"></span>`
+  ).join('') : '';
+  const head = opts.quest
+    ? `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+        <span style="font-size:9.5px;letter-spacing:1.2px;text-transform:uppercase;font-weight:700;color:rgba(0,212,255,0.9);">🎯 Шаг ${opts.questN} из ${opts.questLast}</span>
+        <span style="display:flex;gap:3px;align-items:center;">${dots}</span></div>`
+    : '';
+  const extraBtn = opts.extraBtn
+    ? `<button class="note-btn note-done" onclick="${opts.extraBtn.fn}">${opts.extraBtn.label}</button>`
+    : '';
+  const skipBtn = opts.quest
+    ? `<button class="note-btn note-undone" onclick="skipQuest()" style="font-size:10.5px;opacity:0.55;">Пропустить квест</button>`
+    : '';
+  return `<div class="note-card hint-card${opts.quest ? ' quest-card' : ''}" data-hint="${id}" style="${opts.quest ? 'border-color:rgba(0,212,255,0.45);background:linear-gradient(135deg,rgba(108,71,255,0.14),rgba(0,212,255,0.05));box-shadow:0 8px 28px rgba(108,71,255,0.18);' : 'border-color:rgba(139,92,246,0.4);background:rgba(108,71,255,0.08);'}">
+    ${head}<div class="note-text">${opts.quest ? text : '💡 ' + text}</div>
+    <div class="note-actions" style="flex-wrap:wrap;gap:6px;">
+      ${extraBtn}<button class="note-btn note-undone" onclick="dismissHint('${id}')">Понял</button>${skipBtn}
+    </div></div>`;
+}
+
+// id — уникальный идентификатор; text — текст (с эмодзи); elId — контейнер;
+// condition — контекст; extraBtn — доп. кнопка {label, fn} («Разрешить», «Написать»…)
+// НИКАКОГО автоскрытия: карточка висит, пока не нажато «Понял»/кнопка.
+function showHintOnce(id, text, elId, condition = null, extraBtn = null, opts = {}) {
+  if (!hintsLoaded || hintsShown.has(id) || activeHintId) return false;
+  if (condition && typeof condition === 'function' && !condition()) return false;
   const el = document.getElementById(elId);
   if (!el) return false;
-  el.innerHTML = `<div class="note-card" style="border-color:rgba(139,92,246,0.4);background:rgba(108,71,255,0.08);"><div class="note-text">💡 ${text}</div><div class="note-actions"><button class="note-btn note-undone" onclick="dismissHint('${id}')">Понял</button></div></div>`;
-  // Подсказка не висит вечно: через 7с гасим сами и запоминаем флаг
-  setTimeout(() => {
-    if (hintsShown.has(id)) return;
-    const cur = document.getElementById(elId);
-    if (cur) cur.innerHTML = '';
-    hintsShown.add(id);
-    try { setDoc(uDocRef('meta','hints_shown'), { ids:[...hintsShown] }).catch(() => {}); } catch(e) {}
-  }, 7000);
+  if (HINT_EL_SCREEN[elId] && _lastHintScreen !== HINT_EL_SCREEN[elId]) return false; // экран не активен — подождём
+  el.innerHTML = buildHintCard(id, text, Object.assign({ extraBtn }, opts));
+  activeHintId = id;
   return true;
 }
 async function dismissHint(id) {
+  if (activeHintId === id) { hideActiveHint(); }
   hintsShown.add(id);
-  // Очищаем все возможные контейнеры подсказок
-  ['todo-hint','main-hint','focus-hint','wishes-hint','hist-hint','graph-hint','cloud-hint','calendar-hint'].forEach(hid => {
-    const el = document.getElementById(hid);
-    if (el) el.innerHTML = '';
-  });
-  try { await setDoc(uDocRef('meta','hints_shown'), { ids:[...hintsShown] }); } catch(e) {}
+  persistHints();
+  //Quest-шаг закрыт кнопкой «Понял» → следующий шаг появится сам через refresh
+  if (String(id).startsWith('q')) setTimeout(() => refreshHintsNow(), 200);
+  else setTimeout(() => refreshHintsNow(), 200);
 }
 window.dismissHint = dismissHint;
 
 // Цепочка подсказок: показываем ПЕРВУЮ непоказанную, чей контекст подошёл — по одной за раз.
-// Следующая вылезет при следующем заходе на экран (по мере освоения приложения).
 function hintChain(list) {
-  for (const [id, text, elId, cond] of list) {
-    if (showHintOnce(id, text, elId, cond)) return;
+  for (const item of list) {
+    const [id, text, elId, cond, extraBtn, opts] = item;
+    if (showHintOnce(id, text, elId, cond, extraBtn || null, opts || null)) return;
   }
 }
 
-// Обучение на главном: приветствие → история → тудушка → жесты → календарь → желания → настройки
+// ── КВЕСТ: 9 шагов ──
+const QUEST_LAST = 9;
+function questSkipped() { return hintsShown.has('quest_skipped'); }
+function questStepDone(n) { return hintsShown.has('q' + n); }
+function currentQuestStep() {
+  if (questSkipped()) return null;
+  for (let i = 1; i <= QUEST_LAST; i++) if (!questStepDone(i)) return i;
+  return null; // квест пройден
+}
+function completeQuestStep(n) {
+  if (questStepDone(n)) return;
+  hintsShown.add('q' + n);
+  persistHints();
+  hideActiveHint();
+  setTimeout(() => refreshHintsNow(), 250);
+}
+function skipQuest() {
+  for (let i = 1; i <= QUEST_LAST; i++) hintsShown.add('q' + i);
+  hintsShown.add('quest_skipped');
+  persistHints();
+  hideActiveHint();
+  showToast('Квест пропущен — обычные подсказки в разделах останутся', 2800);
+}
+window.skipQuest = skipQuest;
+// Жесты/визиты, закрывающие шаги (вызываются из соответствующих мест приложения)
+window.__questEvent = function(kind) {
+  const step = currentQuestStep();
+  if (!step) return;
+  if (kind === 'visit-hist' && step === 3) completeQuestStep(3);
+  else if (kind === 'visit-todo' && step === 4) completeQuestStep(4);
+  else if (kind === 'task-gesture' && step === 5) completeQuestStep(5);
+  else if (kind === 'chat-msg' && step === 6) completeQuestStep(6);
+  else if (kind === 'visit-calendar' && step === 7) completeQuestStep(7);
+  else if (kind === 'visit-wishes' && step === 8) completeQuestStep(8);
+  else if (kind === 'open-wish-detail' && step === 9) completeQuestStep(9);
+  else if (kind === 'first-note' && step === 2) completeQuestStep(2);
+};
+// Пытаемся показать карточку текущего шага квеста на ТЕКУЩЕМ экране.
+// Возвращает true, если карточка квеста показана (обычные подсказки подождут).
+function tryShowQuest() {
+  const step = currentQuestStep();
+  if (!step || activeHintId) return false;
+  const q = (n) => questStepDone(n);
+  const Q = {
+    1: { el: 'main-hint', ok: true, text: '📲 <b>Установи Хэзэнштейн на рабочий стол</b> — как приложение, чтобы всегда было под рукой. Так не упустишь ни одной своей мысли' },
+    2: { el: 'main-hint', ok: true, text: '👋 Привет! Это <b>Хэзэнштейн</b> — твоё личное пространство. Начни с главного: <b>зажми круглую кнопку и говори</b> — отпустишь, станет заметкой. Или напиши в поле сверху и жми ➤. ИИ сам разберёт, что это — дело, мысль или идея' },
+    3: { el: 'main-hint', ok: q(2), text: '✅ Поехали! Каждая запись сохраняется навсегда. <b>Открой Историю</b> — вкладка 🕐 внизу' },
+    4: { el: 'main-hint', ok: q(3), text: '📚 Освоился? Теперь <b>Тудушка</b> — вкладка ☑️ внизу. Там живут твои дела: напиши «позвонить маме завтра» — ИИ сам поймёт, что это задача. Шаги из желаний тоже приходят сюда — по одному' },
+    5: { el: 'todo-hint', ok: q(4) && getTodoQueue().filter(n => !n.done).length >= 1, text: '☑️ Управляй задачами: <b>тапни по карточке</b> — откроется целиком. <b>Смахни вправо</b> на главном — отложится пониже. <b>Перечеркни весь экран крест-накрест (Х)</b> — задача выполнена' },
+    6: { el: 'main-hint', ok: q(5), text: '💬 А ещё можно <b>просто поговорить</b>: вкладка 💬 внизу. Спроси «что у меня на сегодня?» — получишь разбор своих записей' },
+    7: { el: 'main-hint', ok: q(6), text: '📅 Планируй по дням: <b>Календарь</b> — вкладка внизу. Кнопка <b>«🎯 Раскидать»</b> разложит задачи сама — тяни задачу на нужный день' },
+    8: { el: 'main-hint', ok: q(7), text: '🌠 Пора о большом: <b>золотая плашка «Желания»</b> под полем ввода. Цель, шаги-майлстоуны и настроение' },
+    9: { el: 'wishes-hint', ok: q(8), text: '🌠 <b>Тапни по желанию</b> — откроются детали: картинка мечты, шаги и чат, где помогут разбить цель на шаги. В Тудушку шаги приходят по одному: сделаешь один — придёт следующий' }
+  };
+  const st = Q[step];
+  if (!st || !st.ok) return false;
+  const el = document.getElementById(st.el);
+  if (!el) return false;
+  if (HINT_EL_SCREEN[st.el] && _lastHintScreen !== HINT_EL_SCREEN[st.el]) return false; // карточка шага живёт на своём экране
+  el.innerHTML = buildHintCard('q' + step, st.text, { quest: true, questN: step, questLast: QUEST_LAST });
+  activeHintId = 'q' + step;
+  return true;
+}
+
+// Обычные подсказки текущего экрана (показываются ТОЛЬКО когда квест молчит)
+function showOrdinaryHints(screen) {
+  if (!hintsLoaded || activeHintId || tryShowQuest()) return;
+  if (screen === 'main') {
+    if (_wishOfferPending && !activeHintId) { // v89 Н7: оффер желания, пойманный на другом экране
+      const o = _wishOfferPending; _wishOfferPending = null;
+      renderWishOffer(o);
+      if (activeHintId) return;
+    }
+    hintChain([
+      ['dev_feedback', 'Есть идея, баг или что-то бесит? <b>Напиши разработчику</b> — он читает всё и отвечает', 'main-hint',
+        () => notes.length >= 12, { label: '✍️ Написать', fn: "dismissHint('dev_feedback'); goTo('devchat');" }],
+      ['notif_hint', 'Напоминания могут приходить <b>прямо на телефон</b> — даже когда приложение свёрнуто. Разреши уведомления — не пропустишь свою задачу', 'main-hint',
+        () => notes.some(n => n.scheduledDate || n.scheduledTime) && typeof Notification !== 'undefined' && Notification.permission === 'default',
+        { label: '🔔 Разрешить', fn: "dismissHint('notif_hint'); requestReminderPermission();" }],
+      ['stale_14', 'Есть задачи, которые висят без движения 14+ дней. В вечернем итоге дня ИИ разберёт, почему они не делаются, и предложит микро-шаги', 'main-hint',
+        () => typeof getLongStaleNotes === 'function' && getLongStaleNotes().length >= 1]
+    ]);
+    if (!activeHintId) setTimeout(() => { maybeSuggestTag().catch(() => {}); }, 300); // v89 Н9: тег-предложение — в хвосте очереди
+  } else if (screen === 'hist') {
+    hintChain([
+      ['use_tags', '🏷 Теги: выбери сферу под полем ввода на главном — прикрепится к следующей записи. А здесь записи можно отфильтровать по тегу — чипы под фильтрами дат. Новые теги: ⚙️ в чате ИИ → «Управление тегами».', 'hist-hint', () => notes.length >= 3],
+      ['notes_30', '📊 Уже 30+ записей! Загляни в 🌌 Граф — увидишь свои сферы жизни, желания и связи между записями.', 'hist-hint', () => notes.length >= 30]
+    ]);
+  } else if (screen === 'todo') {
+    hintChain([
+      ['todo_drag', 'Тащи за ⠿ чтобы поменять порядок. Жми ▲ — задача улетит на самый верх очереди.', 'todo-hint', () => notes.filter(n => n.inTodo && !n.done && !n.urgent).length >= 2],
+      ['todo_up_top', '▲ поднимает наверх сразу: карточка летит, соседки расступаются, задача становится первой — и главной на главном экране.', 'todo-hint', () => notes.filter(n => n.inTodo && !n.done && !n.urgent).length >= 2],
+      ['stale_tasks', '🟡 Янтарным подсвечены задачи, которые висят больше 10 дней. Пора сделать — или поставь будущий срок, и подсветка уйдёт.', 'todo-hint', () => notes.some(isStaleNote)],
+      ['todo_urgent', '🔥 Говори «срочно» — задача сама встанет на самый верх очереди и подсветится красным.', 'todo-hint', () => notes.some(n => n.urgent && !n.done)]
+    ]);
+  } else if (screen === 'calendar') {
+    showHintOnce('calendar_intro2', '📅 Тап на день — план дня. Свайп влево/вправо — листать месяцы. Тап по задаче — редактор: текст, тег, срок, удалить. 🎯 Раскидать — тяни задачу на день. Долгое нажатие — перетащить.', 'calendar-hint', () => notes.filter(n => n.inTodo).length >= 1);
+  } else if (screen === 'wishes') {
+    hintChain([
+      ['wishes_intro', 'Тап на желание — детали и чат с ИИ. Ручка ⠿ — перетащи, чтобы поменять порядок.', 'wishes-hint', () => wishes.length >= 1],
+      ['first_wish', 'Тапни на карточку желания — откроются детали: mood-image, milestones, AI-наставники.', 'wishes-hint', () => wishes.length >= 1 && hintsShown.has('wishes_intro')]
+    ]);
+  } else if (screen === 'cloud') {
+    showHintOnce('cloud_intro', '☁️ Облако слов показывает что у тебя в фокусе. Чем больше записей — тем информативнее.', 'cloud-hint', () => notes.length >= 10);
+  } else if (screen === 'graph') {
+    showHintOnce('graph_intro', '🌌 Тапни по узлу-сфере — увидишь записи внутри. Линии — связи между записями и желаниями.', 'graph-hint', () => true);
+  } else if (screen === 'prompt') {
+    showHintOnce('kb_hint', '🧠 База знаний: Хэзэнштейн перечитывает твои заметки и помнит контекст — ИИ отвечает точнее. Обновляй базу кнопкой ниже раз в неделю.', 'prompt-hint', () => true);
+  }
+}
+
+// Точка входа подсказок для экрана (квест приоритетнее обычных)
+let _lastHintScreen = 'main';
+function showScreenHints(screen) {
+  if (!hintsLoaded) return;
+  _lastHintScreen = screen;
+  hideActiveHint();
+  showOrdinaryHints(screen);
+}
+function refreshHintsNow() { if (activeHintId) return; showOrdinaryHints(_lastHintScreen); }
+
+// Обучение на главном: квест (шаги 1-4, 6-8) → обычные подсказки
 function showMainHints() {
   if (!hintsLoaded) return;
-  hintChain([
-    ['onb_1_add', '👋 Привет! Это твоё личное пространство. Добавь первую заметку: напиши в поле сверху и нажми ➤ — или нажми 🎤 и говори.', 'main-hint', () => notes.length === 0],
-    ['onb_2_hist', '✅ Первая запись есть! Все записи живут в Истории — вкладка 🕐 в доке внизу.', 'main-hint', () => notes.length >= 1],
-    ['onb_4_todo', '📋 Теперь держи дела в Тудушке — вкладка ☑️ внизу. ИИ сам понимает из текста, что это задача.', 'main-hint', () => notes.length >= 2],
-    ['main_x', 'Перечеркни весь экран крест-накрест («Х») — отметит текущую задачу выполненной.', 'main-hint', () => notes.filter(n => n.inTodo && !n.done).length >= 1],
-    ['focus_gestures', '🎯 Тапни на карточку задачи — откроется целиком. Смахни вправо — отложится пониже в очереди.', 'focus-hint', () => notes.filter(n => n.inTodo && !n.done).length >= 1],
-    ['onb_6_calendar', '📅 Планируй по дням в Календаре — вкладка внизу. Кнопка «🎯 Раскидать» разложит задачи по дням сама.', 'main-hint', () => notes.some(n => n.inTodo)],
-    ['onb_7_wishes', '🌠 Мечтай масштабно: золотая плашка «Желания» под полем ввода — цель, шаги и настроение.', 'main-hint', () => notes.length >= 4],
-    ['onb_8_settings', '⚙️ Настройки, теги и правила для ИИ — в чате с ИИ, иконка ⚙️ в шапке.', 'main-hint', () => notes.length >= 4]
-  ]);
+  showScreenHints('main');
 }
 window.showMainHints = showMainHints;
 
@@ -7517,12 +7967,19 @@ function isFutureTodo(n) {
 function getTodoMainQueue() { // тир A — то, что реально требует внимания сегодня
   return getTodoQueue().filter(n => !isFutureTodo(n));
 }
-function splitTodoQueue() { // визуальный порядок списка: тир A, потом тир B по дате/времени
+function splitTodoQueue() { // v89 Н6: срочные → отдельно (самый верх); «на завтра» — хвост сегодняшней очереди; дальше — по датам
   const q = getTodoQueue();
-  const main = q.filter(n => !isFutureTodo(n));
-  const future = q.filter(isFutureTodo).sort((a, b) =>
+  const tmKey = formatDateKey(new Date(Date.now() + 86400000));
+  const isTomorrow = n => isFutureTodo(n) && n.scheduledDate === tmKey;
+  const urgent = q.filter(n => n.urgent === true && (!isFutureTodo(n) || isTomorrow(n)))
+    .sort((a, b) => (a.todoOrder ?? 0) - (b.todoOrder ?? 0));
+  const urgentIds = new Set(urgent.map(n => n.id));
+  const main = q.filter(n => !n.urgent && !isFutureTodo(n));
+  const tomorrow = q.filter(n => !urgentIds.has(n.id) && isTomorrow(n))
+    .sort((a, b) => ((a.scheduledTime || '99:99') + (a.todoOrder ?? 0)).localeCompare((b.scheduledTime || '99:99') + (b.todoOrder ?? 0)) || (a.todoOrder ?? 0) - (b.todoOrder ?? 0));
+  const future = q.filter(n => isFutureTodo(n) && n.scheduledDate > tmKey).sort((a, b) =>
     ((a.scheduledDate + (a.scheduledTime || '')) || '').localeCompare((b.scheduledDate + (b.scheduledTime || '')) || ''));
-  return { main, future };
+  return { urgent, main, tomorrow, future };
 }
 
 // ── УМНАЯ СОРТИРОВКА (v82) ──
@@ -7530,6 +7987,7 @@ function splitTodoQueue() { // визуальный порядок списка:
 // Новые задачи встают ПО СКОРУ (не перекрывают намеченный порядок), а кнопка «✨ Умно»
 // пересобирает всю очередь разом. Ручные правки (▲ / драг) остаются как есть до следующей пересборки.
 function smartScore(n) {
+  if (n.urgent) return 999; // v89 Н6: срочное — всегда самый верх (и в ✨ Умно, и при вставке новой)
   let s = 40; // база: без срока, важность 3, объём M
   const today = formatDateKey(new Date());
   if (n.scheduledDate) {
@@ -7595,13 +8053,15 @@ async function renormalizeTodoQueue() {
 
 // кнопка «✨ Умно»: пересобрать ВСЮ очередь по скору (срочность + важность + объём + время суток)
 async function smartSortTodo() {
-  const { main, future } = splitTodoQueue();
-  if (main.length + future.length < 2) { showToast('В очереди меньше двух задач — сортировать нечего 🙂', 2600); return; }
+  const { urgent, main, tomorrow, future } = splitTodoQueue();
+  if (urgent.length + main.length + tomorrow.length + future.length < 2) { showToast('В очереди меньше двух задач — сортировать нечего 🙂', 2600); return; }
   // v87: тир A — по скору; тир B («на потом») — всегда ниже и по датам: скор будущей
-  // задачи больше не выбивает её наверх очереди сегодняшних дел
+  // задачи больше не выбивает её наверх очереди сегодняшних дел.
+  // v89: срочные — впереди всех (скор 999 сам их поднимает), «на завтра» — хвост очереди до разделителя
   const sorted = [
-    ...[...main].sort((a, b) => smartScore(b) - smartScore(a)), // стабильная сортировка: равные скоры сохраняют порядок
-    ...future, // splitTodoQueue уже отсортировал их по дате/времени
+    ...[...urgent, ...main].sort((a, b) => smartScore(b) - smartScore(a)), // стабильная сортировка: равные скоры сохраняют порядок
+    ...tomorrow, // по времени/порядку (splitTodoQueue отсортировал)
+    ...future,   // по датам (splitTodoQueue отсортировал)
   ];
   try {
     for (let i = 0; i < sorted.length; i++) {
@@ -7624,7 +8084,7 @@ window.smartScoreForFields = smartScoreForFields; // тесты/отладка: 
 
 // скор для ещё НЕ созданной задачи (поля известны до записи в базу)
 function smartScoreForFields(f) {
-  return smartScore({ scheduledDate: f.scheduledDate || null, importance: f.importance, effort: f.effort });
+  return smartScore({ scheduledDate: f.scheduledDate || null, importance: f.importance, effort: f.effort, urgent: f.urgent === true });
 }
 
 // ── ПОДЗАДАЧИ (v82) ──
@@ -7676,12 +8136,14 @@ function renderFocusCard() {
   let html = '';
 
   const queue = getTodoMainQueue(); // v87: фокус — только «сегодняшний» тир, задачи на потом не звонят в фокусе
+  queue.sort((a, b) => (b.urgent === true) - (a.urgent === true)); // v89 Н6: срочное — в фокусе первым
   if (queue.length) {
     const top = queue[0];
     const restCount = queue.length - 1;
     // v81: дата/время (если назначены) и основной тег — прямо в фокус-карточке
     const whenStr = whenBadgeStr(top); // «📅 25 сент. 15:00» (+ ⚠ если просрочено)
     const metaBits = [];
+    if (top.urgent === true) metaBits.push('🔥 Срочно');
     if (whenStr) metaBits.push(whenStr);
     if (top.tag) metaBits.push('🏷 ' + escHtml(top.tag));
     // v82: подзадачи — путь к старшей задаче и прогресс по детям
@@ -8175,8 +8637,8 @@ async function persistTodoOrderNow() {
   if (_todoPersistBusy) { scheduleTodoPersist(); return; } // запись идёт — переназначим на неё
   _todoPersistBusy = true;
   try {
-    const { main, future } = splitTodoQueue();
-    const visual = main.concat(future); // v87: пишем порядок В ВИЗУАЛЬНОМ виде (тир A → тир B)
+    const { urgent, main, tomorrow, future } = splitTodoQueue();
+    const visual = urgent.concat(main, tomorrow, future); // v89: пишем порядок В ВИЗУАЛЬНОМ виде (срочные → тир A → завтра → тир B)
     await Promise.all(visual.map((n, i) => updateDoc(uDocRef('notes', n.id), { todoOrder: i + 1 })));
   } catch(e) { alert('Ошибка сортировки: ' + e.message); }
   _todoPersistBusy = false;
@@ -8191,8 +8653,8 @@ async function reorderTodo(id, newIndex) {
   // Оптимистичный порядок: карточка мгновенно остаётся там, куда её утащили.
   // Локальный state мутируется ДО любых await, рендер синхронный — сеть вообще
   // не участвует в мгновенной перестановке карточек.
-  const { main, future } = splitTodoQueue();
-  const visual = main.concat(future); // v87: работаем в визуальном порядке (тир A → тир B)
+  const { urgent, main, tomorrow, future } = splitTodoQueue();
+  const visual = urgent.concat(main, tomorrow, future); // v89: работаем в визуальном порядке (срочные → тир A → завтра → тир B)
   const dragged = visual.find(n => n.id === id);
   if (!dragged) return;
   const dragFut = isFutureTodo(dragged);
@@ -8571,33 +9033,82 @@ function whenBadgeStr(n) {
   return (overdue ? '⚠ ' : '') + '📅 ' + lbl;
 }
 
+// v89 Н9: активный тег-фильтр тудушки (null = все)
+let activeTodoTag = null;
+window.setTodoTag = function(tag) {
+  activeTodoTag = (activeTodoTag === tag) ? null : tag;
+  renderTodo();
+};
 function renderTodo() {
   const el = document.getElementById('todo-list');
   if (!el) return;
-  const { main, future } = splitTodoQueue();
+  let { urgent, main, tomorrow, future } = splitTodoQueue();
+  // v89 Н6: наступившее «завтра» улетает наверх — одноразовый бамп при переходе даты
+  try {
+    const _tKey = formatDateKey(new Date());
+    tomorrow.concat(future).forEach(n => { if (!n.done && !localStorage.getItem('hz3_mat_' + n.id)) localStorage.setItem('hz3_mat_' + n.id, '1'); });
+    const matured = main.filter(n => n.scheduledDate === _tKey && !n.done && localStorage.getItem('hz3_mat_' + n.id) === '1');
+    if (matured.length) {
+      matured.forEach(n => localStorage.removeItem('hz3_mat_' + n.id));
+      (async () => {
+        for (let i = 0; i < matured.length; i++) {
+          try { await updateDoc(uDocRef('notes', matured[i].id), { todoOrder: computeSmartOrder(88 - i * 0.5) }); } catch(e) {}
+        }
+        await loadNotes();
+        showToast('📅 Наступил срок — задача поднялась в очереди', 2600);
+      })();
+    }
+  } catch(e) {}
+  // v89 Н9: фильтр по тегу в тудушке (чипы как в Истории)
+  if (activeTodoTag) {
+    const f = n => (n.tag || '') === activeTodoTag;
+    urgent = urgent.filter(f); main = main.filter(f); tomorrow = tomorrow.filter(f); future = future.filter(f);
+  }
+  try {
+    const tagsBox = document.getElementById('todo-tags');
+    if (tagsBox) {
+      const tCounts = {};
+      notes.filter(n => n.inTodo && !n.done && n.tag).forEach(n => { tCounts[n.tag] = (tCounts[n.tag] || 0) + 1; });
+      const tagList = Object.keys(tCounts).sort((a, b) => tCounts[b] - tCounts[a]).slice(0, 8);
+      if (tagList.length >= 2) {
+        tagsBox.style.display = 'flex';
+        tagsBox.innerHTML = tagList.map(t => {
+          const on = activeTodoTag === t;
+          return `<button onclick="setTodoTag('${escHtml(t).replace(/'/g, "\\'")}')" style="flex-shrink:0;padding:4px 11px;border-radius:99px;font-size:11px;font-weight:600;font-family:Inter,sans-serif;cursor:pointer;border:0.5px solid ${on ? 'rgba(0,212,255,0.7)' : 'rgba(255,255,255,0.14)'};background:${on ? 'rgba(0,212,255,0.16)' : 'rgba(255,255,255,0.05)'};color:${on ? 'rgba(160,235,255,0.98)' : 'rgba(255,255,255,0.6)'};">${escHtml(t)} · ${tCounts[t]}</button>`;
+        }).join('') + (activeTodoTag ? `<button onclick="setTodoTag('${escHtml(activeTodoTag).replace(/'/g, "\\'")}')" style="flex-shrink:0;padding:4px 10px;border-radius:99px;font-size:11px;font-family:Inter,sans-serif;cursor:pointer;border:0.5px solid rgba(255,110,110,0.35);background:none;color:rgba(255,110,110,0.8);">✕ сброс</button>` : '');
+      } else {
+        tagsBox.style.display = 'none';
+        if (activeTodoTag) activeTodoTag = null;
+      }
+    }
+  } catch(e) {}
+  const totalAll = urgent.length + main.length + tomorrow.length + future.length;
   document.getElementById('todo-count').textContent =
-    main.length + ' в очереди' + (future.length ? ' · ' + future.length + ' на потом' : '');
-  if (!main.length && !future.length) {
-    el.innerHTML = '<div class="hist-empty"><div class="hist-empty-icon">📋</div>Список пуст — напиши задачу на главном, ИИ сам поставит её сюда. Или добавь из Истории кнопкой «В тудулист»</div>';
+    (urgent.length + main.length + tomorrow.length) + ' в очереди' + (future.length ? ' · ' + future.length + ' на потом' : '');
+  if (!totalAll) {
+    el.innerHTML = '<div class="hist-empty"><div class="hist-empty-icon">📋</div>' + (activeTodoTag ? 'С этим тегом задач нет' : 'Список пуст — напиши задачу на главном, ИИ сам поставит её сюда. Или добавь из Истории кнопкой «В тудулист»') + '</div>';
     return;
   }
-  const cardHtml = (n, i) => {
+  const cardHtml = (n, i, zone) => {
     const whenStr = whenBadgeStr(n);
     const whenStyle = n.scheduledDate && n.scheduledDate < formatDateKey(new Date()) ? ' style="color:rgba(255,110,110,0.9);"' : '';
     const stale = isStaleNote(n);
     const staleTitle = stale ? ` title="Висит уже ${Math.floor((Date.now() - new Date(n.createdAt).getTime()) / 86400000)} дн."` : '';
-    const isFut = isFutureTodo(n);
+    const isUrg = zone === 'urgent';
+    const isFut = zone === 'future' || zone === 'tomorrow'; // v89: «на завтра» тоже без ручек — срок уже назначен
     // v87: у задач «на потом» нет ▲ и ⠿ — тир B сортируется по дате сам,
-    // а «поднять на сегодня» = снять/переназначить дату в редакторе
+    // а «поднять на сегодня» = снять/переназначить дату в редакторе.
+    // v89: у срочных тоже нет ⠿ (они прибиты к верху), но ▲ работает внутри срочного блока.
+    const urgBorder = isUrg ? 'border-color:rgba(255,90,90,0.45);box-shadow:0 0 18px rgba(255,80,80,0.10);' : '';
     return `
-    <div class="note-card${stale ? ' note-stale' : ''}" data-id="${n.id}"${staleTitle} onclick="todoCardTap('${n.id}')" style="display:flex;gap:10px;align-items:flex-start;cursor:pointer;">
+    <div class="note-card${stale ? ' note-stale' : ''}" data-id="${n.id}"${staleTitle} onclick="todoCardTap('${n.id}')" style="display:flex;gap:10px;align-items:flex-start;cursor:pointer;${urgBorder}">
       <div style="display:flex;flex-direction:column;align-items:center;flex-shrink:0;gap:7px;">
         <button class="todo-up-btn" title="Наверх — станет первой" onclick="moveTodoTop('${n.id}');event.stopPropagation();"${(i === 0 || isFut) ? ' style="visibility:hidden;"' : ''}>▲</button>
-        <div class="todo-drag-handle"${isFut ? ' style="visibility:hidden;"' : ''}>⠿</div>
+        <div class="todo-drag-handle"${isFut || isUrg ? ' style="visibility:hidden;"' : ''}>⠿</div>
       </div>
       <div style="flex:1;min-width:0;">
         <div class="note-meta">
-          <span class="note-date"${whenStyle}>#${i+1}${n.tag ? ' · ' + n.tag : ''}${whenStr ? ' · ' + whenStr : ''}${n.details ? ' · 📝' : ''}</span>
+          <span class="note-date"${whenStyle}>#${i+1}${isUrg ? ' · 🔥 Срочно' : ''}${n.tag ? ' · ' + n.tag : ''}${whenStr ? ' · ' + whenStr : ''}${n.details ? ' · 📝' : ''}</span>
           <button class="note-copy-btn" title="Скопировать текст" onclick="copyNoteText('${n.id}');event.stopPropagation();">${COPY_ICON_SVG}</button>
         </div>
         <div class="note-text">${escHtml(n.text)}</div>
@@ -8610,7 +9121,11 @@ function renderTodo() {
     </div>
   `;
   };
-  let html = main.map((n, i) => cardHtml(n, i)).join('');
+  let html = '';
+  let idx = 0;
+  if (urgent.length) html += urgent.map((n, i) => cardHtml(n, idx++, 'urgent')).join('');
+  html += main.map((n, i) => cardHtml(n, idx++, 'main')).join('');
+  html += tomorrow.map((n, i) => cardHtml(n, idx++, 'tomorrow')).join('');
   if (future.length) {
     html += `
     <div class="todo-future-divider" style="display:flex;align-items:center;gap:10px;margin:14px 0 10px;">
@@ -8618,13 +9133,14 @@ function renderTodo() {
       <div style="font-size:10.5px;letter-spacing:0.6px;text-transform:uppercase;font-weight:600;color:rgba(255,209,102,0.75);white-space:nowrap;">📅 На потом — по датам (${future.length})</div>
       <div style="flex:1;height:0.5px;background:rgba(255,255,255,0.12);"></div>
     </div>`;
-    html += future.map((n, j) => cardHtml(n, main.length + j)).join('');
+    html += future.map((n, j) => cardHtml(n, idx++, 'future')).join('');
   }
   el.innerHTML = html;
 }
 // тап по карточке тудушки = редактор (сразу после драга не срабатывает — защита от синтетического клика)
 function todoCardTap(id) {
   if (Date.now() - (window.__todoDragEndTs || 0) < 400) return;
+  try { window.__questEvent('task-gesture'); } catch(e) {} // v89: тап по карточке = шаг квеста 5
   openEdit(id);
 }
 window.todoCardTap = todoCardTap;
@@ -8664,19 +9180,19 @@ function goTo(screen) {
   document.getElementById('screen-' + screen).classList.add('active');
   const dockBtn = document.getElementById('dock-' + screen);
   if (dockBtn) dockBtn.classList.add('active');
-  if (screen === 'main') showMainHints();
+  // v89: единая точка подсказок (квест приоритетнее) + события квеста «визит в раздел»
+  showScreenHints(screen);
+  if (hintsLoaded) {
+    if (screen === 'hist') window.__questEvent('visit-hist');
+    else if (screen === 'todo') window.__questEvent('visit-todo');
+    else if (screen === 'calendar') window.__questEvent('visit-calendar');
+    else if (screen === 'wishes') window.__questEvent('visit-wishes');
+  }
   if (screen === 'prompt') {
     loadClusters().then(() => updateBrainStats()).catch(() => {}); // разум базы: статистика разметки
   }
   if (screen === 'hist') {
     loadNotes();
-    // Обучение в Истории: что это → теги → юбилеи
-    hintChain([
-      ['onb_3_hist_here', '📚 Это История — все записи по порядку. Поиск сверху, тап по карточке — редактор.', 'hist-hint', () => notes.length >= 1],
-      ['use_tags', '🏷 Теги: выбери сферу под полем ввода на главном — прикрепится к следующей записи. А здесь записи можно отфильтровать по тегу — чипы под фильтрами дат. Новые теги: ⚙️ в чате ИИ → «Управление тегами».', 'hist-hint', () => notes.length >= 3],
-      ['notes_30', '📊 Уже 30+ записей! Загляни в 🌌 Граф — увидишь свои сферы жизни, желания и связи между записями.', 'hist-hint', () => notes.length >= 30],
-      ['notes_100', '🏆 100 записей! Не забудь сделать экспорт — бэкап своих данных.', 'hist-hint', () => notes.length >= 100]
-    ]);
   }
   if (screen === 'todo') loadNotes();
   if (screen === 'chat') { renderChat(); checkRemindersOnOpen(); }
@@ -8686,29 +9202,13 @@ function goTo(screen) {
   if (screen === 'tags') renderTagsScreen();
   if (screen === 'cloud') {
     renderWordCloud();
-    // Подсказка при первом визите облака (только если есть 10+ записей)
-    showHintOnce('cloud_intro','☁️ Облако слов показывает что у тебя в фокусе. Чем больше записей — тем информативнее.','cloud-hint', () => notes.length >= 10);
   }
   if (screen === 'calendar') {
     renderCalendar();
-    showHintOnce('calendar_intro2','📅 Тап на день — план дня. Свайп влево/вправо — листать месяцы. Тап по задаче — редактор: текст, тег, срок, удалить. 🎯 Раскидать — тяни задачу на день. Долгое нажатие — перетащить.','calendar-hint', () => notes.filter(n => n.inTodo).length >= 1);
   }
   if (screen === 'wishes') {
     renderWishes();
     initFireflies(); // светлячки (ленивая инициализация, один раз)
-    // Подсказка про chat per wish — только если есть хотя бы 1 желание
-    showHintOnce('wishes_intro','Тап на желание — детали и чат с ИИ. Ручка ⠿ — перетащи, чтобы поменять порядок.','wishes-hint', () => wishes.length >= 1);
-    // Подсказка «тапни на карточку» — только при 1+ желании
-    showHintOnce('first_wish','Тапни на карточку желания — откроются детали: mood-image, milestones, AI-наставники.','wishes-hint', () => wishes.length >= 1 && hintsShown.has('wishes_intro'));
-  }
-  if (screen === 'todo') {
-    // Обучение в Тудушке: что это → перетаскивание → залежавшиеся
-    hintChain([
-      ['onb_5_todo_here', '☑️ Это Тудушка — задачи на каждый день. Тап по карточке — редактор, ✓ — выполнить.', 'todo-hint', () => notes.filter(n => n.inTodo && !n.done).length >= 1],
-      ['todo_drag', 'Тащи за ⠿ чтобы поменять порядок. Жми ▲ — задача улетит на самый верх очереди.', 'todo-hint', () => notes.filter(n => n.inTodo && !n.done).length >= 2],
-      ['todo_up_top', '▲ поднимает наверх сразу: карточка летит, соседки расступаются, задача становится первой — и главной на главном экране.', 'todo-hint', () => notes.filter(n => n.inTodo && !n.done).length >= 2],
-      ['stale_tasks', '🟡 Янтарным подсвечены задачи, которые висят больше 10 дней. Пора сделать — или поставь будущий срок, и подсветка уйдёт.', 'todo-hint', () => notes.some(isStaleNote)]
-    ]);
   }
 }
 window.goTo = goTo;
@@ -9045,6 +9545,12 @@ function escHtmlChat(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;').replace(/\n/g,'<br>');
 }
 
+// v89 Н1: markdown-жирный в чате — «**слово**» рендерится жирным вместо сырых звёздочек.
+// Сначала экранируем HTML, потом превращаем **...** в <b>...</b> (содержимое уже безопасно).
+function mdLiteChat(s) {
+  return escHtmlChat(s).replace(/\*\*([^*\n]+)\*\*/g, '<b>$1</b>');
+}
+
 function renderChat() {
   const el = document.getElementById('chat-messages');
   if (!el) return;
@@ -9060,7 +9566,7 @@ function renderChat() {
       </div>`;
     }
     return `<div class="chat-bubble ${isUser?'bubble-user':'bubble-ai'}">
-      ${escHtmlChat(m.content)}${confirmHtml}
+      ${mdLiteChat(m.content)}${confirmHtml}
       <div class="bubble-time">${time}</div>
     </div>`;
   }).join('');
@@ -9084,6 +9590,7 @@ async function addNoteFromChat(nd) {
   if (nd.scheduledTime) newDoc.scheduledTime = nd.scheduledTime;
   if (nd.importance) newDoc.importance = clampImportance(nd.importance); // v82: важность 1–5 (умная сортировка)
   if (nd.effort) newDoc.effort = clampEffort(nd.effort);                 // v82: объём S/M/L
+  if (nd.urgent === true) newDoc.urgent = true;                           // v89 Н6: срочно — самый верх очереди
   if (nd.parentId) newDoc.parentId = nd.parentId;                         // v82: подзадача (id материнской задачи)
   if (nd.details) newDoc.details = nd.details;                            // v82: детали/комментарии записи (видит ИИ)
   await addDoc(notesCol(), newDoc);
@@ -11960,6 +12467,7 @@ document.getElementById('chat-send').addEventListener('click',()=>{
   if(!text)return;
   document.getElementById('chat-input').value='';
   chatAutoResize();
+  try { window.__questEvent('chat-msg'); } catch(e) {} // v89: квест-шаг «обсудить с ИИ»
   sendChatMessage(text);
 });
 document.getElementById('chat-input').addEventListener('input',chatAutoResize);
@@ -12515,6 +13023,19 @@ window.__t = {
   openDailySummaryModal,
   setTheme,
   getTheme,
+  // v89: квест, срочные, конвейер желаний, пунктуация, оффер желания, теги
+  questState: () => ({ hints: [...hintsShown], currentStep: currentQuestStep(), skipped: questSkipped() }),
+  questComplete: (n) => completeQuestStep(n),
+  skipQuest,
+  toggleDone,
+  addChatMessage,
+  saveNote,
+  openEdit,
+  openWishDetail,
+  maybeSuggestTag,
+  resetTagSuggest: () => { _tagSuggestChecked = false; },
+  normalizeAllWishTodos,
+  restorePunctuationAI,
   testRun: HZ3_TEST_RUN,
 };
 
