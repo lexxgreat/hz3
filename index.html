@@ -1253,7 +1253,7 @@ body[data-theme="business"] .cap-mic.recording{box-shadow:0 0 10px rgba(140,176,
       <div style="display:flex;justify-content:space-between;align-items:center">
         <div>
           <div class="hist-title">Облако мыслей</div>
-          <div class="hist-sub" id="cloud-sub">Самое частое в твоих записях</div>
+          <div class="hist-sub" id="cloud-sub">Теги и частые слова: тег крупнее, где записей больше</div>
         </div>
         <button onclick="goTo('hist')" style="background:none;border:none;color:rgba(255,255,255,0.4);font-size:22px;cursor:pointer;">←</button>
       </div>
@@ -2869,7 +2869,13 @@ function heuristicIsTask(text) {
   // (\b в JS не работает с кириллицей, поэтому границы — пробелы)
   const norm = ' ' + String(text || '').toLowerCase().replace(/[^а-яёa-z0-9]+/g, ' ') + ' ';
   // явные маркеры + инфинитивы/императивы «деловых» глаголов (в мыслях/дневнике почти не встречаются)
-  return / (надо|нужно|необходимо|не забыть|не забудь|напомни|напоминание|сделать|купить|позвонить|записаться|отправить|отослать|написать|оплатить|заплатить|перевести|забрать|сдать|починить|заказать|проверить|подготовить|доделать|закончить|встретиться|сходить|пойти|отвезти|привезти|выбросить|постирать|убраться|позвони|купи|сделай|проверь|отправь|запиши|закажи|оплати|забери) /.test(norm);
+  const explicit = / (надо|нужно|необходимо|не забыть|не забудь|напомни|напоминание|сделать|купить|позвонить|записаться|отправить|отослать|написать|оплатить|заплатить|перевести|забрать|сдать|починить|заказать|проверить|подготовить|доделать|закончить|встретиться|сходить|пойти|отвезти|привезти|выбросить|постирать|убраться|позвони|купи|сделай|проверь|отправь|запиши|закажи|оплати|забери) /.test(norm);
+  // v90 Н12: «должно где-то быть/стоять/лежать» — пользователь фиксирует желаемый порядок вещей =
+  // это ЗАДАЧА («эта коробка должна стоять на балконе», «страховка должна лежать в папке»).
+  // Отрицание («этого не должно быть») делом не считаем
+  const negated = / (не|никогда) (должен|должна|должно|должны) /.test(norm);
+  const placement = !negated && / (должен|должна|должно|должны) (быть|стоять|стоят|лежать|лежит|лежат|висеть|висит|висят|находиться|находится|храниться|хранится) /.test(norm);
+  return explicit || placement;
 }
 
 // ВТОРОЕ МНЕНИЕ поверх ИИ: если запись НАЧИНАЕТСЯ с действия («Настроить фильтр…»,
@@ -3207,7 +3213,7 @@ async function classifyAndRouteNote(note) {
   try {
     const resp = await callBrainAI([
       { role: 'system', content: 'Ты — классификатор записей личного дневника-трекера. Ответь ТОЛЬКО валидным JSON без markdown: {"task": true/false, "date": "YYYY-MM-DD" или null, "time": "HH:MM" или null, "area": "..." или null, "newArea": {"name":"...","icon":"эмодзи"} или null, "kind": "мысль|событие|решение|идея|вопрос|дело", "cluster": "..." или null, "wish": true/false, "urgent": true/false}. '
-        + 'task: true — если запись это конкретное действие, которое предстоит сделать и потом можно поставить галочку (купить, позвонить, записаться, отправить, сделать, не забыть); false — мысль, факт, идея без действия, дневниковая запись, справка. Сомневаешься — true: лучше поставить в тудушку, чем потерять дело. Запись, начинающаяся с действия/инфинитива («Настроить кнопку», «Проверить фильтр», «Добавить подписи») — ВСЕГДА task: true, даже если звучит как заметка о работе над проектом. '
+        + 'task: true — если запись это конкретное действие, которое предстоит сделать и потом можно поставить галочку (купить, позвонить, записаться, отправить, сделать, не забыть); false — мысль, факт, идея без действия, дневниковая запись, справка. Сомневаешься — true: лучше поставить в тудушку, чем потерять дело. «Должно быть/стоять/лежать где-то» («коробка должна стоять на балконе», «документ должен лежать в папке», «зарядка должна быть в машине») — это ТОЖЕ task: true: пользователь фиксирует желаемый порядок вещей — сформулируй в тексте действие («Отнести коробку на балкон»). Запись, начинающаяся с действия/инфинитива («Настроить кнопку», «Проверить фильтр», «Добавить подписи») — ВСЕГДА task: true, даже если звучит как заметка о работе над проектом. '
         + 'wish: true — если запись выражает ЖЕЛАНИЕ или мечту на будущее («хочу научиться рисовать», «мечтаю съездить в Марокко», «своё кафе»), а не конкретное дело на сегодня; иначе false. urgent: true — если в тексте есть «срочно», «прямо сейчас», «как можно быстрее», «немедленно»; иначе false. '
         + 'area: ОДНА область жизни из списка [' + areaNames.join(' | ') + ']. Подходит хоть одна — верни её точное имя. Ни одна не подходит — area: null и newArea: {"name": "1-2 слова, существительное", "icon": "один эмодзи"}. '
         + (areaExemplars ? 'Примеры записей пользователя по областям — наследуй область по СХОДСТВУ с примерами: если новая запись похожа на примеры какой-то области — верни именно её (особенно записи про это самое приложение, его интерфейс, функции, баги и доработки — они относятся к области, где таких записей больше всего): ' + areaExemplars + '. ' : '')
@@ -4356,6 +4362,7 @@ const CLOUD_COLORS = ['#e63946','#2a9d8f','#e9c46a','#f4a261','#457b9d','#9d4edd
 
 let cloudPeriod = 30; // 7 | 30 | 'all'
 let cloudCache = {}; // {7:{items,generatedAt}, 30:{...}, all:{...}} — грузится из Firestore при заходе
+const CLOUD_VERSION = 2; // v90 Н11: 1 — облако без тегов; версия сменилась — старый кэш пересобирается сам
 
 // разбивает текст на слова, СОХРАНЯЯ исходный регистр (чтобы имена/бренды остались как в оригинале)
 function tokenizeForCloud(text) {
@@ -4375,6 +4382,16 @@ function computeWordCloudItems(period) {
       return day >= startDay && day <= nowDay;
     });
   }
+  // v90 Н11: теги — полноценные элементы облака. Размер тега = ЧИСЛО ЗАПИСЕЙ с этим тегом
+  // (упоминания слова в текстах тег не раздувает). 1-2 записи → маленький, много → крупный.
+  const tagCounts = {}, tagDisplay = {};
+  for (const n of filtered) {
+    const t = (n.tag || '').trim();
+    if (!t) continue;
+    const k = t.toLowerCase();
+    tagCounts[k] = (tagCounts[k] || 0) + 1;
+    if (!tagDisplay[k]) tagDisplay[k] = t;
+  }
   const counts = {}; // key: lowercase, value: {count, display: первый встретившийся вариант написания}
   function bump(word) {
     const key = word.toLowerCase();
@@ -4385,11 +4402,14 @@ function computeWordCloudItems(period) {
     if (n.tag) bump(n.tag);
     for (const w of tokenizeForCloud(n.text)) bump(w);
   }
-  const items = Object.values(counts)
-    .map(v => ({ text: v.display, count: v.count }))
-    .sort((a, b) => b.count - a.count)
-    .slice(0, 55);
-  return { items, noteCount: filtered.length };
+  const all = Object.entries(counts).map(([key, v]) => {
+    const tc = tagCounts[key];
+    return tc ? { text: tagDisplay[key], count: tc, isTag: true } : { text: v.display, count: v.count, isTag: false };
+  });
+  const tags = all.filter(v => v.isTag).sort((a, b) => b.count - a.count).slice(0, 20);
+  const words = all.filter(v => !v.isTag).sort((a, b) => b.count - a.count).slice(0, Math.max(10, 55 - tags.length));
+  const items = [...tags, ...words].sort((a, b) => b.count - a.count);
+  return { items, noteCount: filtered.length, tagCount: tags.length };
 }
 
 // спиральная упаковка: крупные слова ближе к центру, каждое следующее ищет свободное место
@@ -4409,10 +4429,12 @@ function packWordCloud(items, canvasWidth, canvasHeight, ctx) {
   items.forEach((item, idx) => {
     const ratio = maxCount === minCount ? 1 : (item.count - minCount) / (maxCount - minCount);
     const fontSize = Math.round(13 + Math.pow(ratio, 0.7) * 62); // 13..75px, не строго линейно — крупные заметнее выделяются
-    const rotate = Math.random() < 0.12 ? 90 : 0; // немного вертикальных слов для живости, как в референсе
-    const displayText = ratio > 0.38 ? item.text.toUpperCase() : item.text;
+    const isTag = !!item.isTag; // v90 Н11: тег — с решёткой, без капса и без поворота, с подчёркиванием
+    const rotate = isTag ? 0 : (Math.random() < 0.12 ? 90 : 0); // немного вертикальных слов для живости, как в референсе
+    const bold = ratio > 0.38;
+    const displayText = isTag ? '#' + item.text : (bold ? item.text.toUpperCase() : item.text);
 
-    ctx.font = `${ratio > 0.38 ? '800' : '600'} ${fontSize}px Inter, Arial, sans-serif`;
+    ctx.font = `${bold ? '800' : '600'} ${fontSize}px Inter, Arial, sans-serif`;
     const metrics = ctx.measureText(displayText);
     let w = metrics.width + 10, h = fontSize * 1.2;
     if (rotate === 90) { const t = w; w = h; h = t; }
@@ -4434,7 +4456,7 @@ function packWordCloud(items, canvasWidth, canvasHeight, ctx) {
     placed.push({ x1: foundX, y1: foundY, x2: foundX + w, y2: foundY + h });
     results.push({
       text: displayText, x: foundX + w / 2, y: foundY + h / 2,
-      fontSize, rotate, bold: ratio > 0.38,
+      fontSize, rotate, bold, isTag, tw: metrics.width,
       color: CLOUD_COLORS[idx % CLOUD_COLORS.length]
     });
   });
@@ -4453,9 +4475,16 @@ function drawWordCloud(layout, canvas) {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(w.text, 0, 0);
+    if (w.isTag && w.tw) { // v90 Н11: подчёркиваем теги — сразу видно сферы, а не просто слова
+      ctx.globalAlpha = 0.55;
+      ctx.fillRect(-w.tw / 2, w.fontSize * 0.68, w.tw, Math.max(1.5, Math.round(w.fontSize * 0.05)));
+      ctx.globalAlpha = 1;
+    }
     ctx.restore();
   });
 }
+
+function cloudTagPlural(n) { const a = n % 10, b = n % 100; if (a === 1 && b !== 11) return 'тег'; if (a >= 2 && a <= 4 && (b < 12 || b > 14)) return 'тега'; return 'тегов'; }
 
 async function loadCloudCache() {
   try {
@@ -4479,7 +4508,7 @@ function drawFromCache(period) {
   const canvas = document.getElementById('cloud-canvas');
   if (!canvas) return false;
   const cached = cloudCache[period];
-  if (!cached || !cached.layout || !cached.layout.length) return false;
+  if (!cached || cached.v !== CLOUD_VERSION || !cached.layout || !cached.layout.length) return false; // v90: кэш без тегов — пересобираем
   canvas.width = cached.width;
   canvas.height = cached.height;
   canvas.style.width = cached.width + 'px';
@@ -4495,8 +4524,8 @@ async function regenerateWordCloud() {
   const wrap = canvas.parentElement;
   const width = Math.min(wrap.clientWidth - 16, 640);
 
-  const { items, noteCount } = computeWordCloudItems(cloudPeriod);
-  document.getElementById('cloud-sub').textContent = noteCount + ' записей за период';
+  const { items, noteCount, tagCount } = computeWordCloudItems(cloudPeriod);
+  document.getElementById('cloud-sub').textContent = noteCount + ' записей за период · ' + tagCount + ' ' + cloudTagPlural(tagCount);
   if (!items.length) {
     canvas.width = width; canvas.height = Math.round(width * 0.5);
     canvas.style.width = width + 'px'; canvas.style.height = canvas.height + 'px';
@@ -4513,7 +4542,7 @@ async function regenerateWordCloud() {
   for (const item of items) {
     const ratio = maxCount === minCount ? 1 : (item.count - minCount) / (maxCount - minCount);
     const fontSize = Math.round(13 + Math.pow(ratio, 0.7) * 62);
-    const text = ratio > 0.38 ? item.text.toUpperCase() : item.text;
+    const text = item.isTag ? '#' + item.text : (ratio > 0.38 ? item.text.toUpperCase() : item.text); // v90: теги с решёткой
     measureCtx.font = `${ratio > 0.38 ? '800' : '600'} ${fontSize}px Inter, Arial, sans-serif`;
     const w = measureCtx.measureText(text).width + 10;
     const h = fontSize * 1.2;
@@ -4532,7 +4561,7 @@ async function regenerateWordCloud() {
   drawWordCloud(layout, canvas);
 
   const generatedAt = new Date().toISOString();
-  cloudCache[cloudPeriod] = { layout, width, height, generatedAt };
+  cloudCache[cloudPeriod] = { layout, width, height, generatedAt, v: CLOUD_VERSION };
   document.getElementById('cloud-generated-at').textContent = formatCloudTimestamp(generatedAt);
   await saveCloudCache();
 }
@@ -7739,6 +7768,7 @@ document.getElementById('wishchat-input').addEventListener('keydown', e => { if(
 let hintsShown = new Set();
 let hintsLoaded = false; // до загрузки hintsShown из Firestore ничего не показываем (иначе повтор)
 let activeHintId = null; // id карточки, которая сейчас на экране
+let _ordHintsSession = 0; // v90: обычных подсказок показано за этот вход (лимит 1 — «конвейер» подсказок раздражает)
 async function loadHints() {
   try { const snap = await getDocs(uCol('meta')); const d = snap.docs.find(x=>x.id==='hints_shown'); hintsShown = new Set(d ? (d.data().ids||[]) : []); } catch(e) {}
   hintsLoaded = true;
@@ -7788,12 +7818,14 @@ function buildHintCard(id, text, opts = {}) {
 // НИКАКОГО автоскрытия: карточка висит, пока не нажато «Понял»/кнопка.
 function showHintOnce(id, text, elId, condition = null, extraBtn = null, opts = {}) {
   if (!hintsLoaded || hintsShown.has(id) || activeHintId) return false;
+  if (_ordHintsSession >= 1) return false; // v90: одна обычная подсказка за вход в приложение — следующая при следующем открытии
   if (condition && typeof condition === 'function' && !condition()) return false;
   const el = document.getElementById(elId);
   if (!el) return false;
   if (HINT_EL_SCREEN[elId] && _lastHintScreen !== HINT_EL_SCREEN[elId]) return false; // экран не активен — подождём
   el.innerHTML = buildHintCard(id, text, Object.assign({ extraBtn }, opts));
   activeHintId = id;
+  if (!/^q\d/.test(String(id))) _ordHintsSession++; // квестовые шаги лимит не считают
   return true;
 }
 async function dismissHint(id) {
@@ -7917,7 +7949,7 @@ function showOrdinaryHints(screen) {
       ['first_wish', 'Тапни на карточку желания — откроются детали: mood-image, milestones, AI-наставники.', 'wishes-hint', () => wishes.length >= 1 && hintsShown.has('wishes_intro')]
     ]);
   } else if (screen === 'cloud') {
-    showHintOnce('cloud_intro', '☁️ Облако слов показывает что у тебя в фокусе. Чем больше записей — тем информативнее.', 'cloud-hint', () => notes.length >= 10);
+    showHintOnce('cloud_intro', '☁️ Облако показывает твои теги (с решёткой и подчёркиванием) и частые слова. Чем больше записей с тегом — тем он крупнее.', 'cloud-hint', () => notes.length >= 10);
   } else if (screen === 'graph') {
     showHintOnce('graph_intro', '🌌 Тапни по узлу-сфере — увидишь записи внутри. Линии — связи между записями и желаниями.', 'graph-hint', () => true);
   } else if (screen === 'prompt') {
@@ -11223,6 +11255,7 @@ function getBaseInstructions() {
 
 КЛАССИФИКАЦИЯ: ЗАДАЧА или ЗАМЕТКА — решаешь сам для каждой записи, без вопросов пользователю:
 - ЗАДАЧА (to_todo: true) — конкретное действие, которое предстоит сделать: «купить хлеб», «позвонить маме», «записаться к врачу», «надо/нужно/не забыть + действие». Задача сохранится СРАЗУ и попадёт в тудушку автоматически, без кнопок «Да/Нет»
+- «ДОЛЖНО где-то быть/стоять/лежать/находиться» («эта коробка должна стоять на балконе», «страховка должна лежать в папке», «зарядка должна быть в машине») — это тоже ЗАДАЧА, а не мысль: пользователь фиксирует желаемый порядок вещей. Сформулируй в тексте конкретное действие («Отнести коробку на балкон», «Положить страховку в папку») и ставь to_todo: true
 - ЗАМЕТКА (без to_todo) — мысль, факт, наблюдение, идея без конкретного действия, дневниковая запись, справка. Покажется пользователю с кнопками «Да/Нет»
 - Тест: если в записи есть действие, которое можно выполнить и потом поставить галочку — это ЗАДАЧА. Если запись описывает прошлое/настоящее и ничего не требует сделать — ЗАМЕТКА
 - Сомневаешься — выбирай ЗАДАЧУ: лучше поставить в тудушку, чем потерять дело
@@ -13034,6 +13067,12 @@ window.__t = {
   openWishDetail,
   maybeSuggestTag,
   resetTagSuggest: () => { _tagSuggestChecked = false; },
+  // v90: облако с тегами, лимит подсказок
+  computeWordCloudItems,
+  cloudCacheGet: () => cloudCache,
+  cloudVersion: CLOUD_VERSION,
+  resetHintPacing: () => { _ordHintsSession = 0; },
+  heuristicIsTask,
   normalizeAllWishTodos,
   restorePunctuationAI,
   testRun: HZ3_TEST_RUN,
