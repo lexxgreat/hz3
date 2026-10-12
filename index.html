@@ -580,7 +580,8 @@ body.todo-mouse-dragging *{cursor:grabbing !important}
 #screen-wishchat.active ~ .dock,
 #screen-chat.active ~ .dock,
 #screen-prompt.active ~ .dock,
-#screen-tags.active ~ .dock {
+#screen-tags.active ~ .dock,
+#screen-hazi.active ~ .dock {
   display: flex !important;
 }
 .dock-item{
@@ -595,6 +596,52 @@ body.todo-mouse-dragging *{cursor:grabbing !important}
 .dock-item.active svg{color:#8B5CF6;filter:drop-shadow(0 0 6px rgba(108,71,255,0.8))}
 .dock-item.active span{color:rgba(139,92,246,0.75)}
 .dock-item.active::after{content:'';position:absolute;bottom:2px;width:4px;height:4px;border-radius:50%;background:#6C47FF;box-shadow:0 0 6px #6C47FF}
+
+/* ── HAZI v91: баллы активности, уровни, монстрик ── */
+#hazi-badge{position:relative;flex-shrink:0;width:42px;height:42px;border-radius:50%;border:0.5px solid rgba(255,255,255,0.14);background:radial-gradient(circle at 35% 30%,rgba(108,71,255,0.30),rgba(8,10,26,0.65));cursor:pointer;display:flex;align-items:center;justify-content:center;transition:transform .2s;padding:0;-webkit-tap-highlight-color:transparent}
+#hazi-badge:active{transform:scale(0.9)}
+#hazi-badge .hazi-badge-lvl{position:absolute;bottom:-4px;right:-4px;background:#6C47FF;color:#fff;font-size:9px;font-weight:700;line-height:1;border-radius:99px;padding:2px 5px;border:1px solid rgba(6,9,24,0.95);font-family:'Inter',sans-serif}
+#hazi-badge svg{width:30px;height:30px;overflow:visible}
+#hazi-badge.hazi-happy{animation:hziHappy .5s ease}
+@keyframes hziHappy{0%{transform:scale(1)}35%{transform:scale(1.18) rotate(-4deg)}70%{transform:scale(0.96) rotate(2deg)}100%{transform:scale(1)}}
+.hazi-float{position:absolute;top:-8px;left:50%;margin-left:-18px;width:36px;text-align:center;font-size:11px;font-weight:700;color:#FFD166;text-shadow:0 0 8px rgba(255,209,102,0.65);animation:hziFloatUp 1.05s ease-out forwards;pointer-events:none;font-family:'Inter',sans-serif;z-index:5;white-space:nowrap}
+@keyframes hziFloatUp{0%{opacity:0;transform:translateY(8px)}25%{opacity:1}100%{opacity:0;transform:translateY(-30px)}}
+/* анимации Хэзи (SVG-группы) */
+.hz-a-pulse{transform-box:fill-box;transform-origin:center;animation:hzPulse 3.2s ease-in-out infinite}
+.hz-a-bounce{transform-box:fill-box;transform-origin:center bottom;animation:hzBounce 2.6s ease-in-out infinite}
+.hz-a-sway{transform-box:fill-box;transform-origin:center bottom;animation:hzSway 3.4s ease-in-out infinite}
+.hz-a-hero{transform-box:fill-box;transform-origin:center bottom;animation:hzHero 3.8s ease-in-out infinite}
+.hz-a-float{transform-box:fill-box;transform-origin:center;animation:hzFloat 3.6s ease-in-out infinite}
+.hz-eyes{transform-box:fill-box;transform-origin:center;animation:hzBlink 4.6s infinite}
+.hz-cape{transform-box:fill-box;transform-origin:top center;animation:hzCape 2.8s ease-in-out infinite}
+.hz-aura{transform-box:fill-box;transform-origin:center;animation:hzSpin 14s linear infinite}
+.hz-aura.a2{animation:hzSpinBack 10s linear infinite}
+.hz-spark,.hz-bolt{transform-box:fill-box;transform-origin:center;animation:hzTwinkle 2.4s ease-in-out infinite}
+.hz-spark.s2,.hz-bolt.b2{animation-delay:1.2s}
+@keyframes hzPulse{0%,100%{transform:scale(1)}50%{transform:scale(1.045)}}
+@keyframes hzBounce{0%,100%{transform:translateY(0)}42%{transform:translateY(-5px)}58%{transform:translateY(-2px)}}
+@keyframes hzSway{0%,100%{transform:rotate(0deg)}25%{transform:rotate(-2.2deg)}75%{transform:rotate(2.2deg)}}
+@keyframes hzHero{0%,100%{transform:translateY(0) scale(1)}50%{transform:translateY(-1.5px) scale(1.015)}}
+@keyframes hzFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}
+@keyframes hzBlink{0%,91%,100%{transform:scaleY(1)}95%{transform:scaleY(0.08)}}
+@keyframes hzCape{0%,100%{transform:skewY(0deg) scaleX(1)}50%{transform:skewY(-3.5deg) scaleX(1.04)}}
+@keyframes hzSpin{to{transform:rotate(360deg)}}
+@keyframes hzSpinBack{to{transform:rotate(-360deg)}}
+@keyframes hzTwinkle{0%,100%{opacity:.25;transform:scale(.85)}50%{opacity:1;transform:scale(1.1)}}
+/* экран Хэзи */
+.hazi-bar{height:8px;border-radius:99px;background:rgba(255,255,255,0.07);overflow:hidden}
+.hazi-bar i{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,#6C47FF,#00D4FF);transition:width .6s cubic-bezier(.2,.8,.2,1)}
+/* модалка эволюции/рождения */
+.hazi-evo-stage{display:flex;justify-content:center;margin-bottom:6px;animation:hzAssemble .75s cubic-bezier(.2,.9,.3,1.2)}
+.hazi-evo-stage svg{width:130px;height:130px;overflow:visible}
+@keyframes hzAssemble{0%{transform:scale(.15);opacity:0}55%{transform:scale(1.18);opacity:1}100%{transform:scale(1)}}
+.hazi-evo-title{font-size:19px;font-weight:800;color:#FFD166;text-align:center;font-family:'Inter',sans-serif;margin-top:4px}
+.hazi-evo-sub{font-size:13.5px;color:rgba(255,255,255,0.85);text-align:center;margin-top:6px;font-family:'Inter',sans-serif;line-height:1.5}
+.hazi-evo-text{font-size:11.5px;color:rgba(255,255,255,0.5);text-align:center;margin-top:10px;line-height:1.55;font-family:'Inter',sans-serif}
+.hazi-evo-sparks{position:relative;height:1px}
+.hazi-evo-sparks span{position:absolute;font-size:15px;animation:hzTwinkle 1.8s ease-in-out infinite}
+/* ── /HAZI ── */
+
 /* Желания-плашка на главном: искры статичны (v74 — по фидбеку мигание убрано) */
 
 /* ── CHAT SCREEN ── */
@@ -1141,9 +1188,15 @@ body[data-theme="business"] .cap-mic.recording{box-shadow:0 0 10px rgba(140,176,
   <div class="screen" id="screen-main">
     <!-- Canvas overlay for X-gesture visual trail (covers entire phone) -->
     <canvas id="x-gesture-canvas" style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:50;"></canvas>
-    <div class="main-top" style="padding:10px 24px 8px;">
-      <div class="main-greeting" style="font-size:16px;">Привет 👋</div>
-      <div class="main-sub">Ты — архитектор своей реальности.</div>
+    <div class="main-top" style="padding:10px 24px 8px;display:flex;align-items:flex-start;justify-content:space-between;gap:10px;">
+      <div style="min-width:0;">
+        <div class="main-greeting" style="font-size:16px;">Привет 👋</div>
+        <div class="main-sub">Ты — архитектор своей реальности.</div>
+      </div>
+      <button id="hazi-badge" onclick="goTo('hazi')" title="Хэзи — твой напарник" aria-label="Открыть Хэзи">
+        <span class="hazi-badge-svg" data-stage="0"></span>
+        <span class="hazi-badge-lvl">1</span>
+      </button>
     </div>
 
     <div id="focus-card-wrap"></div>
@@ -1448,6 +1501,28 @@ body[data-theme="business"] .cap-mic.recording{box-shadow:0 0 10px rgba(140,176,
     </div>
   </div>
 
+  <!-- ── HAZI SCREEN (v91) ── -->
+  <div class="screen" id="screen-hazi">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 20px 6px;flex-shrink:0;">
+      <button onclick="goTo('main')" aria-label="Назад" style="background:none;border:none;color:rgba(255,255,255,0.4);font-size:22px;cursor:pointer;">←</button>
+      <span style="font-size:14px;font-weight:600;color:rgba(255,255,255,0.75);font-family:Inter,sans-serif;">Хэзи</span>
+      <span style="width:22px;"></span>
+    </div>
+    <div style="flex:1;overflow-y:auto;padding:6px 20px 24px;">
+      <div id="hazi-stage-wrap" style="display:flex;justify-content:center;padding:16px 0 6px;"></div>
+      <div id="hazi-name" style="text-align:center;font-size:18px;font-weight:700;color:#fff;font-family:Inter,sans-serif;"></div>
+      <div id="hazi-lvltxt" style="text-align:center;font-size:12px;color:rgba(0,212,255,0.85);margin-top:3px;font-family:Inter,sans-serif;"></div>
+      <div style="margin:14px 6px 4px;">
+        <div class="hazi-bar"><i id="hazi-barfill" style="width:0%;"></i></div>
+        <div id="hazi-bartxt" style="text-align:center;font-size:11px;color:rgba(255,255,255,0.45);margin-top:6px;font-family:Inter,sans-serif;"></div>
+      </div>
+      <div id="hazi-stats" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:16px 0 0;"></div>
+      <div style="margin-top:16px;padding:12px 14px;border-radius:14px;background:rgba(108,71,255,0.07);border:0.5px solid rgba(108,71,255,0.22);font-size:11.5px;line-height:1.6;color:rgba(255,255,255,0.5);font-family:Inter,sans-serif;">
+        ⚡ Хэзи растёт от твоих дел: <b style="color:rgba(255,255,255,0.75);">заметка +2</b> · <b style="color:rgba(255,255,255,0.75);">задача +5</b> · <b style="color:rgba(255,255,255,0.75);">шаг желания +10</b> · активный день 🔥 +2. Он родился из твоих мыслей — и однажды станет сверхчеловеком.
+      </div>
+    </div>
+  </div>
+
   <!-- ── PROMPT SCREEN ── -->
   <div class="screen" id="screen-prompt">
     <div id="prompt-hint" style="padding:10px 16px 0;"></div>
@@ -1599,6 +1674,10 @@ body[data-theme="business"] .cap-mic.recording{box-shadow:0 0 10px rgba(140,176,
       </button>
     </div>
     <div style="padding:8px 16px 0;">
+      <button onclick="goTo('hazi')" style="width:100%;background:rgba(255,209,102,0.07);border:0.5px solid rgba(255,209,102,0.3);border-radius:12px;padding:9px;color:rgba(255,209,102,0.92);font-size:12.5px;font-weight:500;cursor:pointer;font-family:'Inter',sans-serif;margin-bottom:8px;display:flex;align-items:center;justify-content:space-between;">
+        <span>⚡ Хэзи · <span id="hazi-set-lvl">ур. 1</span></span>
+        <span style="color:rgba(255,255,255,0.4);">→</span>
+      </button>
       <button id="pwa-install-btn" onclick="installFromSettings()" style="width:100%;background:rgba(108,71,255,0.1);border:0.5px solid rgba(108,71,255,0.35);border-radius:12px;padding:9px;color:rgba(160,130,255,0.95);font-size:12.5px;font-weight:500;cursor:pointer;font-family:'Inter',sans-serif;margin-bottom:8px;">📲 Установить приложение</button>
       <button onclick="logout()" style="width:100%;background:rgba(255,80,80,0.08);border:0.5px solid rgba(255,80,80,0.25);border-radius:12px;padding:9px;color:rgba(255,110,110,0.85);font-size:12.5px;font-weight:500;cursor:pointer;font-family:'Inter',sans-serif;">Выйти из аккаунта</button>
     </div>
@@ -2844,6 +2923,7 @@ async function saveNote(text, type) {
     document.querySelectorAll('.qtag').forEach(b => { b.style.borderColor=''; b.style.background=''; });
     flashSaved();
     bumpProfileActivity(); // v76: отметка «пользователь пишет» для статистики владельца
+    try { hziAward('note', docRef.id); } catch(e) {} // v91: ⚡ за заметку
     await loadNotes();
     maybeShowInstallBanner(); // PWA: предложить установку после первой записи (один раз)
     // AI auto-linking — для только что созданной заметки (в фоне, не блокируя UI)
@@ -4216,6 +4296,7 @@ async function saveEdit() {
     if (oldNote && (oldNote.tag || null) !== (editingSelectedTag || null)) {
       pushTagLog({ t: text.slice(0, 60), from: oldNote.tag || null, to: editingSelectedTag });
     }
+    try { if (dateVal && !(oldNote && oldNote.scheduledDate)) hziAward('plan', editingId); } catch(e) {} // v91: ⚡ запланировал (дата поставлена впервые)
     closeModal();
     await loadNotes();
     renderCalendar(); // срок мог измениться — календарь сразу перерисуется
@@ -4260,7 +4341,8 @@ async function toggleDone(id, currentDone) {
       done: willBeDone,
       doneAt: willBeDone ? new Date().toISOString() : null
     });
-    if (willBeDone) { celebrateTaskDone(); try { window.__questEvent('task-gesture'); } catch(e) {} } // празднуем только при завершении, не при отмене; v89: жест = шаг квеста 5
+    if (willBeDone) { celebrateTaskDone(); try { window.__questEvent('task-gesture'); } catch(e) {} // празднуем только при завершении, не при отмене; v89: жест = шаг квеста 5
+      try { const _hn = notes.find(n => n.id === id); if (_hn) hziAward(_hn.milestoneLink ? 'milestone' : 'task', id); } catch(e) {} } // v91: ⚡ за дело
     await loadNotes();
     renderCalendar(); // выполненные задачи исчезают из календаря
 
@@ -6631,6 +6713,7 @@ async function confirmWishSuggestion() {
       wishOrder: nextWishOrder(),
       createdAt: new Date().toISOString(),
     });
+    try { hziAward('wish', docRef.id); } catch(e) {} // v91: ⚡ за желание
     // ОБУЧЕНИЕ ПРЕДЗАПОЛНЕНИЯ: запоминаем правки пользователя — следующие предсказания точнее
     if (scores && aiScores) {
       const changed = WISH_AXES.some(a => Number(aiScores[a.k]) !== Number(scores[a.k]));
@@ -7797,7 +7880,7 @@ function buildHintCard(id, text, opts = {}) {
   ).join('') : '';
   const head = opts.quest
     ? `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
-        <span style="font-size:9.5px;letter-spacing:1.2px;text-transform:uppercase;font-weight:700;color:rgba(0,212,255,0.9);">🎯 Шаг ${opts.questN} из ${opts.questLast}</span>
+        <span style="display:flex;align-items:center;gap:7px;"><span style="width:20px;height:20px;flex-shrink:0;display:inline-flex;">${hziSVG(1, 20)}</span><span style="font-size:9.5px;letter-spacing:1.2px;text-transform:uppercase;font-weight:700;color:rgba(0,212,255,0.9);">🎯 Шаг ${opts.questN} из ${opts.questLast}</span></span>
         <span style="display:flex;gap:3px;align-items:center;">${dots}</span></div>`
     : '';
   const extraBtn = opts.extraBtn
@@ -7845,6 +7928,256 @@ function hintChain(list) {
     if (showHintOnce(id, text, elId, cond, extraBtn || null, opts || null)) return;
   }
 }
+
+// ══════════ HZI (v91): баллы активности «⚡ молнии», уровни, Хэзи ══════════
+// «Приправа, не блюдо»: тихий бейдж в шапке главного, эволюция на level-up,
+// гид в квест-карточках. Состояние — meta/activity (синхрон между устройствами),
+// офлайн-буфер — localStorage (сбрасывается единым flush с дедупом и капами).
+const HZI_LEVELS = [0, 50, 120, 220, 350, 520, 750, 1050, 1400, 1800]; // XP до уровня i+1
+const HZI_STAGES = [1, 1, 2, 2, 3, 3, 4, 4, 4, 5];                     // стадия Хэзи по уровню
+const HZI_STAGE_NAMES = { 1: 'Искорка', 2: 'Комочек', 3: 'Подмастерье', 4: 'Герой', 5: 'Сверхчеловек' };
+const HZI_STAGE_FLAVOR = {
+  2: 'Он встал на ножки и учится ходить. Каждая закрытая задача — его маленький праздник.',
+  3: 'Руки, карандаш и умные очки — теперь он думает вместе с тобой.',
+  4: 'Плащ и маска! Хэзи ловит дела на лету и не даёт тебе лениться.',
+  5: 'Он летает. Такой напарник рождается из тысяч сделанных дел — ты сделал их.'
+};
+const HZI_RULES = {
+  note:      { xp: 2,  cap: 10 }, // создана заметка (текст/голос/из чата ИИ)
+  plan:      { xp: 3,  cap: 5  }, // заметка получила дату/время — спланировал
+  task:      { xp: 5,  cap: 12 }, // задача выполнена
+  milestone: { xp: 10, cap: 4  }, // шаг желания выполнен
+  wish:      { xp: 5,  cap: 2  }, // создано желание
+  chat:      { xp: 1,  cap: 5  }, // сообщение ИИ в чате
+  bonus:     { xp: 10, cap: 1  }, // день с выполненной задачей
+  streak:    { xp: 2,  cap: 1  }  // активный день в стрике
+};
+const HZI_RETRO_CAP = 150;  // стартовый заряд: 3⚡ за каждую уже выполненную задачу (одноразово)
+const HZI_USED_MAX = 800;   // хвост дедупа id
+const HZI_BUF_KEY = 'hz3_xp_buf';
+let _hzi = null;            // кэш состояния
+let _hziFlushTimer = null;
+function hziDayStr(off = 0) { return new Date(Date.now() + 3 * 3600000 + off * 86400000).toISOString().slice(0, 10); }
+function hziEmptyState() {
+  return { xp: 0, born: null, retroDone: false, _noBirth: false, bonus7: false, bonus30: false,
+    totals: { notes: 0, tasks: 0, milestones: 0, wishes: 0, chats: 0, streakBest: 0 },
+    streak: { count: 0, lastDay: null }, caps: {}, used: [] };
+}
+function hziLevelOf(xp) { let lv = 1; for (let i = 0; i < HZI_LEVELS.length; i++) if (xp >= HZI_LEVELS[i]) lv = i + 1; return lv; }
+function hziStageOf(level) { return HZI_STAGES[Math.min(Math.max(level, 1), 10) - 1] || 5; }
+function hziBufGet() { try { return JSON.parse(localStorage.getItem(HZI_BUF_KEY) || '[]'); } catch(e) { return []; } }
+function hziBufSet(b) { try { localStorage.setItem(HZI_BUF_KEY, JSON.stringify(b)); } catch(e) {} }
+// Единственная точка начисления. id — для дедупа («заметка/задача награждается 1 раз», ключ = kind:id).
+function hziAward(kind, id) {
+  if (!HZI_RULES[kind]) return;
+  const key = id ? kind + ':' + id : null;
+  if (key) {
+    if (_hzi && Array.isArray(_hzi.used) && _hzi.used.includes(key)) return;
+    if (hziBufGet().some(b => (b.k === kind && b.id === id))) return;
+  }
+  const buf = hziBufGet(); buf.push({ k: kind, id: id || null, ts: Date.now() });
+  while (buf.length > 200) buf.shift();
+  hziBufSet(buf);
+  clearTimeout(_hziFlushTimer);
+  _hziFlushTimer = setTimeout(() => { hziFlush().catch(() => {}); }, 1200);
+}
+async function hziLoad() {
+  try {
+    const snap = await getDoc(uDocRef('meta', 'activity'));
+    if (snap.exists()) { _hzi = Object.assign(hziEmptyState(), snap.data()); renderHaziBadge(); return; }
+  } catch(e) { /* сеть — начнём с пустого, буфер сохранит баллы */ }
+  _hzi = hziEmptyState();
+  try { // ретро-грант: стартовый заряд за уже сделанные дела (одноразово — маркер retroDone)
+    const doneN = (notes || []).filter(n => n.done && n.doneAt).length;
+    _hzi.retroDone = true;
+    if (doneN > 0) {
+      _hzi.xp = Math.min(HZI_RETRO_CAP, doneN * 3);
+      _hzi.totals.tasks = doneN;
+      _hzi._noBirth = true; // Хэзи уже живёт — без модалки рождения
+      const oldest = (notes || []).filter(n => n.createdAt).sort((a, b) => a.createdAt < b.createdAt ? -1 : 1)[0];
+      if (oldest) _hzi.born = oldest.createdAt;
+    }
+    try { await setDoc(uDocRef('meta', 'activity'), _hzi); } catch(e) {}
+  } catch(e) {}
+  renderHaziBadge();
+}
+async function hziFlush(force) {
+  const buf = hziBufGet();
+  if (!buf.length && !force) return _hzi;
+  if (!_hzi) await hziLoad();
+  const today = hziDayStr();
+  const prevLevel = hziLevelOf(_hzi.xp);
+  const bornBefore = !!_hzi.born;
+  let gained = 0, dirty = buf.length > 0;
+  for (const item of buf) {
+    const rule = HZI_RULES[item.k];
+    if (!rule) continue;
+    const caps = _hzi.caps[today] = _hzi.caps[today] || {};
+    const key = item.id ? item.k + ':' + item.id : null;
+    if (key && _hzi.used.includes(key)) continue;            // уже награждён
+    if ((caps[item.k] || 0) >= rule.cap) continue;            // дневной кап исчерпан
+    caps[item.k] = (caps[item.k] || 0) + 1;
+    if (key) _hzi.used.push(key);
+    _hzi.xp += rule.xp; gained += rule.xp;
+    if (item.k === 'note') _hzi.totals.notes++;
+    else if (item.k === 'task') _hzi.totals.tasks++;
+    else if (item.k === 'milestone') _hzi.totals.milestones++;
+    else if (item.k === 'wish') _hzi.totals.wishes++;
+    else if (item.k === 'chat') _hzi.totals.chats++;
+    if (item.k === 'note' && !_hzi.born) _hzi.born = new Date(item.ts).toISOString();
+  }
+  // Стрик 🔥: день активен = есть закрытая задача/шаг ИЛИ 2+ новые заметки; серия +2⚡, бону­сы на 7 и 30
+  const c = _hzi.caps[today] || {};
+  const dayActive = ((c.task || 0) + (c.milestone || 0)) >= 1 || ((c.note || 0) + (c.plan || 0)) >= 2;
+  if (dayActive && _hzi.streak.lastDay !== today) {
+    _hzi.streak.count = _hzi.streak.lastDay === hziDayStr(-1) ? _hzi.streak.count + 1 : 1;
+    _hzi.streak.lastDay = today;
+    _hzi.totals.streakBest = Math.max(_hzi.totals.streakBest, _hzi.streak.count);
+    if ((c.streak || 0) < HZI_RULES.streak.cap) { c.streak = (c.streak || 0) + 1; _hzi.xp += HZI_RULES.streak.xp; gained += HZI_RULES.streak.xp; }
+    if (_hzi.streak.count === 7 && !_hzi.bonus7) { _hzi.bonus7 = true; _hzi.xp += 20; gained += 20; showToast('🔥 Неделя без остановок! Хэзи в огне: +20⚡', 3200); }
+    if (_hzi.streak.count === 30 && !_hzi.bonus30) { _hzi.bonus30 = true; _hzi.xp += 100; gained += 100; showToast('🔥🔥 Месяц серии! Легендарно: +100⚡', 3600); }
+    dirty = true;
+  }
+  // Бонус дня: хоть одна закрытая задача/шаг за сегодня
+  if (((c.task || 0) + (c.milestone || 0)) >= 1 && (c.bonus || 0) < HZI_RULES.bonus.cap) {
+    c.bonus = (c.bonus || 0) + 1; _hzi.xp += HZI_RULES.bonus.xp; gained += HZI_RULES.bonus.xp; dirty = true;
+  }
+  // Чистка хвостов
+  const capKeys = Object.keys(_hzi.caps).sort();
+  while (capKeys.length > 3) { delete _hzi.caps[capKeys.shift()]; }
+  while (_hzi.used.length > HZI_USED_MAX) _hzi.used.shift();
+  if (dirty) { try { await setDoc(uDocRef('meta', 'activity'), _hzi); hziBufSet([]); } catch(e) { /* буфер остаётся — досинхронится позже */ } }
+  else if (buf.length) hziBufSet([]); // всё отброшено капами/дедупом — буфер пуст
+  renderHaziBadge();
+  const newLevel = hziLevelOf(_hzi.xp);
+  if (newLevel > prevLevel) { setTimeout(() => hziShowEvolution(newLevel), 500); }
+  else if (!bornBefore && _hzi.born && !_hzi._noBirth) { setTimeout(() => hziShowBirth(), 500); }
+  if (gained > 0 && buf.length) hziPoke('+' + gained + '⚡');
+  return _hzi;
+}
+function renderHaziBadge() {
+  if (!_hzi) return;
+  const badge = document.getElementById('hazi-badge');
+  const level = hziLevelOf(_hzi.xp), stage = hziStageOf(level);
+  if (badge) {
+    const holder = badge.querySelector('.hazi-badge-svg');
+    if (holder && holder.dataset.stage !== String(stage)) { holder.innerHTML = hziSVG(stage); holder.dataset.stage = String(stage); }
+    const lv = badge.querySelector('.hazi-badge-lvl');
+    if (lv && lv.textContent !== String(level)) lv.textContent = level;
+  }
+  const set = document.getElementById('hazi-set-lvl');
+  if (set) set.textContent = 'ур. ' + level;
+}
+function hziPoke(text) { // «+5⚡» всплывает от бейджа — только когда он виден
+  const badge = document.getElementById('hazi-badge');
+  if (!badge || !_hzi) return;
+  const active = document.querySelector('.screen.active');
+  if (!active || active.id !== 'screen-main') return;
+  const f = document.createElement('span');
+  f.className = 'hazi-float'; f.textContent = text;
+  badge.appendChild(f);
+  setTimeout(() => f.remove(), 1100);
+  badge.classList.remove('hazi-happy'); void badge.offsetWidth; badge.classList.add('hazi-happy');
+}
+// ── SVG Хэзи: 5 стадий (единый viewBox, классы анимаций в CSS) ──
+function hziSVG(stage, size) {
+  const s = size ? ` width="${size}" height="${size}"` : '';
+  const defs = `<defs><radialGradient id="hzG" cx="35%" cy="30%" r="80%"><stop offset="0%" stop-color="#B79CFF"/><stop offset="55%" stop-color="#7C5CFF"/><stop offset="100%" stop-color="#5A38E8"/></radialGradient><linearGradient id="hzCapeG" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#FFD166"/><stop offset="100%" stop-color="#FF9F43"/></linearGradient></defs>`;
+  const eyes = (cy) => `<g class="hz-eyes"><ellipse cx="26.5" cy="${cy}" rx="2.7" ry="3.2" fill="#fff"/><ellipse cx="37.5" cy="${cy}" rx="2.7" ry="3.2" fill="#fff"/><circle cx="27.2" cy="${cy + 0.6}" r="1.3" fill="#060918"/><circle cx="38.2" cy="${cy + 0.6}" r="1.3" fill="#060918"/></g>`;
+  const smile = `<path d="M29 41 q3 2.6 6 0" stroke="#060918" stroke-width="1.5" stroke-linecap="round" fill="none" opacity=".85"/>`;
+  const blob = `<path d="M32 13 C43.5 13 49.5 23.5 48.5 34 C47.6 45 41 50.5 32 50.5 C23 50.5 16.4 45 15.5 34 C14.5 23.5 20.5 13 32 13 Z" fill="url(#hzG)"/><circle cx="25" cy="23" r="4.6" fill="rgba(255,255,255,0.32)"/>`;
+  const legs = `<path d="M25 50 q0 4.5 -3.5 6" stroke="#5A38E8" stroke-width="4.6" stroke-linecap="round" fill="none"/><path d="M39 50 q0 4.5 3.5 6" stroke="#5A38E8" stroke-width="4.6" stroke-linecap="round" fill="none"/>`;
+  let body = '';
+  if (stage === 1) {
+    body = `<g class="hz-a-pulse"><circle cx="32" cy="34" r="24" fill="rgba(124,92,255,0.13)"/><circle cx="32" cy="34" r="17" fill="url(#hzG)"/><circle cx="26" cy="27" r="3.6" fill="rgba(255,255,255,0.35)"/>${eyes(33)}${smile}</g><path class="hz-spark" d="M10 17 l1.2 3 3 1.2 -3 1.2 -1.2 3 -1.2 -3 -3 -1.2 3 -1.2z" fill="#FFD166"/><path class="hz-spark s2" d="M53 13 l0.9 2.4 2.4 0.9 -2.4 0.9 -0.9 2.4 -0.9 -2.4 -2.4 -0.9 2.4 -0.9z" fill="#00D4FF"/>`;
+  } else if (stage === 2) {
+    body = `<g class="hz-a-bounce">${legs}${blob}<circle cx="14.5" cy="37" r="3.4" fill="#7C5CFF"/><circle cx="49.5" cy="37" r="3.4" fill="#7C5CFF"/>${eyes(33)}${smile}</g>`;
+  } else if (stage === 3) {
+    body = `<g class="hz-a-sway">${blob}<circle cx="14.5" cy="37" r="3.4" fill="#7C5CFF"/><circle cx="49.5" cy="37" r="3.4" fill="#7C5CFF"/><g class="hz-eyes"><circle cx="26.5" cy="33" r="5.4" stroke="#00D4FF" stroke-width="1.7" fill="rgba(0,212,255,0.10)"/><circle cx="37.5" cy="33" r="5.4" stroke="#00D4FF" stroke-width="1.7" fill="rgba(0,212,255,0.10)"/><path d="M31.9 33 h1.2 M21.1 31.8 l-4.6 -1.4 M42.9 31.8 l4.6 -1.4" stroke="#00D4FF" stroke-width="1.5" stroke-linecap="round"/><circle cx="26.5" cy="33.4" r="1.5" fill="#060918"/><circle cx="37.5" cy="33.4" r="1.5" fill="#060918"/></g><g transform="rotate(30 49.5 38)"><rect x="47.8" y="29" width="3.4" height="13" rx="1" fill="#FFD166"/><path d="M47.8 42 l1.7 4.2 1.7 -4.2z" fill="#F4A261"/></g>${smile}</g><path class="hz-spark" d="M11 18 l1.1 2.8 2.8 1.1 -2.8 1.1 -1.1 2.8 -1.1 -2.8 -2.8 -1.1 2.8 -1.1z" fill="#00D4FF"/>`;
+  } else if (stage === 4) {
+    body = `<g class="hz-a-hero"><path class="hz-cape" d="M32 15 C47.5 15 54.5 28 53.5 38.5 C52.6 51 45 57.5 32 57.5 C19 57.5 11.4 51 10.5 38.5 C9.5 28 16.5 15 32 15 Z" fill="url(#hzCapeG)"/>${blob}<path d="M21.5 29.5 h21 a2.4 2.4 0 0 1 2.4 2.4 v2.4 a3.4 3.4 0 0 1 -3.4 3.4 h-5 l-2.9 -2.2 -2.9 2.2 h-9.2 a3.4 3.4 0 0 1 -3.4 -3.4 v-2.4 a2.4 2.4 0 0 1 2.4 -2.4z" fill="#00D4FF" opacity="0.93"/><ellipse cx="27.2" cy="33.8" rx="2.3" ry="1.6" fill="#fff"/><ellipse cx="36.8" cy="33.8" rx="2.3" ry="1.6" fill="#fff"/><circle cx="27.6" cy="34" r="1" fill="#060918"/><circle cx="37.2" cy="34" r="1" fill="#060918"/><path d="M29 42 h6" stroke="#060918" stroke-width="1.6" stroke-linecap="round"/></g>`;
+  } else {
+    body = `<g class="hz-a-float"><circle class="hz-aura" cx="32" cy="33" r="26.5" stroke="rgba(0,212,255,0.55)" stroke-width="1.1" stroke-dasharray="4 7" fill="none"/><circle class="hz-aura a2" cx="32" cy="33" r="21" stroke="rgba(255,209,102,0.5)" stroke-width="1" stroke-dasharray="2 6" fill="none"/><path d="M12 24 l4 5 -3 0.4 3.4 4.6" stroke="#FFD166" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round" class="hz-bolt"/><path d="M52 22 l-4 5 3 0.4 -3.4 4.6" stroke="#FFD166" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round" class="hz-bolt b2"/>${blob}<path d="M22 29 h20 a2.2 2.2 0 0 1 2.2 2.2 v2.2 a3.2 3.2 0 0 1 -3.2 3.2 h-4.6 l-2.8 -2 -2.8 2 h-8.8 a3.2 3.2 0 0 1 -3.2 -3.2 v-2.2 a2.2 2.2 0 0 1 2.2 -2.2z" fill="#00D4FF" opacity="0.93"/><ellipse cx="27.4" cy="33" rx="2.2" ry="1.5" fill="#fff"/><ellipse cx="36.6" cy="33" rx="2.2" ry="1.5" fill="#fff"/><circle cx="27.8" cy="33.2" r="0.95" fill="#060918"/><circle cx="37" cy="33.2" r="0.95" fill="#060918"/><path d="M28.5 41.5 q3.5 3 7 0" stroke="#060918" stroke-width="1.5" stroke-linecap="round" fill="none"/></g><path class="hz-spark" d="M9 40 l1 2.6 2.6 1 -2.6 1 -1 2.6 -1 -2.6 -2.6 -1 2.6 -1z" fill="#FFD166"/><path class="hz-spark s2" d="M55 12 l1 2.6 2.6 1 -2.6 1 -1 2.6 -1 -2.6 -2.6 -1 2.6 -1z" fill="#00D4FF"/>`;
+  }
+  return `<svg class="hazi-svg st${stage}" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg"${s} aria-hidden="true">${defs}${body}</svg>`;
+}
+// ── Модалки: рождение и эволюция ──
+// В тестовом режиме (hz3test=1) модалки подавлены — иначе overlay накрывает
+// карточки и ломает драг-тесты всей сюиты (урок T60/T61/T53). Т91 включает их
+// явно: window.__hziShowModals = true.
+function hziModalAllowed() {
+  try { if (window.__hziShowModals === true) return true; } catch(e) {}
+  return !HZ3_TEST_RUN;
+}
+function hziModal(inner) {
+  const ov = document.createElement('div');
+  ov.className = 'modal-overlay';
+  ov.innerHTML = `<div class="modal" style="max-width:330px;text-align:center;padding:24px 20px 20px;">${inner}</div>`;
+  document.body.appendChild(ov);
+  requestAnimationFrame(() => ov.classList.add('open'));
+  ov.addEventListener('click', (e) => { if (e.target === ov) ov.remove(); });
+  return ov;
+}
+function hziSparks() {
+  const pts = [[18, 4], [78, 2], [8, 30], [90, 26], [30, 0], [64, 6]];
+  return `<div class="hazi-evo-sparks" style="height:0;">${pts.map((p, i) => `<span style="left:${p[0]}%;top:${p[1]}px;animation-delay:${i * 0.28}s;">${i % 2 ? '✨' : '⚡'}</span>`).join('')}</div>`;
+}
+function hziShowBirth() {
+  if (document.getElementById('hazi-modal-open') || !hziModalAllowed()) return;
+  const stage = hziStageOf(hziLevelOf(_hzi.xp));
+  const ov = hziModal(`${hziSparks()}<div class="hazi-evo-stage">${hziSVG(stage)}</div>
+    <div class="hazi-evo-title">Рождение Хэзи</div>
+    <div class="hazi-evo-sub">Из твоей мысли вылупился <b>Хэзи</b> — он растёт вместе с тобой</div>
+    <div class="hazi-evo-text">Закрывай задачи и добавляй мысли — однажды он станет сверхчеловеком. Тапни по иконке в шапке, чтобы навестить его.</div>
+    <button class="modal-save" style="margin-top:14px;width:100%;" onclick="this.closest('.modal-overlay').remove()">Привет, Хэзи!</button>`);
+  ov.id = 'hazi-modal-open';
+}
+function hziShowEvolution(level) {
+  if (document.getElementById('hazi-modal-open') || !hziModalAllowed()) return;
+  const stage = hziStageOf(level);
+  const prevStage = level > 1 ? hziStageOf(level - 1) : stage;
+  const title = stage > prevStage ? 'Эволюция!' : 'Уровень ' + level + '!';
+  const ov = hziModal(`${hziSparks()}<div class="hazi-evo-stage">${hziSVG(stage)}</div>
+    <div class="hazi-evo-title">${title}</div>
+    <div class="hazi-evo-sub">Хэзи теперь — <b>${HZI_STAGE_NAMES[stage]}</b> · уровень ${level}</div>
+    ${HZI_STAGE_FLAVOR[stage] ? `<div class="hazi-evo-text">${HZI_STAGE_FLAVOR[stage]}</div>` : ''}
+    <button class="modal-save" style="margin-top:14px;width:100%;" onclick="this.closest('.modal-overlay').remove()">Круто!</button>`);
+  ov.id = 'hazi-modal-open';
+}
+// ── Экран Хэзи ──
+function renderHaziScreen() {
+  if (!_hzi) { hziLoad().then(() => renderHaziScreen()).catch(() => {}); return; }
+  const level = hziLevelOf(_hzi.xp), stage = hziStageOf(level);
+  const wrap = document.getElementById('hazi-stage-wrap');
+  if (wrap) { const st = wrap.dataset.stage; if (st !== String(stage)) { wrap.innerHTML = hziSVG(stage, 150); wrap.dataset.stage = String(stage); } }
+  const nameEl = document.getElementById('hazi-name');
+  if (nameEl) nameEl.textContent = 'Хэзи · ' + HZI_STAGE_NAMES[stage];
+  const lvlEl = document.getElementById('hazi-lvltxt');
+  if (lvlEl) lvlEl.textContent = 'Уровень ' + level;
+  const fill = document.getElementById('hazi-barfill'), txt = document.getElementById('hazi-bartxt');
+  if (fill && txt) {
+    if (level >= 10) { fill.style.width = '100%'; txt.textContent = _hzi.xp + ' ⚡ · максимум'; }
+    else {
+      const cur = HZI_LEVELS[level - 1], next = HZI_LEVELS[level];
+      fill.style.width = Math.min(100, Math.round(((_hzi.xp - cur) / (next - cur)) * 100)) + '%';
+      txt.textContent = `${_hzi.xp} ⚡ · до ур. ${level + 1} осталось ${next - _hzi.xp}`;
+    }
+  }
+  const st = document.getElementById('hazi-stats');
+  if (st) {
+    const t = _hzi.totals;
+    const card = (v, l) => `<div style="background:rgba(255,255,255,0.04);border:0.5px solid rgba(255,255,255,0.09);border-radius:14px;padding:10px 12px;"><div style="font-size:15.5px;font-weight:700;color:#fff;font-family:Inter,sans-serif;">${v}</div><div style="font-size:10.5px;color:rgba(255,255,255,0.4);margin-top:2px;font-family:Inter,sans-serif;">${l}</div></div>`;
+    st.innerHTML = card('🔥 ' + (_hzi.streak.count || 0), 'дней подряд') + card('✅ ' + (t.tasks || 0), 'задач закрыто') + card('📝 ' + (t.notes || 0), 'заметок создано') + card('🌠 ' + (t.milestones || 0), 'шагов желаний') + card('💬 ' + (t.chats || 0), 'сообщений ИИ') + card('🏆 ' + (t.streakBest || 0), 'лучшая серия');
+  }
+}
+function hziReset() { // тесты
+  _hzi = null;
+  try { localStorage.removeItem(HZI_BUF_KEY); } catch(e) {}
+  const b = document.getElementById('hazi-badge');
+  if (b) { const h = b.querySelector('.hazi-badge-svg'); if (h) { h.innerHTML = ''; h.dataset.stage = '0'; } const lv = b.querySelector('.hazi-badge-lvl'); if (lv) lv.textContent = '1'; }
+}
+window.hziReset = hziReset;
+// ══════════ /HZI ══════════
 
 // ── КВЕСТ: 9 шагов ──
 const QUEST_LAST = 9;
@@ -9232,6 +9565,7 @@ function goTo(screen) {
   if (screen === 'devchat') openDevChat();
   if (screen === 'adminchat') openAdminChat();
   if (screen === 'tags') renderTagsScreen();
+  if (screen === 'hazi') renderHaziScreen(); // v91
   if (screen === 'cloud') {
     renderWordCloud();
   }
@@ -9625,7 +9959,8 @@ async function addNoteFromChat(nd) {
   if (nd.urgent === true) newDoc.urgent = true;                           // v89 Н6: срочно — самый верх очереди
   if (nd.parentId) newDoc.parentId = nd.parentId;                         // v82: подзадача (id материнской задачи)
   if (nd.details) newDoc.details = nd.details;                            // v82: детали/комментарии записи (видит ИИ)
-  await addDoc(notesCol(), newDoc);
+  const _hzRef = await addDoc(notesCol(), newDoc);
+  try { hziAward((nd.scheduledDate || nd.scheduledTime) ? 'plan' : 'note', _hzRef.id); } catch(e) {} // v91: ⚡ план/заметка из чата
   bumpProfileActivity(); // v76: отметка «пользователь пишет» для статистики владельца
   await loadNotes();
   renderCalendar();
@@ -12500,6 +12835,7 @@ document.getElementById('chat-send').addEventListener('click',()=>{
   if(!text)return;
   document.getElementById('chat-input').value='';
   chatAutoResize();
+  try { hziAward('chat'); } catch(e) {} // v91: ⚡ за разговор с ИИ
   try { window.__questEvent('chat-msg'); } catch(e) {} // v89: квест-шаг «обсудить с ИИ»
   sendChatMessage(text);
 });
@@ -13075,6 +13411,17 @@ window.__t = {
   heuristicIsTask,
   normalizeAllWishTodos,
   restorePunctuationAI,
+  // v91: Хэзи — баллы, уровни, стадии
+  hziAward,
+  hziFlush: () => hziFlush(true),
+  hziLoad,
+  hziState: () => _hzi,
+  hziReset,
+  hziSVG,
+  hziLevelOf,
+  hziStageOf,
+  renderHaziScreen,
+  hziRules: HZI_RULES,
   testRun: HZ3_TEST_RUN,
 };
 
@@ -13228,6 +13575,7 @@ async function initUserData() {
     loadKnowledgeBase().then(() => renderKbStatus()), // v87: база знаний (метод Карпати)
   ]);
   checkTagSuggestions(); // не блокируем интерфейс — проверяем в фоне, банер появится когда будет готов
+  hziFlush(true).catch(() => {}); // v91: Хэзи — загрузка состояния, ретро-грант, сброс буфера (нужны загруженные notes)
   // Самолечение картинок желаний: желания без moodImage (сорвавшаяся генерация,
   // либо созданные до появления фичи) молча дорисовываются в фоне
   setTimeout(healWishImages, 2000);
