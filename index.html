@@ -1516,7 +1516,9 @@ body[data-theme="business"] .cap-mic.recording{box-shadow:0 0 10px rgba(140,176,
         <div class="hazi-bar"><i id="hazi-barfill" style="width:0%;"></i></div>
         <div id="hazi-bartxt" style="text-align:center;font-size:11px;color:rgba(255,255,255,0.45);margin-top:6px;font-family:Inter,sans-serif;"></div>
       </div>
-      <div id="hazi-stats" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:16px 0 0;"></div>
+      <div id="hazi-period" style="display:flex;gap:6px;margin:16px 0 0;"></div>
+      <div id="hazi-streakline" style="margin-top:10px;text-align:center;font-size:11.5px;color:rgba(255,255,255,0.55);font-family:Inter,sans-serif;"></div>
+      <div id="hazi-stats" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:10px 0 0;"></div>
       <div style="margin-top:16px;padding:12px 14px;border-radius:14px;background:rgba(108,71,255,0.07);border:0.5px solid rgba(108,71,255,0.22);font-size:11.5px;line-height:1.6;color:rgba(255,255,255,0.5);font-family:Inter,sans-serif;">
         ⚡ Хэзи растёт от твоих дел: <b style="color:rgba(255,255,255,0.75);">заметка +2</b> · <b style="color:rgba(255,255,255,0.75);">задача +5</b> · <b style="color:rgba(255,255,255,0.75);">шаг желания +10</b> · активный день 🔥 +2. Он родился из твоих мыслей — и однажды станет сверхчеловеком.
       </div>
@@ -3408,6 +3410,7 @@ async function classifyAndRouteNote(note) {
       if (cleaned && cleaned !== note.text) patch.text = cleaned;
     }
     await updateDoc(uDocRef('notes', note.id), patch);
+    try { hziAward('taskadd', note.id); } catch(e) {} // v92: метрика «задача добавлена» (классификатор)
     await loadNotes();
     renderCalendar(); // календарь видит задачу с датой сразу
     const finalText = patch.text || note.text;
@@ -3464,6 +3467,7 @@ async function wishOfferTodo(noteId) {
   if (!n) return;
   try {
     await updateDoc(uDocRef('notes', noteId), { inTodo: true, todoOrder: computeSmartOrder(smartScoreForFields({ scheduledDate: n.scheduledDate || null, importance: n.importance || null, effort: n.effort || null, urgent: false })) });
+    try { hziAward('taskadd', noteId); } catch(e) {} // v92: метрика (оффер «в тудушку»)
     await loadNotes();
     showToast('☑️ Задача добавлена в Тудушку', 2400);
   } catch(e) { showToast('Ошибка: ' + e.message, 3000); }
@@ -3792,6 +3796,7 @@ async function bulkAddToTodo() {
     for (const { n } of withSc) {
       const order = computeSmartOrder(smartScore(n));
       await updateDoc(uDocRef('notes', n.id), { inTodo: true, todoOrder: order });
+      try { hziAward('taskadd', n.id); } catch(e) {} // v92: метрика (мультивыбор → тудушка)
       n.inTodo = true; n.todoOrder = order; // следующая вставка видит уже добавленных
     }
     selectedNoteIds.clear();
@@ -4043,7 +4048,7 @@ async function createSubtask(parentId, text) {
     // v83: подзадача встаёт В КОНЕЦ очереди (шаги плана пишутся по порядку 1→N и так же отображаются),
     // а не по умному скору — иначе следующий шаг может уехать выше предыдущего
     const order = computeAppendOrder();
-    await addDoc(notesCol(), {
+    const _stRef = await addDoc(notesCol(), {
       text: t,
       type: 'text',
       tag: parent.tag || null,
@@ -4054,6 +4059,7 @@ async function createSubtask(parentId, text) {
       doneAt: null,
       createdAt: new Date().toISOString()
     });
+    try { hziAward('taskadd', _stRef.id); } catch(e) {} // v92: метрика (подзадача)
     await loadNotes();
     renderCalendar();
     const fresh = notes.find(x => x.id === editingId);
@@ -4342,7 +4348,7 @@ async function toggleDone(id, currentDone) {
       doneAt: willBeDone ? new Date().toISOString() : null
     });
     if (willBeDone) { celebrateTaskDone(); try { window.__questEvent('task-gesture'); } catch(e) {} // празднуем только при завершении, не при отмене; v89: жест = шаг квеста 5
-      try { const _hn = notes.find(n => n.id === id); if (_hn) hziAward(_hn.milestoneLink ? 'milestone' : 'task', id); } catch(e) {} } // v91: ⚡ за дело
+      try { const _hn = notes.find(n => n.id === id); if (_hn) hziAward(_hn.milestoneLink ? 'milestone' : 'task', id); } catch(e) {} } // v91: ⚡ + метрика «выполнено» (v92) — отмена/возврат ничего не отнимает (тот же принцип, что и у ⚡)
     await loadNotes();
     renderCalendar(); // выполненные задачи исчезают из календаря
 
@@ -7809,7 +7815,7 @@ document.getElementById('wishchat-send').addEventListener('click', async () => {
       const args = JSON.parse(call.function.arguments || '{}');
       if (args.text) {
         // v82: по умному скору (срочность + важность + объём + время суток) — не перекрывает порядок дня
-        await addDoc(notesCol(), {
+        const _wTaskRef = await addDoc(notesCol(), {
           text: args.text,
           type: 'text',
           tag: w.shortTag || args.tag || null, // тег желания — главный признак задач из желания
@@ -7820,6 +7826,7 @@ document.getElementById('wishchat-send').addEventListener('click', async () => {
           effort: clampEffort(args.effort),
           createdAt: new Date().toISOString()
         });
+        try { hziAward('taskadd', _wTaskRef.id); } catch(e) {} // v92: метрика (ИИ-задача желания)
         await loadNotes();
         renderCalendar();
         reply += (reply ? '\n\n' : '') + '📋 Добавил задачу к желанию [' + (w.shortTag || '') + ']: ' + args.text + ' — уже в тудушке. День и час можно назначить кнопкой 📅 или перетаскиванием в календаре.';
@@ -7960,7 +7967,8 @@ let _hziFlushTimer = null;
 function hziDayStr(off = 0) { return new Date(Date.now() + 3 * 3600000 + off * 86400000).toISOString().slice(0, 10); }
 function hziEmptyState() {
   return { xp: 0, born: null, retroDone: false, _noBirth: false, bonus7: false, bonus30: false,
-    totals: { notes: 0, tasks: 0, milestones: 0, wishes: 0, chats: 0, streakBest: 0 },
+    totals: { notes: 0, tasks: 0, tasksAdded: 0, milestones: 0, wishes: 0, chats: 0, streakBest: 0, xpEarned: 0 },
+    days: {}, // v92: дневные бакеты метрик для дашборда (день/неделя/месяц)
     streak: { count: 0, lastDay: null }, caps: {}, used: [] };
 }
 function hziLevelOf(xp) { let lv = 1; for (let i = 0; i < HZI_LEVELS.length; i++) if (xp >= HZI_LEVELS[i]) lv = i + 1; return lv; }
@@ -7968,8 +7976,9 @@ function hziStageOf(level) { return HZI_STAGES[Math.min(Math.max(level, 1), 10) 
 function hziBufGet() { try { return JSON.parse(localStorage.getItem(HZI_BUF_KEY) || '[]'); } catch(e) { return []; } }
 function hziBufSet(b) { try { localStorage.setItem(HZI_BUF_KEY, JSON.stringify(b)); } catch(e) {} }
 // Единственная точка начисления. id — для дедупа («заметка/задача награждается 1 раз», ключ = kind:id).
+// v92: kind 'taskadd' — метрика «задача добавлена» без ⚡ (дедуп тот же).
 function hziAward(kind, id) {
-  if (!HZI_RULES[kind]) return;
+  if (!HZI_RULES[kind] && kind !== 'taskadd') return;
   const key = id ? kind + ':' + id : null;
   if (key) {
     if (_hzi && Array.isArray(_hzi.used) && _hzi.used.includes(key)) return;
@@ -7993,6 +8002,7 @@ async function hziLoad() {
     if (doneN > 0) {
       _hzi.xp = Math.min(HZI_RETRO_CAP, doneN * 3);
       _hzi.totals.tasks = doneN;
+      _hzi.totals.xpEarned = _hzi.xp;
       _hzi._noBirth = true; // Хэзи уже живёт — без модалки рождения
       const oldest = (notes || []).filter(n => n.createdAt).sort((a, b) => a.createdAt < b.createdAt ? -1 : 1)[0];
       if (oldest) _hzi.born = oldest.createdAt;
@@ -8009,21 +8019,32 @@ async function hziFlush(force) {
   const prevLevel = hziLevelOf(_hzi.xp);
   const bornBefore = !!_hzi.born;
   let gained = 0, dirty = buf.length > 0;
+  if (!_hzi.days) _hzi.days = {}; // миграция v91 → v92
+  const d = _hzi.days[today] = _hzi.days[today] || {}; // дневной бакет: td/ta/n/ms/w/c/xp
   for (const item of buf) {
+    const key = item.id ? item.k + ':' + item.id : null;
+    if (item.k === 'taskadd') { // v92: «задача добавлена» — метрика без ⚡ и без капов
+      if (key && _hzi.used.includes(key)) continue;
+      _hzi.totals.tasksAdded = (_hzi.totals.tasksAdded || 0) + 1;
+      d.ta = (d.ta || 0) + 1;
+      if (key) _hzi.used.push(key);
+      dirty = true;
+      continue;
+    }
     const rule = HZI_RULES[item.k];
     if (!rule) continue;
     const caps = _hzi.caps[today] = _hzi.caps[today] || {};
-    const key = item.id ? item.k + ':' + item.id : null;
     if (key && _hzi.used.includes(key)) continue;            // уже награждён
     if ((caps[item.k] || 0) >= rule.cap) continue;            // дневной кап исчерпан
     caps[item.k] = (caps[item.k] || 0) + 1;
     if (key) _hzi.used.push(key);
     _hzi.xp += rule.xp; gained += rule.xp;
-    if (item.k === 'note') _hzi.totals.notes++;
-    else if (item.k === 'task') _hzi.totals.tasks++;
-    else if (item.k === 'milestone') _hzi.totals.milestones++;
-    else if (item.k === 'wish') _hzi.totals.wishes++;
-    else if (item.k === 'chat') _hzi.totals.chats++;
+    _hzi.totals.xpEarned = (_hzi.totals.xpEarned || 0) + rule.xp; d.xp = (d.xp || 0) + rule.xp;
+    if (item.k === 'note') { _hzi.totals.notes++; d.n = (d.n || 0) + 1; }
+    else if (item.k === 'task') { _hzi.totals.tasks++; d.td = (d.td || 0) + 1; }
+    else if (item.k === 'milestone') { _hzi.totals.milestones++; d.ms = (d.ms || 0) + 1; }
+    else if (item.k === 'wish') { _hzi.totals.wishes++; d.w = (d.w || 0) + 1; }
+    else if (item.k === 'chat') { _hzi.totals.chats++; d.c = (d.c || 0) + 1; }
     if (item.k === 'note' && !_hzi.born) _hzi.born = new Date(item.ts).toISOString();
   }
   // Стрик 🔥: день активен = есть закрытая задача/шаг ИЛИ 2+ новые заметки; серия +2⚡, бону­сы на 7 и 30
@@ -8033,19 +8054,23 @@ async function hziFlush(force) {
     _hzi.streak.count = _hzi.streak.lastDay === hziDayStr(-1) ? _hzi.streak.count + 1 : 1;
     _hzi.streak.lastDay = today;
     _hzi.totals.streakBest = Math.max(_hzi.totals.streakBest, _hzi.streak.count);
-    if ((c.streak || 0) < HZI_RULES.streak.cap) { c.streak = (c.streak || 0) + 1; _hzi.xp += HZI_RULES.streak.xp; gained += HZI_RULES.streak.xp; }
-    if (_hzi.streak.count === 7 && !_hzi.bonus7) { _hzi.bonus7 = true; _hzi.xp += 20; gained += 20; showToast('🔥 Неделя без остановок! Хэзи в огне: +20⚡', 3200); }
-    if (_hzi.streak.count === 30 && !_hzi.bonus30) { _hzi.bonus30 = true; _hzi.xp += 100; gained += 100; showToast('🔥🔥 Месяц серии! Легендарно: +100⚡', 3600); }
+    if ((c.streak || 0) < HZI_RULES.streak.cap) { c.streak = (c.streak || 0) + 1; _hzi.xp += HZI_RULES.streak.xp; gained += HZI_RULES.streak.xp; _hzi.totals.xpEarned = (_hzi.totals.xpEarned || 0) + HZI_RULES.streak.xp; d.xp = (d.xp || 0) + HZI_RULES.streak.xp; }
+    if (_hzi.streak.count === 7 && !_hzi.bonus7) { _hzi.bonus7 = true; _hzi.xp += 20; gained += 20; _hzi.totals.xpEarned = (_hzi.totals.xpEarned || 0) + 20; d.xp = (d.xp || 0) + 20; showToast('🔥 Неделя без остановок! Хэзи в огне: +20⚡', 3200); }
+    if (_hzi.streak.count === 30 && !_hzi.bonus30) { _hzi.bonus30 = true; _hzi.xp += 100; gained += 100; _hzi.totals.xpEarned = (_hzi.totals.xpEarned || 0) + 100; d.xp = (d.xp || 0) + 100; showToast('🔥🔥 Месяц серии! Легендарно: +100⚡', 3600); }
     dirty = true;
   }
   // Бонус дня: хоть одна закрытая задача/шаг за сегодня
   if (((c.task || 0) + (c.milestone || 0)) >= 1 && (c.bonus || 0) < HZI_RULES.bonus.cap) {
-    c.bonus = (c.bonus || 0) + 1; _hzi.xp += HZI_RULES.bonus.xp; gained += HZI_RULES.bonus.xp; dirty = true;
+    c.bonus = (c.bonus || 0) + 1; _hzi.xp += HZI_RULES.bonus.xp; gained += HZI_RULES.bonus.xp; _hzi.totals.xpEarned = (_hzi.totals.xpEarned || 0) + HZI_RULES.bonus.xp; d.xp = (d.xp || 0) + HZI_RULES.bonus.xp; dirty = true;
   }
   // Чистка хвостов
   const capKeys = Object.keys(_hzi.caps).sort();
   while (capKeys.length > 3) { delete _hzi.caps[capKeys.shift()]; }
   while (_hzi.used.length > HZI_USED_MAX) _hzi.used.shift();
+  if (_hzi.days) { // v92: хвост дневных бакетов ~13 месяцев (дашборд «месяц» всегда покрыт)
+    const dayKeys = Object.keys(_hzi.days).sort();
+    while (dayKeys.length > 400) delete _hzi.days[dayKeys.shift()];
+  }
   if (dirty) { try { await setDoc(uDocRef('meta', 'activity'), _hzi); hziBufSet([]); } catch(e) { /* буфер остаётся — досинхронится позже */ } }
   else if (buf.length) hziBufSet([]); // всё отброшено капами/дедупом — буфер пуст
   renderHaziBadge();
@@ -8163,12 +8188,59 @@ function renderHaziScreen() {
       txt.textContent = `${_hzi.xp} ⚡ · до ур. ${level + 1} осталось ${next - _hzi.xp}`;
     }
   }
-  const st = document.getElementById('hazi-stats');
-  if (st) {
-    const t = _hzi.totals;
-    const card = (v, l) => `<div style="background:rgba(255,255,255,0.04);border:0.5px solid rgba(255,255,255,0.09);border-radius:14px;padding:10px 12px;"><div style="font-size:15.5px;font-weight:700;color:#fff;font-family:Inter,sans-serif;">${v}</div><div style="font-size:10.5px;color:rgba(255,255,255,0.4);margin-top:2px;font-family:Inter,sans-serif;">${l}</div></div>`;
-    st.innerHTML = card('🔥 ' + (_hzi.streak.count || 0), 'дней подряд') + card('✅ ' + (t.tasks || 0), 'задач закрыто') + card('📝 ' + (t.notes || 0), 'заметок создано') + card('🌠 ' + (t.milestones || 0), 'шагов желаний') + card('💬 ' + (t.chats || 0), 'сообщений ИИ') + card('🏆 ' + (t.streakBest || 0), 'лучшая серия');
+  hziRenderStats();
+}
+// ── v92: ДАШБОРД — выбор периода (Всё время · День · Неделя · Месяц) ──
+// Дни в конвенции hziDayStr (МСК). Неделя — календарная с понедельника, месяц — с 1 числа.
+let _hziPeriod = 'all';
+try { const _sp = localStorage.getItem('hz3_hazi_period'); if (_sp && ['all', 'day', 'week', 'month'].includes(_sp)) _hziPeriod = _sp; } catch(e) {}
+function hziPeriodFrom(p) { // начало диапазона включительно; null = всё время
+  if (p === 'day') return hziDayStr();
+  const nowM = new Date(Date.now() + 3 * 3600000);
+  if (p === 'week') { const back = (nowM.getUTCDay() + 6) % 7; return hziDayStr(-back); }
+  if (p === 'month') return hziDayStr(-(nowM.getUTCDate() - 1));
+  return null;
+}
+function hziSumPeriod(p) {
+  const from = hziPeriodFrom(p), to = hziDayStr();
+  const t = { td: 0, ta: 0, n: 0, ms: 0, c: 0, xp: 0 };
+  if (!_hzi || !_hzi.days || !from) return t;
+  for (const k of Object.keys(_hzi.days)) {
+    if (k < from || k > to) continue;
+    const b = _hzi.days[k] || {};
+    t.td += b.td || 0; t.ta += b.ta || 0; t.n += b.n || 0; t.ms += b.ms || 0; t.c += b.c || 0; t.xp += b.xp || 0;
   }
+  return t;
+}
+function hziSetPeriod(p) {
+  _hziPeriod = ['all', 'day', 'week', 'month'].includes(p) ? p : 'all';
+  try { localStorage.setItem('hz3_hazi_period', _hziPeriod); } catch(e) {}
+  hziRenderStats();
+}
+function hziRenderStats() {
+  if (!_hzi) return;
+  const st = document.getElementById('hazi-stats');
+  const tabs = document.getElementById('hazi-period');
+  const sl = document.getElementById('hazi-streakline');
+  if (tabs) {
+    const tab = (id, lbl) => `<button onclick="hziSetPeriod('${id}')" style="flex:1;padding:6px 4px;border-radius:999px;border:0.5px solid ${_hziPeriod === id ? 'transparent' : 'rgba(255,255,255,0.10)'};background:${_hziPeriod === id ? 'linear-gradient(135deg,#6C47FF,#00A8E8)' : 'rgba(255,255,255,0.05)'};color:${_hziPeriod === id ? '#fff' : 'rgba(255,255,255,0.45)'};font-size:11px;font-weight:600;font-family:Inter,sans-serif;cursor:pointer;-webkit-tap-highlight-color:transparent;">${lbl}</button>`;
+    tabs.innerHTML = tab('all', 'Всё время') + tab('day', 'День') + tab('week', 'Неделя') + tab('month', 'Месяц');
+  }
+  if (sl) sl.textContent = `🔥 ${_hzi.streak.count || 0} дней подряд · 🏆 рекорд ${_hzi.totals.streakBest || 0}`;
+  if (!st) return;
+  const t = _hzi.totals;
+  let v;
+  if (_hziPeriod === 'all') {
+    v = { td: t.tasks || 0, ta: t.tasksAdded || 0, n: t.notes || 0, ms: t.milestones || 0, c: t.chats || 0, xp: (t.xpEarned || 0) > 0 ? t.xpEarned : (_hzi.xp || 0) }; // xpEarned нет у v91-профилей — fallback на текущий xp
+  } else {
+    v = hziSumPeriod(_hziPeriod);
+  }
+  const card = (val, l) => `<div style="background:rgba(255,255,255,0.04);border:0.5px solid rgba(255,255,255,0.09);border-radius:14px;padding:10px 12px;"><div style="font-size:15.5px;font-weight:700;color:#fff;font-family:Inter,sans-serif;">${val}</div><div style="font-size:10.5px;color:rgba(255,255,255,0.4);margin-top:2px;font-family:Inter,sans-serif;">${l}</div></div>`;
+  st.innerHTML = card('✅ ' + v.td, 'задач выполнено') + card('➕ ' + v.ta, 'задач добавлено') + card('📝 ' + v.n, 'заметок создано') + card('🌠 ' + v.ms, 'шагов желаний') + card('💬 ' + v.c, 'сообщений ИИ') + card('⚡ ' + v.xp, 'получено');
+}
+async function hziPersist() { // тесты/служебное: прямая запись состояния в облако
+  if (!_hzi) return;
+  try { await setDoc(uDocRef('meta', 'activity'), _hzi); } catch(e) {}
 }
 function hziReset() { // тесты
   _hzi = null;
@@ -9961,6 +10033,7 @@ async function addNoteFromChat(nd) {
   if (nd.details) newDoc.details = nd.details;                            // v82: детали/комментарии записи (видит ИИ)
   const _hzRef = await addDoc(notesCol(), newDoc);
   try { hziAward((nd.scheduledDate || nd.scheduledTime) ? 'plan' : 'note', _hzRef.id); } catch(e) {} // v91: ⚡ план/заметка из чата
+  if (nd.inTodo === true) { try { hziAward('taskadd', _hzRef.id); } catch(e) {} } // v92: задача добавлена в тудушку (метрика)
   bumpProfileActivity(); // v76: отметка «пользователь пишет» для статистики владельца
   await loadNotes();
   renderCalendar();
@@ -13422,6 +13495,14 @@ window.__t = {
   hziStageOf,
   renderHaziScreen,
   hziRules: HZI_RULES,
+  // v92: дашборд — периоды и метрики
+  hziSetPeriod,
+  hziRenderStats,
+  hziPeriodFrom,
+  hziSumPeriod,
+  hziDayStr,
+  hziPersist,
+  hziDays: () => (_hzi && _hzi.days) || {},
   testRun: HZ3_TEST_RUN,
 };
 
