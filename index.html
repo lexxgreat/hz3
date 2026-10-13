@@ -397,6 +397,12 @@ body{background:#060918;font-family:'Inter',sans-serif;display:flex;justify-cont
   background:linear-gradient(to bottom,#6C47FF,#00D4FF);border-radius:99px;
   opacity:0.6;
 }
+/* v97: свайп вправо в тудушке/истории = красная кнопка «Удалить» слева */
+.swipe-wrap{position:relative;overflow:hidden;border-radius:16px;margin-bottom:8px}
+.swipe-del{position:absolute;left:0;top:0;bottom:0;width:78px;border:none;border-radius:16px 0 0 16px;background:linear-gradient(135deg,#FF5A5A,rgba(255,110,110,0.82));color:#fff;font-family:Inter,sans-serif;font-size:10.5px;font-weight:700;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;cursor:pointer;z-index:0;-webkit-tap-highlight-color:transparent}
+.swipe-del svg{width:16px;height:16px;display:block}
+.swipe-wrap .note-card{position:relative;z-index:1;margin-bottom:0;transition:transform .18s ease;will-change:transform}
+.swipe-wrap .note-card.swipe-live{transition:none}
 .note-meta{display:flex;justify-content:space-between;align-items:center;margin-bottom:7px}
 .note-date{font-size:10px;color:rgba(255,255,255,0.4);font-weight:500}
 /* v82: иконка копирования светлее (на тёмном фоне терялась) + свои цвета в темах */
@@ -652,6 +658,12 @@ body.todo-mouse-dragging *{cursor:grabbing !important}
 .rem-card .rem-del{flex-shrink:0;background:none;border:none;color:rgba(255,255,255,0.28);font-size:14px;cursor:pointer;padding:0 0 0 6px;line-height:1;-webkit-tap-highlight-color:transparent}
 .rem-card .rem-del:hover{color:rgba(255,110,110,0.85)}
 .rem-card.editing{border-color:rgba(0,212,255,0.5);background:rgba(0,212,255,0.07)}
+/* v97: галочка «помнить всегда» — активные правила (максимум 2) */
+.rem-check{flex-shrink:0;width:22px;height:22px;border-radius:7px;border:1.5px solid rgba(255,209,102,0.45);background:transparent;color:#060918;font-size:13px;font-weight:800;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;margin-top:1px;-webkit-tap-highlight-color:transparent}
+.rem-check.on{background:linear-gradient(135deg,#FFD166,#FFB84D);border-color:#FFD166;color:#0A0E24}
+/* v97: Хэзи на своём экране приглашает тапнуть — лёгкое покачивание (завлекалка к гардеробу) */
+@keyframes hzInvite{0%,84%,100%{transform:rotate(0) translateY(0)}88%{transform:rotate(-4deg) translateY(-4px)}92%{transform:rotate(3.5deg) translateY(-7px)}96%{transform:rotate(-2deg) translateY(-2px)}}
+#hazi-stage-wrap .hazi-svg{animation:hzInvite 5.6s ease-in-out infinite;transform-origin:50% 90%}
 /* ── /REMEMBER ── */
 
 /* Желания-плашка на главном: искры статичны (v74 — по фидбеку мигание убрано) */
@@ -1521,7 +1533,7 @@ body[data-theme="business"] .cap-mic.recording{box-shadow:0 0 10px rgba(140,176,
       <span style="width:22px;"></span>
     </div>
     <div style="flex:1;overflow-y:auto;padding:6px 20px 24px;">
-      <div id="hazi-stage-wrap" style="display:flex;justify-content:center;padding:16px 0 6px;"></div>
+      <div id="hazi-stage-wrap" onclick="haziCharTap()" role="button" aria-label="Открыть гардероб Хэзи" style="display:flex;justify-content:center;padding:16px 0 6px;cursor:pointer;-webkit-tap-highlight-color:transparent;"></div>
       <div id="hazi-name" style="text-align:center;font-size:18px;font-weight:700;color:#fff;font-family:Inter,sans-serif;"></div>
       <div id="hazi-lvltxt" style="text-align:center;font-size:12px;color:rgba(0,212,255,0.85);margin-top:3px;font-family:Inter,sans-serif;"></div>
       <div style="margin:14px 6px 4px;">
@@ -2939,6 +2951,15 @@ window.setTag = setTag;
 async function saveNote(text, type) {
   if (!text.trim()) return;
   try {
+    // v97: «запомни всегда / надо постоянно …» → сразу в «Помнить всегда» (программно, без ИИ и токенов)
+    const _remRule = extractRememberRule(text);
+    if (_remRule) {
+      document.getElementById('cap-input').value = '';
+      document.getElementById('cap-input').style.height = 'auto';
+      showClear();
+      await createRememberRule(_remRule);
+      return;
+    }
     const docRef = await addDoc(notesCol(), {
       text: text.trim(),
       type: type || 'text',
@@ -3185,6 +3206,37 @@ function stripSchedulingPhrases(text) {
   return t.charAt(0).toUpperCase() + t.slice(1);
 }
 
+// ── v97: «ДОБАВЬ В КАЛЕНДАРЬ: …» — команда, а не текст задачи ──
+// Фидбек: «Добавь в календарь: "Леха мне 15 ноября должен 10 000 вернуть"» — добавилась заметка со всей просьбой.
+// Должно быть: задача «Леха мне должен 10 000 вернуть» на 15 ноября. Команда, кавычки и фраза даты — мимо текста.
+// Роутинг полностью ЛОКАЛЬНЫЙ: 0 токенов, работает при пустом балансе.
+function isCalendarCommand(text) {
+  const t = String(text || '').toLowerCase().replace(/ё/g, 'е');
+  return /(^|[^а-яё])(?:пожалуйста[,\s]*)?(?:добав(?:ить|ь|ьте)|записать|запиш(?:и|ите)|постав(?:ить|ь|ьте)|отмет(?:ить|ь|ьте)|внес(?:ти|и|ите))\s+(?:это\s+|мне\s+)?(?:в|во|на)\s+календар/.test(t);
+}
+function stripCalendarCommand(text) {
+  let t = String(text || '').trim();
+  t = t.replace(/^[^а-яёa-z«"']*(?:пожалуйста[,\s]*)?(?:добав(?:ить|ь|ьте)|записать|запиш(?:и|ите)|постав(?:ить|ь|ьте)|отмет(?:ить|ь|ьте)|внес(?:ти|и|ите))\s+(?:это\s+|мне\s+)?(?:пожалуйста\s+)?(?:в|во|на)\s+календар[ьяеу]?\s*(?:на\s+)?(?:дату\s+|число\s+)?/i, '');
+  t = t.replace(/^[\s:—–-]+/, '');
+  t = t.replace(/^[«"'"„\s]+/, '').replace(/[»"'"“\s]+$/, '');
+  return t.trim();
+}
+// Локальная задача «в календарь» из чата/заметки: дата парсится программно (parseRelativeDateRu),
+// текст чистится от команды и фраз срока. Без даты возвращаем null — отдадим запись ИИ (там вето умнее).
+function tryLocalCalendarTask(userText) {
+  if (!isCalendarCommand(userText)) return null;
+  const parsed = parseRelativeDateRu(userText);
+  if (!parsed.date) return null;
+  let text = stripCalendarCommand(userText);
+  if (parsed.date || parsed.time) text = stripSchedulingPhrases(text);
+  if (!text || text.length < 2) return null;
+  const sane = sanitizeSchedule(parsed.date, parsed.time);
+  return {
+    nd: { text, inTodo: true, scheduledDate: sane.date, scheduledTime: sane.time, todoOrder: computeSmartOrder(smartScoreForFields({ scheduledDate: sane.date })) },
+    reply: '✅ Добавил в календарь на ' + sane.date.slice(8, 10) + '.' + sane.date.slice(5, 7) + (sane.time ? ' ' + sane.time : '') + ': «' + text + '».'
+  };
+}
+
 // ── ВТОРОЙ МОЗГ: многомерная разметка записей (v72) ──
 // area (область жизни) = существующий тег из tags — чипы, фильтр Истории, сферы графа продолжают работать.
 // kind (тип записи): мысль/событие/решение/идея/вопрос/дело — ортогонально областям.
@@ -3340,6 +3392,7 @@ async function classifyAndRouteNote(note) {
   if (!note || !note.id || !note.text) return;
   if (note.remember === true) return; // v93: «Помнить всегда» — уже своя категория, ИИ её не переклассифицирует
   if (note.inTodo === true) return; // уже в тудушке
+  const calCmd = isCalendarCommand(note.text); // v97: «добавь в календарь…» — задача локально, ИИ не вызываем (0 токенов)
   const todayKey = formatDateKey(new Date());
   const tomorrowKey = formatDateKey(new Date(Date.now() + 86400000));
   let isTask = null, aiDate = null, aiTime = null;
@@ -3361,7 +3414,9 @@ async function classifyAndRouteNote(note) {
   const clusterNames = [...clList].sort((a,b)=>(b.count||0)-(a.count||0)).slice(0, 15).map(c => c.name);
   try {
     // v96: при паузе ИИ (пустой баланс/сеть) вызова НЕТ — мгновенный локальный роутинг без ожидания и трат
+    // v97: команда «в календарь» — роутинг полностью локальный, ИИ не тратим
     if (aiPaused()) throw new Error('ai-paused');
+    if (calCmd) throw new Error('cal-cmd-local');
     const resp = await callBrainAI([
       { role: 'system', content: 'Ты — классификатор записей личного дневника-трекера. Ответь ТОЛЬКО валидным JSON без markdown: {"task": true/false, "date": "YYYY-MM-DD" или null, "time": "HH:MM" или null, "area": "..." или null, "newArea": {"name":"...","icon":"эмодзи"} или null, "kind": "мысль|событие|решение|идея|вопрос|дело", "cluster": "..." или null, "wish": true/false, "urgent": true/false}. '
         + 'task: true — если запись это конкретное действие, которое предстоит сделать и потом можно поставить галочку (купить, позвонить, записаться, отправить, сделать, не забыть); false — мысль, факт, идея без действия, дневниковая запись, справка. Сомневаешься — true: лучше поставить в тудушку, чем потерять дело. «Должно быть/стоять/лежать где-то» («коробка должна стоять на балконе», «документ должен лежать в папке», «зарядка должна быть в машине») — это ТОЖЕ task: true: пользователь фиксирует желаемый порядок вещей — сформулируй в тексте действие («Отнести коробку на балкон»). Запись, начинающаяся с действия/инфинитива («Настроить кнопку», «Проверить фильтр», «Добавить подписи») — ВСЕГДА task: true, даже если звучит как заметка о работе над проектом. '
@@ -3386,10 +3441,11 @@ async function classifyAndRouteNote(note) {
     }
     aiNoteOk(); // v96: успех — сбрасываем счётчик провалов и паузу
   } catch(e) {
-    if (!aiPaused()) aiNoteFail(); // v96: сама пауза провалом не считается — иначе она продлевалась бы вечно
+    if (!aiPaused() && (!e || e.message !== 'cal-cmd-local')) aiNoteFail(); // v96: сама пауза и v97 локальный календарь провалом не считаются
     console.warn('[Classify] AI failed, fallback to heuristic:', e);
   }
   if (isTask === null) isTask = heuristicIsTask(note.text);
+  if (calCmd) isTask = true; // v97: «добавь в календарь» — всегда задача в тудушке/календаре
   // СОГЛАСОВАННОСТЬ: ИИ вернул kind=«дело», но task=false — противоречит сам себе, верим «делу»
   if (parsed && parsed.kind === 'дело' && isTask === false) isTask = true;
   // и наоборот: инфинитив/императив в начале текста перебивает ИИ-«мысль» — не теряем дела
@@ -3478,7 +3534,12 @@ async function classifyAndRouteNote(note) {
     if (scheduledDate) patch.scheduledDate = scheduledDate; // задача с датой → в календарь
     if (scheduledTime) patch.scheduledTime = scheduledTime;
     // текст чистим от фраз срока («завтра в 15:00») — срок уже виден в бейдже/календаре
-    if (scheduledDate || scheduledTime) {
+    if (calCmd) {
+      // v97: команда «в календарь» не попадает в текст задачи — только суть просьбы
+      let cleaned = stripCalendarCommand(note.text);
+      if (scheduledDate || scheduledTime) cleaned = stripSchedulingPhrases(cleaned);
+      if (cleaned && cleaned.length >= 2 && cleaned !== note.text) patch.text = cleaned;
+    } else if (scheduledDate || scheduledTime) {
       const cleaned = stripSchedulingPhrases(note.text);
       if (cleaned && cleaned !== note.text) patch.text = cleaned;
     }
@@ -3702,6 +3763,7 @@ function renderNotes(list) {
       (n.area && n.area !== n.tag) ? `<span style="flex-shrink:0;font-size:9.5px;font-weight:600;padding:2px 8px;border-radius:99px;background:rgba(255,209,102,0.10);border:0.5px solid rgba(255,209,102,0.3);color:rgba(255,224,138,0.92);white-space:nowrap;">📁 ${escHtml(n.area)}</span>` : ''
     ].filter(Boolean).join('');
     return `
+      <div class="swipe-wrap"><button class="swipe-del" onclick="swipeDeleteNote('${n.id}');event.stopPropagation();" aria-label="Удалить запись">${TRASH_ICON_SVG}<span>Удалить</span></button>
       <div class="note-card${staleCls}" ${cardClick}>
         <div style="display:flex;gap:10px;align-items:flex-start;">
           ${checkbox}
@@ -3722,7 +3784,7 @@ function renderNotes(list) {
             </div>`}
           </div>
         </div>
-      </div>`;
+      </div></div>`;
   }).join('');
 }
 
@@ -4028,6 +4090,7 @@ document.addEventListener('click', (e) => {
 });
 
 function openEdit(id) {
+  if (Date.now() - (window.__swipeEndTs || 0) < 400) return; // v97: сразу после свайпа-удаления редактор не открываем
   editingId = id;
   const n = notes.find(x => x.id === id);
   if (!n) return;
@@ -4289,14 +4352,17 @@ async function modalToggleRemember() {
   if (!n) return;
   const willBeRemember = !(n.remember === true);
   try {
-    await updateDoc(uDocRef('notes', n.id), { remember: willBeRemember });
+    const activeCount = rememberList().filter(x => x.id !== n.id && x.rememberOn !== false).length; // v97: галочка новому правилу
+    await updateDoc(uDocRef('notes', n.id), { remember: willBeRemember, rememberOn: willBeRemember ? activeCount < REMEMBER_ACTIVE_MAX : false });
     if (willBeRemember) {
       n.remember = true;
+      n.rememberOn = activeCount < REMEMBER_ACTIVE_MAX;
       try { hziAward('remember', n.id); } catch(e) {}
       closeModal();
-      showToast('🔖 Правило «Помнить всегда» — Хэзи напомнит утром', 3000);
+      showToast(activeCount < REMEMBER_ACTIVE_MAX ? '🔖 Правило «Помнить всегда» — Хэзи напомнит утром' : '🔖 В «Помнить всегда» · галочку для утренних напоминаний поставь в разделе правил', 3200);
     } else {
       n.remember = false;
+      n.rememberOn = false;
       showToast('Запись снова обычная', 2200);
     }
     await loadNotes();
@@ -8527,9 +8593,9 @@ function hziPeriodFrom(p) { // начало диапазона включите�
 function hziSumPeriod(p) {
   const from = hziPeriodFrom(p), to = hziDayStr();
   const t = { td: 0, ta: 0, n: 0, ms: 0, c: 0, xp: 0, sp: 0 };
-  if (!_hzi || !_hzi.days || !from) return t;
+  if (!_hzi || !_hzi.days) return t;
   for (const k of Object.keys(_hzi.days)) {
-    if (k < from || k > to) continue;
+    if (from && (k < from || k > to)) continue; // from=null (Всё время) — суммируем все бакеты
     const b = _hzi.days[k] || {};
     t.td += b.td || 0; t.ta += b.ta || 0; t.n += b.n || 0; t.ms += b.ms || 0; t.c += b.c || 0; t.xp += b.xp || 0; t.sp += b.sp || 0;
   }
@@ -8554,7 +8620,13 @@ function hziRenderStats() {
   const t = _hzi.totals;
   let v;
   if (_hziPeriod === 'all') {
-    v = { td: t.tasks || 0, ta: t.tasksAdded || 0, n: t.notes || 0, ms: t.milestones || 0, c: t.chats || 0, xp: (t.xpEarned || 0) > 0 ? t.xpEarned : (_hzi.xp || 0) }; // xpEarned нет у v91-профилей — fallback на текущий xp
+    // v97: «Всё время» = сумма дневных бакетов — теперь ВСЕГДА сходится с Днём/Неделей/Месяцем
+    // (фидбек: «статистика за день и всё время не сходится» — тоталы содержали ретро-историю без привязки к дням).
+    // Тоталы остаются запаской только для профилей без бакетов (v91-эпоха, days пуст).
+    v = hziSumPeriod('all');
+    if (!v.td && !v.ta && !v.n && !v.ms && !v.c && !v.xp) {
+      v = { td: t.tasks || 0, ta: t.tasksAdded || 0, n: t.notes || 0, ms: t.milestones || 0, c: t.chats || 0, xp: (t.xpEarned || 0) > 0 ? t.xpEarned : (_hzi.xp || 0), sp: 0 };
+    }
   } else {
     v = hziSumPeriod(_hziPeriod);
   }
@@ -8566,7 +8638,9 @@ function hziRenderStats() {
     st.innerHTML = `<div style="grid-column:1/-1;background:rgba(255,255,255,0.03);border:0.5px dashed rgba(255,255,255,0.16);border-radius:14px;padding:16px 14px;text-align:center;"><div style="font-size:12.5px;color:rgba(255,255,255,0.55);line-height:1.6;font-family:Inter,sans-serif;">🌤 Пока пусто ${plabel}.<br>Добавь заметку, закрой задачу или пройди шаг желания — и цифры появятся.</div>${spentLine}</div>`;
     return;
   }
-  st.innerHTML = card('✅ ' + v.td, 'задач выполнено') + card('➕ ' + v.ta, 'задач добавлено') + card('📝 ' + v.n, 'заметок создано') + card('🌠 ' + v.ms, 'шагов желаний') + card('💬 ' + v.c, 'сообщений ИИ') + card('⚡ ' + v.xp, 'получено');
+  // v97: траты на гардероб видны в любом периоде (фидбек: «купил 2 вещи — и непонятно, куда делись баллы»)
+  const spentRow = v.sp ? `<div style="grid-column:1/-1;text-align:center;font-size:11px;color:rgba(255,209,102,0.78);margin-top:2px;font-family:Inter,sans-serif;">⚡ ${v.sp} потрачено на гардероб · баланс ${_hzi.xp || 0} ⚡</div>` : '';
+  st.innerHTML = card('✅ ' + v.td, 'задач выполнено') + card('➕ ' + v.ta, 'задач добавлено') + card('📝 ' + v.n, 'заметок создано') + card('🌠 ' + v.ms, 'шагов желаний') + card('💬 ' + v.c, 'сообщений ИИ') + card('⚡ ' + v.xp, 'получено') + spentRow;
 }
 async function hziPersist() { // тесты/служебное: прямая запись состояния в облако
   if (!_hzi) return;
@@ -8578,6 +8652,12 @@ function hziReset() { // тесты
   const b = document.getElementById('hazi-badge');
   if (b) { const h = b.querySelector('.hazi-badge-svg'); if (h) { h.innerHTML = ''; h.dataset.stage = '0'; } const lv = b.querySelector('.hazi-badge-lvl'); if (lv) lv.textContent = '1'; }
 }
+// v97: тап по самому Хэзи (его экран) = завлекалка → гардероб (фидбек: «очень хочется на него нажать»)
+function haziCharTap() {
+  const bal = _hzi ? (_hzi.xp || 0) : 0;
+  try { showToast(bal > 0 ? '🎩 Хэзи хочет новый образ! Примерь что-нибудь — есть за ' + bal + ' ⚡' : '🎩 Хэзи хочет новый образ — открыл гардероб!', 2600); } catch(e) {}
+  openWardrobeModal();
+}
 window.hziReset = hziReset;
 // ══════════ /HZI ══════════
 
@@ -8586,6 +8666,70 @@ window.hziReset = hziReset;
 // просто всегда рядом. Хэзи показывает их в попапе при первом открытии за день.
 // «Приправа, не блюдо»: свои списки, свои фильтры, +2⚡ за новое правило (кап 5/день).
 function rememberList() { return (notes || []).filter(n => n.remember === true); }
+// v97: активные правила — галочками выбираем, что Хэзи напоминает каждое утро.
+// Максимум 2 активных, чтобы не перегружать (фидбек). Остальные хранятся в списке без галочки.
+const REMEMBER_ACTIVE_MAX = 2;
+function rememberActiveList() { return rememberList().filter(n => n.rememberOn !== false); }
+// v97: «запомни всегда / помни всегда / надо постоянно …» → правило, а не заметка. Ловим программно — 0 токенов.
+// Важно: «запомни купить хлеб» (без «всегда») — это напоминание/задача, а НЕ правило.
+function extractRememberRule(raw) {
+  let t = String(raw || '').trim();
+  if (t.length < 8 || t.length > 340) return null;
+  if (/^\s*не\s+(запоминай|помни)/i.test(t)) return null; // «не запоминай…» — не правило
+  const P = [
+    /^запомни(?:те)?\s+(?:это\s+|крепко\s+)?(?:всегда|навсегда|на\s+всю\s+жизнь)\s*[,:—-]?\s*/i,
+    /^помни(?:те)?\s+(?:это\s+)?(?:всегда|навсегда)\s*[,:—-]?\s*/i,
+    /^хочу\s+(?:это\s+)?всегда\s+помнить\s*(?:про|об|о)?\s*[,:—-]?\s*/i,
+    /^(?:надо|нужно|необходимо)\s+постоянно\s+/i,
+    /^(?:постоянно|всегда)\s+напоминай(?:те)?\s+(?:мне\s+)?(?:об|про|о)?\s*/i,
+  ];
+  let rule = null;
+  for (const re of P) { const m = t.match(re); if (m) { rule = t.slice(m[0].length).trim(); break; } }
+  if (rule === null) return null;
+  rule = rule
+    .replace(/^(?:что\s+|это\s+|о\s+том\s*,?\s*что\s+)/i, '')
+    .replace(/[\s—-]+(?:всегда|навсегда)\s*[.!?…]*$/i, '')
+    .replace(/[.!?…]+$/, '')
+    .replace(/^[«"'"„\s]+/, '').replace(/[»"'"“\s]+$/, '')
+    .trim();
+  if (!rule || rule.length < 3) return null;
+  if (/^(?:это|об этом|о н[её]м)$/i.test(rule)) return null;
+  if (rule.length > 300) rule = rule.slice(0, 297) + '…';
+  return rule.charAt(0).toUpperCase() + rule.slice(1);
+}
+// Единая точка создания правила: дедуп по тексту, +2⚡, активность — если активных меньше REMEMBER_ACTIVE_MAX
+async function createRememberRule(ruleText) {
+  const clean = String(ruleText || '').trim();
+  if (!clean) return null;
+  if (notes.some(n => n.remember === true && (n.text || '').trim().toLowerCase() === clean.toLowerCase())) { showToast('Такое правило уже есть 🔖', 2200); return null; }
+  const activeCount = rememberActiveList().length;
+  const rememberOn = activeCount < REMEMBER_ACTIVE_MAX;
+  try {
+    const docRef = await addDoc(notesCol(), { text: clean, type: 'text', tag: null, remember: true, rememberOn, createdAt: new Date().toISOString() });
+    try { hziAward('remember', docRef.id); } catch(e) {}
+    await loadNotes();
+    renderRememberList();
+    updateRememberLabels();
+    showToast(rememberOn ? '🔖 Правило добавлено · +2⚡' : '🔖 В «Помнить всегда» · +2⚡ (напоминание включается галочкой)', 3000);
+    return docRef.id;
+  } catch(e) { return null; }
+}
+// v97: галочка — включить/выключить утреннее напоминание (⚡ не трогаем — он за создание)
+async function rememberToggleActive(id) {
+  const n = notes.find(x => x.id === id);
+  if (!n || n.remember !== true) return;
+  const nowOn = n.rememberOn !== false;
+  if (!nowOn) {
+    const activeCount = rememberList().filter(x => x.id !== id && x.rememberOn !== false).length;
+    if (activeCount >= REMEMBER_ACTIVE_MAX) { showToast('Активных правил максимум ' + REMEMBER_ACTIVE_MAX + ' — сначала сними галочку с другого', 2800); return; }
+  }
+  try {
+    await updateDoc(uDocRef('notes', id), { rememberOn: !nowOn });
+    n.rememberOn = !nowOn;
+    renderRememberList();
+    showToast(!nowOn ? '🔖 Хэзи будет напоминать каждое утро' : 'Снято с напоминаний — правило осталось в списке', 2400);
+  } catch(e) { alert('Ошибка: ' + e.message); }
+}
 function rememberPlural(n) {
   const m10 = n % 10, m100 = n % 100;
   if (m10 === 1 && m100 !== 11) return 'правило';
@@ -8614,7 +8758,7 @@ function openRememberModal() {
           <div style="font-size:16px;font-weight:700;color:#FFE9B8;font-family:Inter,sans-serif;">🔖 Помнить всегда</div>
           <button onclick="closeRememberModal()" aria-label="Закрыть" style="background:none;border:none;color:rgba(255,255,255,0.35);font-size:18px;cursor:pointer;padding:4px;">✕</button>
         </div>
-        <div style="font-size:11px;color:rgba(255,255,255,0.42);margin:4px 0 12px;line-height:1.5;font-family:Inter,sans-serif;">Правила, которые Хэзи напоминает каждый день. Это не тудушка — они просто всегда рядом</div>
+        <div style="font-size:11px;color:rgba(255,255,255,0.42);margin:4px 0 12px;line-height:1.5;font-family:Inter,sans-serif;">Галочкой отметь 1–2 главных — их Хэзи напомнит утром. Остальные подождут здесь же. Это не тудушка</div>
         <div id="remember-list" style="display:flex;flex-direction:column;gap:7px;max-height:42vh;overflow-y:auto;margin-bottom:10px;"></div>
         <div id="remember-editing-bar" style="display:none;align-items:center;justify-content:space-between;font-size:11px;color:rgba(0,212,255,0.75);margin-bottom:6px;font-family:Inter,sans-serif;">
           <span>✏️ Редактирование правила</span>
@@ -8657,12 +8801,15 @@ function renderRememberList() {
     </div>`;
     return;
   }
-  el.innerHTML = items.map(n => `
-    <div class="rem-card${_remEditId === n.id ? ' editing' : ''}">
+  el.innerHTML = items.map(n => {
+    const on = n.rememberOn !== false;
+    return `<div class="rem-card${_remEditId === n.id ? ' editing' : ''}">
+      <button class="rem-check${on ? ' on' : ''}" onclick="rememberToggleActive('${n.id}');event.stopPropagation();" title="${on ? 'Активно — Хэзи напомнит утром' : 'Выключено — поставь галочку, чтобы Хэзи напоминал'}">${on ? '✓' : ''}</button>
       <span class="rem-star">✦</span>
       <span class="rem-text" onclick="rememberStartEdit('${n.id}')">${escHtml(n.text || '')}</span>
-      <button class="rem-del" onclick="rememberDelete('${n.id}')" title="Удалить">✕</button>
-    </div>`).join('');
+      <button class="rem-del" onclick="rememberDelete('${n.id}');event.stopPropagation();" title="Удалить">✕</button>
+    </div>`;
+  }).join('');
 }
 function rememberSetEditor(editing) {
   const btn = document.getElementById('remember-add-btn');
@@ -8701,9 +8848,10 @@ async function rememberAdd() {
       rememberSetEditor(false);
       showToast('✓ Правило обновлено', 2200);
     } else {
-      const docRef = await addDoc(notesCol(), { text, type: 'text', tag: null, remember: true, createdAt: new Date().toISOString() });
+      const activeCount = rememberList().filter(n => n.rememberOn !== false).length; // v97: новому правилу — галочка, если активных меньше 2
+      const docRef = await addDoc(notesCol(), { text, type: 'text', tag: null, remember: true, rememberOn: activeCount < REMEMBER_ACTIVE_MAX, createdAt: new Date().toISOString() });
       try { hziAward('remember', docRef.id); } catch(e) {}
-      showToast('🔖 Правило добавлено · +2⚡', 2400);
+      showToast(activeCount < REMEMBER_ACTIVE_MAX ? '🔖 Правило добавлено · +2⚡' : '🔖 В «Помнить всегда» · +2⚡ (напоминание включается галочкой)', 3000);
     }
     ta.value = '';
     ta.style.height = 'auto';
@@ -8758,8 +8906,8 @@ function maybeShowRememberPopup() {
   if (!remModalAllowed()) return;
   if (rememberShownToday()) return;
   if (document.getElementById('remember-daily-open')) return;
-  const items = rememberList();
-  if (!items.length) { markRememberShown(); return; } // правил нет — не дёргаем, попробуем завтра
+  const items = rememberList().filter(n => n.rememberOn !== false).slice(0, REMEMBER_ACTIVE_MAX); // v97: только активные галочки — не перегружаем
+  if (!items.length) { markRememberShown(); return; } // активных нет — не дёргаем, попробуем завтра
   // другие стартовые модалки (регистрация, итог дня, офферы) важнее — дождёмся тишины
   if (document.querySelector('.modal-overlay.open')) {
     if (_remPopupTries < 24) { _remPopupTries++; setTimeout(maybeShowRememberPopup, 1500); }
@@ -8777,7 +8925,7 @@ function showRememberDaily(items) {
     <div class="modal" style="max-width:340px;text-align:center;padding:20px 18px 16px;animation:remPop .4s ease;">
       <div class="rem-glow">${hziSVG(stage)}</div>
       <div style="font-size:17px;font-weight:800;color:#FFD166;font-family:Inter,sans-serif;">🔖 Помнить всегда</div>
-      <div style="font-size:11.5px;color:rgba(255,255,255,0.45);margin:5px 0 13px;font-family:Inter,sans-serif;">${rememberGreet()}. Правила, которые выбрал ты сам</div>
+      <div style="font-size:11.5px;color:rgba(255,255,255,0.45);margin:5px 0 13px;font-family:Inter,sans-serif;">${rememberGreet()}. То, что ты выбрал помнить всегда</div>
       <div style="display:flex;flex-direction:column;gap:7px;text-align:left;max-height:44vh;overflow-y:auto;">
         ${items.map(n => `<div class="rem-card"><span class="rem-star">✦</span><span class="rem-text">${escHtml(n.text || '')}</span></div>`).join('')}
       </div>
@@ -8796,6 +8944,8 @@ window.openRememberModal = openRememberModal;
 window.closeRememberModal = closeRememberModal;
 window.rememberAdd = rememberAdd;
 window.rememberDelete = rememberDelete;
+window.rememberToggleActive = rememberToggleActive;
+window.haziCharTap = haziCharTap;
 window.rememberStartEdit = rememberStartEdit;
 window.rememberCancelEdit = rememberCancelEdit;
 window.closeRememberDaily = closeRememberDaily;
@@ -10092,6 +10242,7 @@ function renderTodo() {
     // v89: у срочных тоже нет ⠿ (они прибиты к верху), но ▲ работает внутри срочного блока.
     const urgBorder = isUrg ? 'border-color:rgba(255,90,90,0.45);box-shadow:0 0 18px rgba(255,80,80,0.10);' : '';
     return `
+    <div class="swipe-wrap"><button class="swipe-del" onclick="swipeDeleteNote('${n.id}');event.stopPropagation();" aria-label="Удалить задачу">${TRASH_ICON_SVG}<span>Удалить</span></button>
     <div class="note-card${stale ? ' note-stale' : ''}" data-id="${n.id}"${staleTitle} onclick="todoCardTap('${n.id}')" style="display:flex;gap:10px;align-items:flex-start;cursor:pointer;${urgBorder}">
       <div style="display:flex;flex-direction:column;align-items:center;flex-shrink:0;gap:7px;">
         <button class="todo-up-btn" title="Наверх — станет первой" onclick="moveTodoTop('${n.id}');event.stopPropagation();"${(i === 0 || isFut) ? ' style="visibility:hidden;"' : ''}>▲</button>
@@ -10109,7 +10260,7 @@ function renderTodo() {
           <button class="note-btn note-undone" onclick="toggleTodo('${n.id}', true);event.stopPropagation();">✕ Убрать</button>
         </div>
       </div>
-    </div>
+    </div></div>
   `;
   };
   let html = '';
@@ -10135,6 +10286,89 @@ function todoCardTap(id) {
   openEdit(id);
 }
 window.todoCardTap = todoCardTap;
+
+// ── v97: СВАЙП ВПРАВО → КНОПКА «УДАЛИТЬ» СЛЕВА (тудушка + история) ──
+// Фидбек: «если смахиваю задачу вправо — вероятней всего хочу её вообще удалить».
+// Свайп вправо приоткрывает красную кнопку слева; тап по ней удаляет запись.
+// Прячется: обратный свайп влево, вертикальный скролл, тап по другой карточке.
+const TRASH_ICON_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg>';
+let _swipeGesture = null;
+function swipeCloseAll(exceptCard) {
+  document.querySelectorAll('.note-card.swipe-del-open').forEach(c => {
+    if (exceptCard && c === exceptCard) return;
+    c.classList.remove('swipe-del-open');
+    c.classList.remove('swipe-live');
+    c.style.transform = '';
+  });
+}
+function initSwipeDelete() {
+  const bind = (listEl) => {
+    if (!listEl || listEl.dataset.swipeDelBound) return;
+    listEl.dataset.swipeDelBound = '1';
+    const MAX = 78, OPEN = 52;
+    listEl.addEventListener('touchstart', (e) => {
+      if (e.touches.length !== 1) { _swipeGesture = null; return; }
+      const card = e.target.closest('.note-card');
+      if (!card || !listEl.contains(card)) { _swipeGesture = null; return; }
+      if (e.target.closest('.todo-drag-handle, .todo-up-btn, button, a, textarea, input')) { _swipeGesture = null; return; }
+      if (typeof selectionMode !== 'undefined' && selectionMode) { _swipeGesture = null; return; } // мультивыбор истории — без свайпа
+      swipeCloseAll(card); // открыта другая — прячем
+      _swipeGesture = { card, x: e.touches[0].clientX, y: e.touches[0].clientY, dx: 0, dy: 0, mode: null, wasOpen: card.classList.contains('swipe-del-open') };
+      card.classList.add('swipe-live');
+    }, { passive: true });
+    listEl.addEventListener('touchmove', (e) => {
+      const g = _swipeGesture;
+      if (!g) return;
+      g.dx = e.touches[0].clientX - g.x; g.dy = e.touches[0].clientY - g.y;
+      if (!g.mode) {
+        if (Math.abs(g.dy) > 12 && Math.abs(g.dy) > Math.abs(g.dx)) { g.card.classList.remove('swipe-live'); _swipeGesture = null; return; } // это скролл
+        if (Math.abs(g.dx) > 10 && Math.abs(g.dx) > Math.abs(g.dy) * 1.15) g.mode = 'h';
+        else return;
+      }
+      e.preventDefault(); // горизонтальный жест — блокируем вертикальный скролл
+      let x = g.dx + (g.wasOpen ? MAX : 0);
+      x = Math.max(0, Math.min(MAX + 26, x));
+      g.card.style.transform = 'translateX(' + x + 'px)';
+    }, { passive: false });
+    const finish = () => {
+      const g = _swipeGesture;
+      if (!g) return;
+      _swipeGesture = null;
+      g.card.classList.remove('swipe-live');
+      if (g.mode !== 'h') {
+        if (g.wasOpen) { // тап по открытой карточке — просто закрываем, редактор не открываем
+          swipeCloseAll();
+          window.__swipeEndTs = Date.now();
+        }
+        return;
+      }
+      window.__swipeEndTs = Date.now(); // синтетический клик после жеста редактор не откроет
+      let x = g.dx + (g.wasOpen ? MAX : 0);
+      if (x >= OPEN) { g.card.classList.add('swipe-del-open'); g.card.style.transform = 'translateX(' + MAX + 'px)'; }
+      else { g.card.classList.remove('swipe-del-open'); g.card.style.transform = ''; }
+    };
+    listEl.addEventListener('touchend', finish, { passive: true });
+    listEl.addEventListener('touchcancel', finish, { passive: true });
+    listEl.addEventListener('scroll', () => swipeCloseAll(), { passive: true }); // перелистнул вверх/вниз — кнопка спряталась (фидбек)
+  };
+  bind(document.getElementById('todo-list'));
+  bind(document.getElementById('hist-list'));
+}
+initSwipeDelete();
+// Удаление по кнопке из свайпа: без confirm (тап по кнопке = уже решение), подзадачи отсоединяются
+async function swipeDeleteNote(id) {
+  const n = notes.find(x => x.id === id);
+  if (!n) return;
+  try {
+    const kids = notes.filter(x => x.parentId === id);
+    for (const k of kids) { try { await updateDoc(uDocRef('notes', k.id), { parentId: null }); } catch(e) {} }
+    await deleteDoc(uDocRef('notes', id));
+    await loadNotes();
+    renderCalendar();
+    showToast('🗑 Удалено: «' + (n.text || '').slice(0, 34) + ((n.text || '').length > 34 ? '…' : '') + '»' + (kids.length ? ' · подзадачи остались' : ''), 2600);
+  } catch(e) { alert('Ошибка удаления: ' + e.message); }
+}
+window.swipeDeleteNote = swipeDeleteNote;
 
 // экспорт чата
 window.exportChat = async function() {
@@ -13011,6 +13245,34 @@ async function sendChatMessage(userText) {
     return;
   }
 
+  // v97: «запомни всегда / надо постоянно …» — правило ловим локально: 0 токенов, работает при пустом балансе
+  const remRule = extractRememberRule(userText);
+  if (remRule) {
+    await addChatMessage('user', userText);
+    const rid = await createRememberRule(remRule);
+    if (rid) {
+      const total = rememberList().length;
+      const active = rememberList().filter(n => n.rememberOn !== false).length;
+      await addChatMessage('assistant', '💜 Запомнил навсегда: «' + remRule + '». Лежит в разделе «🔖 Помнить всегда» — правил теперь ' + total + '. ' + (active ? 'Активных: ' + active + '.' : 'Поставь галочку в разделе — тогда Хэзи будет напоминать об этом каждое утро.'));
+    } else {
+      await addChatMessage('assistant', 'Такое правило уже есть в разделе «🔖 Помнить всегда» 🙂');
+    }
+    return;
+  }
+  // v97: «Добавь в календарь: …» — задача создаётся локально с датой, без вызова ИИ (экономия токенов,
+  // работает при пустом балансе). Без распознанной даты уйдёт в обычный ИИ-поток.
+  const calLocal = tryLocalCalendarTask(userText);
+  if (calLocal) {
+    await addChatMessage('user', userText);
+    try {
+      await addNoteFromChat(calLocal.nd);
+      await addChatMessage('assistant', calLocal.reply);
+    } catch(e) {
+      await addChatMessage('assistant', 'Ошибка: ' + e.message);
+    }
+    return;
+  }
+
   await addChatMessage('user', userText);
   const apiMessages = [
     { role:'system', content: buildSystemPrompt() },
@@ -13119,6 +13381,12 @@ async function sendChatMessage(userText) {
       scheduledTime = sane.time;
       // текст задачи чистим от фраз срока — срок уже в полях date/time (виден в календаре и бейдже)
       let noteText = proposedNote.text;
+      // v97: команда «в календарь» из сообщения не попадает в текст записи; запись — задача
+      if (isCalendarCommand(lastUserText ? lastUserText.content : (userText || ''))) {
+        const cc = stripCalendarCommand(noteText);
+        if (cc && cc.length >= 2) noteText = cc;
+        if (!inTodo) { inTodo = true; todoOrder = computeSmartOrder(smartScoreForFields({ scheduledDate, importance: proposedNote.importance, effort: proposedNote.effort })); }
+      }
       if (scheduledDate || scheduledTime) {
         const cleaned = stripSchedulingPhrases(noteText);
         if (cleaned) noteText = cleaned;
@@ -14061,6 +14329,17 @@ window.__t = {
   hziDays: () => (_hzi && _hzi.days) || {},
   // v93: «Помнить всегда» — правила и утренний попап
   rememberList: () => notes.filter(n => n.remember === true),
+  rememberActiveList: () => rememberList().filter(n => n.rememberOn !== false),
+  rememberToggleActive,
+  extractRememberRule,
+  createRememberRule,
+  // v97: календарные команды и свайп-удаление
+  isCalendarCommand,
+  stripCalendarCommand,
+  tryLocalCalendarTask,
+  haziCharTap,
+  swipeDeleteNote,
+  sendChatMessage,
   rememberShownToday: () => rememberShownToday(),
   markRememberShown,
   maybeShowRememberPopup,
