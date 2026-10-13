@@ -159,14 +159,16 @@ body{background:#060918;font-family:'Inter',sans-serif;display:flex;justify-cont
 .focus-meta{font-size:11px;font-weight:600;color:rgba(255,255,255,0.55);letter-spacing:0.2px;
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .focus-actions{display:flex;align-items:center;gap:8px;margin-top:4px;}
+/* v98: «Готово» — тёмная, как «Пропустить» (фидбек: зелёная с галочкой читалась
+   как «уже выполнено»; на главном экране галочка не нужна) */
 .focus-done-btn{
   padding:7px 15px;border-radius:99px;border:none;
-  background:linear-gradient(135deg,rgba(0,210,120,0.30),rgba(0,170,95,0.20));
-  color:rgba(130,255,185,0.98);font-size:12.5px;font-weight:700;cursor:pointer;
+  background:rgba(255,255,255,0.07);
+  color:rgba(255,255,255,0.66);font-size:12.5px;font-weight:600;cursor:pointer;
   font-family:'Inter',sans-serif;transition:all 0.2s;white-space:nowrap;
-  box-shadow:inset 0 0 0 1px rgba(0,230,140,0.30), 0 2px 10px rgba(0,200,120,0.18);
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,0.16);
 }
-.focus-done-btn:hover{background:rgba(0,200,100,0.4)}
+.focus-done-btn:hover{background:rgba(255,255,255,0.14);color:rgba(255,255,255,0.85)}
 /* v77: «Пропустить» — 1-й пропуск уносит задачу на 5-ю позицию, повторный — в конец */
 .focus-skip-btn{
   padding:7px 13px;border-radius:99px;border:none;
@@ -398,11 +400,18 @@ body{background:#060918;font-family:'Inter',sans-serif;display:flex;justify-cont
   opacity:0.6;
 }
 /* v97: свайп вправо в тудушке/истории = красная кнопка «Удалить» слева */
+/* v98: красное поле «Удалить» СКРЫТО по умолчанию — проявляется только когда
+   пользователь реально тащит карточку вправо (класс .swipe-armed на обёртке).
+   Фидбек: «при листании проскакивают красные пятна… чтоб не было красного фона,
+   а только когда тащу вправо». visibility:hidden убирает слой из покраски —
+   глюки композитинга при быстром скролле (will-change на всех карточках)
+   больше не могут подсветить красный. */
 .swipe-wrap{position:relative;overflow:hidden;border-radius:16px;margin-bottom:8px}
-.swipe-del{position:absolute;left:0;top:0;bottom:0;width:78px;border:none;border-radius:16px 0 0 16px;background:linear-gradient(135deg,#FF5A5A,rgba(255,110,110,0.82));color:#fff;font-family:Inter,sans-serif;font-size:10.5px;font-weight:700;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;cursor:pointer;z-index:0;-webkit-tap-highlight-color:transparent}
+.swipe-del{position:absolute;left:0;top:0;bottom:0;width:78px;border:none;border-radius:16px 0 0 16px;background:linear-gradient(135deg,#FF5A5A,rgba(255,110,110,0.82));color:#fff;font-family:Inter,sans-serif;font-size:10.5px;font-weight:700;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;cursor:pointer;z-index:0;-webkit-tap-highlight-color:transparent;visibility:hidden;opacity:0;transition:opacity .12s ease}
 .swipe-del svg{width:16px;height:16px;display:block}
-.swipe-wrap .note-card{position:relative;z-index:1;margin-bottom:0;transition:transform .18s ease;will-change:transform}
-.swipe-wrap .note-card.swipe-live{transition:none}
+.swipe-wrap .note-card{position:relative;z-index:1;margin-bottom:0;transition:transform .18s ease}
+.swipe-wrap .note-card.swipe-live{transition:none;will-change:transform}
+.swipe-wrap.swipe-armed .swipe-del{visibility:visible;opacity:1}
 .note-meta{display:flex;justify-content:space-between;align-items:center;margin-bottom:7px}
 .note-date{font-size:10px;color:rgba(255,255,255,0.4);font-weight:500}
 /* v82: иконка копирования светлее (на тёмном фоне терялась) + свои цвета в темах */
@@ -530,10 +539,18 @@ body.todo-mouse-dragging *{cursor:grabbing !important}
 }
 .note-edit{background:rgba(108,71,255,0.15);color:rgba(139,92,246,0.9)}
 .note-edit:hover{background:rgba(108,71,255,0.3)}
-.note-done{background:rgba(0,200,100,0.12);color:rgba(0,220,110,0.85);border:0.5px solid rgba(0,200,100,0.25)}
-.note-done:hover{background:rgba(0,200,100,0.25)}
+.note-done{background:rgba(255,255,255,0.05);color:rgba(255,255,255,0.72);border:0.5px solid rgba(255,255,255,0.16)}
+.note-done:hover{background:rgba(255,255,255,0.1)}
 .note-undone{background:rgba(255,255,255,0.06);color:rgba(255,255,255,0.4);border:0.5px solid rgba(255,255,255,0.1)}
 .note-undone:hover{background:rgba(255,255,255,0.1)}
+/* v98: кнопка-ДЕЙСТВИЕ «Отметить выполненной» — не зелёная (зелёный читался как
+   статус «уже выполнено», фидбек). Пустой чекбокс + нейтральный стиль = понятно,
+   что задача ещё НЕ выполнена, а кнопка её пометит. Выполненная получает
+   зелёную плашку-статус .note-donechip. */
+.note-markdone{background:rgba(108,71,255,0.10);color:rgba(212,200,255,0.92);border:0.5px solid rgba(139,92,246,0.34)}
+.note-markdone:hover{background:rgba(108,71,255,0.2)}
+.note-donechip{background:rgba(0,200,100,0.12);color:rgba(0,220,110,0.9);border:0.5px solid rgba(0,200,100,0.28);pointer-events:none;cursor:default}
+.note-donebox{display:inline-block;width:11px;height:11px;border-radius:3.5px;border:1.5px solid rgba(212,200,255,0.75);margin-right:5px;vertical-align:-1px}
 .note-del{background:rgba(255,80,80,0.1);color:rgba(255,100,100,0.8)}
 .note-del:hover{background:rgba(255,80,80,0.25)}
 
@@ -1227,6 +1244,16 @@ body[data-theme="business"] .cap-mic.recording{box-shadow:0 0 10px rgba(140,176,
     <div id="focus-hint" style="padding:0 16px;"></div>
     <div id="main-hint" style="padding:0 16px;"></div>
 
+    <!-- v98: мягкая подсказка о регистрации для анонимов (везде и история) -->
+    <div id="reg-hint-bar" style="display:none;padding:8px 16px 0;">
+      <div onclick="openRegHintModal()" style="display:flex;align-items:center;gap:9px;background:linear-gradient(115deg,rgba(108,71,255,0.14),rgba(0,168,232,0.08));border:0.5px solid rgba(139,92,246,0.35);border-radius:13px;padding:9px 12px;cursor:pointer;-webkit-tap-highlight-color:transparent;">
+        <span style="font-size:16px;flex-shrink:0;" aria-hidden="true">💾</span>
+        <span style="flex:1;min-width:0;font-size:11px;line-height:1.45;color:rgba(226,220,255,0.9);font-family:Inter,sans-serif;">Записи пока живут только в этом браузере. <b style="color:#fff;">Зарегистрируйся</b> — история сохранится и откроется на всех устройствах</span>
+        <span style="color:rgba(255,255,255,0.45);font-size:15px;flex-shrink:0;" aria-hidden="true">→</span>
+        <button onclick="dismissRegHint(event);event.stopPropagation();" aria-label="Скрыть подсказку" style="background:none;border:none;color:rgba(255,255,255,0.35);font-size:13px;cursor:pointer;padding:2px 0 2px 4px;flex-shrink:0;">✕</button>
+      </div>
+    </div>
+
     <!-- Capture row -->
     <div class="capture-wrap">
       <div class="capture-row">
@@ -1483,7 +1510,7 @@ body[data-theme="business"] .cap-mic.recording{box-shadow:0 0 10px rgba(140,176,
     <div id="bulk-actions-bar" style="display:none;padding:10px 16px;gap:8px;border-top:0.5px solid rgba(255,255,255,0.08);background:rgba(10,10,20,0.95);flex-shrink:0;">
       <div style="font-size:11px;color:rgba(255,255,255,0.4);margin-bottom:8px;" id="bulk-count">Выбрано: 0</div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;">
-        <button class="note-btn note-done" onclick="bulkMarkDone()">✓ Выполнено</button>
+        <button class="note-btn note-markdone" onclick="bulkMarkDone()"><span class="note-donebox" aria-hidden="true"></span>Выполнить</button>
         <button class="note-btn note-edit" onclick="bulkAddToTodo()">➜ В тудулист</button>
         <button class="note-btn note-edit" onclick="toggleBulkTagPicker()">🏷️ Тег</button>
         <button class="note-btn note-undone" onclick="bulkRemoveTag()">✕ Без тега</button>
@@ -1533,7 +1560,9 @@ body[data-theme="business"] .cap-mic.recording{box-shadow:0 0 10px rgba(140,176,
       <span style="width:22px;"></span>
     </div>
     <div style="flex:1;overflow-y:auto;padding:6px 20px 24px;">
-      <div id="hazi-stage-wrap" onclick="haziCharTap()" role="button" aria-label="Открыть гардероб Хэзи" style="display:flex;justify-content:center;padding:16px 0 6px;cursor:pointer;-webkit-tap-highlight-color:transparent;"></div>
+      <!-- v98: свайп влево по Хэзи = призрак следующего уровня; тап = гардероб (обработчики в JS) -->
+      <div id="hazi-stage-wrap" role="button" aria-label="Хэзи: тап — гардероб, свайп влево — следующий уровень" style="display:flex;justify-content:center;padding:16px 0 6px;cursor:pointer;-webkit-tap-highlight-color:transparent;touch-action:pan-y;"></div>
+      <div id="hazi-swipe-hint" style="text-align:center;font-size:10.5px;color:rgba(255,255,255,0.28);margin-top:2px;font-family:Inter,sans-serif;user-select:none;"></div>
       <div id="hazi-name" style="text-align:center;font-size:18px;font-weight:700;color:#fff;font-family:Inter,sans-serif;"></div>
       <div id="hazi-lvltxt" style="text-align:center;font-size:12px;color:rgba(0,212,255,0.85);margin-top:3px;font-family:Inter,sans-serif;"></div>
       <div style="margin:14px 6px 4px;">
@@ -3750,7 +3779,11 @@ function renderNotes(list) {
     const cardClick = selectionMode ? `onclick="toggleSelectNote('${n.id}')" style="cursor:pointer;${cardStyle}"` : `onclick="openEdit('${n.id}')" style="cursor:pointer;${cardStyle}"`;
     const checkbox = selectionMode ? `<div style="width:20px;height:20px;border-radius:6px;border:1.5px solid ${isSelected?'rgba(139,92,246,0.9)':'rgba(255,255,255,0.25)'};background:${isSelected?'rgba(139,92,246,0.9)':'transparent'};display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:12px;color:#fff;">${isSelected?'✓':''}</div>` : '';
     // MVP: кнопка "Выполнено" доступна для ЛЮБОЙ записи, а не только с тегом "Задача"
-    const doneBtn = `<button class="note-btn ${isDone ? 'note-undone' : 'note-done'}" onclick="toggleDone('${n.id}', ${isDone});event.stopPropagation();">${isDone ? '↩ Открыть' : '✓ Выполнено'}</button>`;
+    // v98: НЕ выполненная запись — кнопка-действие «Выполнить» с пустым чекбоксом (не зелёная:
+    // зелёный читался как статус «уже выполнено»). Выполненная — зелёная плашка-статус.
+    const doneBtn = isDone
+      ? `<button class="note-btn note-undone" onclick="toggleDone('${n.id}', ${isDone});event.stopPropagation();">↩ Открыть</button><span class="note-btn note-donechip">✓ Выполнено</span>`
+      : `<button class="note-btn note-markdone" onclick="toggleDone('${n.id}', ${isDone});event.stopPropagation();"><span class="note-donebox" aria-hidden="true"></span>Выполнить</button>`;
     const isInTodo = n.inTodo === true;
     const todoBtn = `<button class="note-btn ${isInTodo ? 'note-undone' : 'note-edit'}" onclick="toggleTodo('${n.id}', ${isInTodo});event.stopPropagation();">${isInTodo ? '✕ Убрать из тудулиста' : '➜ В тудулист'}</button>`;
     const staleCls = isStaleNote(n) ? ' note-stale' : '';
@@ -3795,6 +3828,7 @@ const COPY_ICON_SVG = '<svg viewBox="0 0 24 24" width="13" height="13" fill="non
 
 // Копируем ТОЛЬКО текст заметки (не тег/дату), не открывая карточку.
 window.copyNoteText = async function(id) {
+  try { swipeCloseAll(); } catch(e) {} // v98: копирование не должно оставлять красную подсветку свайпа
   const n = notes.find(x => x.id === id);
   if (!n) return;
   const text = (n.text || '').trim();
@@ -8555,14 +8589,68 @@ function hziShowEvolution(level) {
   ov.id = 'hazi-modal-open';
 }
 // ── Экран Хэзи ──
+// v98: _hziPreview = показываем «призрак» следующего уровня (свайп влево по Хэзи)
+let _hziPreview = false;
+function hziNextLevelInfo() {
+  if (!_hzi) return null;
+  const level = hziLevelOf(_hzi.xpMax || _hzi.xp);
+  if (level >= 10) return null; // максимум — превью нет
+  const next = level + 1, nextStage = hziStageOf(next), curStage = hziStageOf(level);
+  const remain = Math.max(0, HZI_LEVELS[next - 1] - (_hzi.xpMax || _hzi.xp));
+  return { level: next, stage: nextStage, evolves: nextStage > curStage, remain, curStage };
+}
+function hziRenderStageWrap() {
+  const wrap = document.getElementById('hazi-stage-wrap');
+  if (!wrap || !_hzi) return;
+  const level = hziLevelOf(_hzi.xpMax || _hzi.xp), stage = hziStageOf(level);
+  const wornKey = (_hzi.worn || []).join(',');
+  const mode = (_hziPreview && level < 10) ? 'next' : 'cur';
+  const sig = mode + ':' + stage + ':' + wornKey;
+  if (wrap.dataset.sig !== sig) {
+    wrap.dataset.sig = sig;
+    wrap.dataset.mode = mode; // v98: тесты читают режим обёртки
+    if (mode === 'cur') {
+      wrap.innerHTML = hziSVG(stage, 150, _hzi.worn || []);
+    } else {
+      const info = hziNextLevelInfo();
+      if (!info) { wrap.innerHTML = hziSVG(stage, 150, _hzi.worn || []); }
+      else {
+        const nxtName = HZI_STAGE_NAMES[info.stage] || '';
+        const sub = info.evolves
+          ? '✨ Эволюция: Хэзи станет — <b style="color:rgba(0,224,255,0.95);">' + nxtName + '</b>'
+          : 'Внешность не изменится (' + nxtName + '), но уровень вырастет';
+        wrap.innerHTML = '<div style="display:flex;flex-direction:column;align-items:center;gap:6px;">'
+          + '<div style="opacity:0.5;filter:drop-shadow(0 0 16px rgba(0,212,255,0.55));">' + hziSVG(info.stage, 150, _hzi.worn || []) + '</div>'
+          + '<div style="font-size:12.5px;font-weight:700;color:rgba(0,212,255,0.95);font-family:Inter,sans-serif;">Уровень ' + info.level + ' · осталось ' + info.remain + ' ⚡</div>'
+          + '<div style="font-size:11px;color:rgba(255,255,255,0.55);font-family:Inter,sans-serif;">' + sub + '</div>'
+          + '</div>';
+      }
+    }
+  }
+  const hint = document.getElementById('hazi-swipe-hint');
+  if (hint) {
+    hint.textContent = mode === 'next'
+      ? '→ Свайп вправо или тап — вернуть Хэзи'
+      : (level >= 10 ? '🏔 Максимальный уровень' : '← Свайпни Хэзи влево — взгляни на следующий уровень');
+  }
+}
+function hziPreviewNext() { // свайп влево — показать следующий уровень (фидбек v98)
+  if (!_hzi) return;
+  const level = hziLevelOf(_hzi.xpMax || _hzi.xp);
+  if (level >= 10) { try { showToast('🏔 Это максимум — Хэзи уже Сверхчеловек!', 2400); } catch(e) {} return; }
+  _hziPreview = true;
+  hziRenderStageWrap();
+  try { navigator.vibrate && navigator.vibrate(12); } catch(e) {}
+}
+function hziPreviewBack() {
+  if (!_hziPreview) return;
+  _hziPreview = false;
+  hziRenderStageWrap();
+}
 function renderHaziScreen() {
   if (!_hzi) { hziLoad().then(() => renderHaziScreen()).catch(() => {}); return; }
   const level = hziLevelOf(_hzi.xpMax || _hzi.xp), stage = hziStageOf(level);
-  const wrap = document.getElementById('hazi-stage-wrap');
-  if (wrap) {
-    const wornKey = (_hzi.worn || []).join(',');
-    if (wrap.dataset.stage !== String(stage) || wrap.dataset.worn !== wornKey) { wrap.innerHTML = hziSVG(stage, 150, _hzi.worn || []); wrap.dataset.stage = String(stage); wrap.dataset.worn = wornKey; }
-  }
+  hziRenderStageWrap();
   const nameEl = document.getElementById('hazi-name');
   if (nameEl) nameEl.textContent = 'Хэзи · ' + HZI_STAGE_NAMES[stage];
   const lvlEl = document.getElementById('hazi-lvltxt');
@@ -8658,6 +8746,41 @@ function haziCharTap() {
   try { showToast(bal > 0 ? '🎩 Хэзи хочет новый образ! Примерь что-нибудь — есть за ' + bal + ' ⚡' : '🎩 Хэзи хочет новый образ — открыл гардероб!', 2600); } catch(e) {}
   openWardrobeModal();
 }
+// v98: жесты на Хэзи — свайп влево = превью следующего уровня, свайп вправо/тап = назад;
+// чистый тап по обычному Хэзи = гардероб (как раньше). onclick из HTML убран —
+// тап и свайп разводятся здесь (защита от двойного срабатывания touch+click).
+function initHaziPreviewSwipe() {
+  const wrap = document.getElementById('hazi-stage-wrap');
+  if (!wrap || wrap.dataset.pswBound) return;
+  wrap.dataset.pswBound = '1';
+  let st = null;
+  wrap.addEventListener('touchstart', (e) => {
+    if (e.touches.length !== 1) { st = null; return; }
+    st = { x: e.touches[0].clientX, y: e.touches[0].clientY, handled: false };
+  }, { passive: true });
+  wrap.addEventListener('touchmove', (e) => {
+    if (!st || st.handled) return;
+    const dx = e.touches[0].clientX - st.x, dy = e.touches[0].clientY - st.y;
+    if (Math.abs(dx) > 36 && Math.abs(dx) > Math.abs(dy) * 1.3) {
+      st.handled = true;
+      window.__hziTapTs = Date.now(); // синтетический click после свайпа не сработает
+      if (dx < 0) hziPreviewNext(); else hziPreviewBack();
+    }
+  }, { passive: true });
+  wrap.addEventListener('touchend', () => {
+    if (st && !st.handled) { // чистый тап пальцем
+      window.__hziTapTs = Date.now();
+      if (_hziPreview) hziPreviewBack(); else haziCharTap();
+    }
+    st = null;
+  }, { passive: true });
+  // клик мышью (десктоп/тесты): пропускаем, если тап уже обработан в touchend
+  wrap.addEventListener('click', () => {
+    if (Date.now() - (window.__hziTapTs || 0) < 600) return;
+    if (_hziPreview) hziPreviewBack(); else haziCharTap();
+  });
+}
+initHaziPreviewSwipe();
 window.hziReset = hziReset;
 // ══════════ /HZI ══════════
 
@@ -9302,7 +9425,7 @@ function renderFocusCard() {
           <div class="focus-eyebrow">Сейчас в фокусе${restCount > 0 ? ` <span class="focus-queue">· ещё ${restCount}</span>` : ''}</div>
           <div class="focus-text">${escHtml(top.text)}</div>
           ${metaBits.length ? `<div class="focus-meta"${metaOverdue ? ' style="color:rgba(255,110,110,0.85);"' : ''}>${metaBits.join(' · ')}</div>` : ''}
-          <div class="focus-actions"><button class="focus-done-btn" onclick="toggleDone('${top.id}', false)">✓ Готово</button><button class="focus-skip-btn" onclick="skipTodoTask('${top.id}')">↪ Пропустить</button></div>
+          <div class="focus-actions"><button class="focus-done-btn" onclick="toggleDone('${top.id}', false)">Готово</button><button class="focus-skip-btn" onclick="skipTodoTask('${top.id}')">↪ Пропустить</button></div>
         </div>
         <div class="focus-swipe-hint">Пониже →</div>
       </div>`;
@@ -10256,7 +10379,7 @@ function renderTodo() {
         <div class="note-text">${escHtml(n.text)}</div>
         ${subtaskBadgesHtml(n)}
         <div class="note-actions">
-          <button class="note-btn note-done" onclick="toggleDone('${n.id}', false);event.stopPropagation();">✓ Выполнено</button>
+          <button class="note-btn note-markdone" onclick="toggleDone('${n.id}', false);event.stopPropagation();"><span class="note-donebox" aria-hidden="true"></span>Выполнить</button>
           <button class="note-btn note-undone" onclick="toggleTodo('${n.id}', true);event.stopPropagation();">✕ Убрать</button>
         </div>
       </div>
@@ -10299,6 +10422,8 @@ function swipeCloseAll(exceptCard) {
     c.classList.remove('swipe-del-open');
     c.classList.remove('swipe-live');
     c.style.transform = '';
+    const w = c.closest('.swipe-wrap'); // v98: прячем и красное поле
+    if (w) w.classList.remove('swipe-armed');
   });
 }
 function initSwipeDelete() {
@@ -10306,6 +10431,7 @@ function initSwipeDelete() {
     if (!listEl || listEl.dataset.swipeDelBound) return;
     listEl.dataset.swipeDelBound = '1';
     const MAX = 78, OPEN = 52;
+    const wrapOf = (card) => card.closest('.swipe-wrap');
     listEl.addEventListener('touchstart', (e) => {
       if (e.touches.length !== 1) { _swipeGesture = null; return; }
       const card = e.target.closest('.note-card');
@@ -10313,7 +10439,7 @@ function initSwipeDelete() {
       if (e.target.closest('.todo-drag-handle, .todo-up-btn, button, a, textarea, input')) { _swipeGesture = null; return; }
       if (typeof selectionMode !== 'undefined' && selectionMode) { _swipeGesture = null; return; } // мультивыбор истории — без свайпа
       swipeCloseAll(card); // открыта другая — прячем
-      _swipeGesture = { card, x: e.touches[0].clientX, y: e.touches[0].clientY, dx: 0, dy: 0, mode: null, wasOpen: card.classList.contains('swipe-del-open') };
+      _swipeGesture = { card, wrap: wrapOf(card), x: e.touches[0].clientX, y: e.touches[0].clientY, dx: 0, dy: 0, mode: null, wasOpen: card.classList.contains('swipe-del-open') };
       card.classList.add('swipe-live');
     }, { passive: true });
     listEl.addEventListener('touchmove', (e) => {
@@ -10329,6 +10455,8 @@ function initSwipeDelete() {
       let x = g.dx + (g.wasOpen ? MAX : 0);
       x = Math.max(0, Math.min(MAX + 26, x));
       g.card.style.transform = 'translateX(' + x + 'px)';
+      // v98: красное поле проявляется ТОЛЬКО когда тащим вправо (фидбек «красные пятна при листании»)
+      if (g.wrap) { if (x > 6) g.wrap.classList.add('swipe-armed'); else g.wrap.classList.remove('swipe-armed'); }
     }, { passive: false });
     const finish = () => {
       const g = _swipeGesture;
@@ -10344,15 +10472,20 @@ function initSwipeDelete() {
       }
       window.__swipeEndTs = Date.now(); // синтетический клик после жеста редактор не откроет
       let x = g.dx + (g.wasOpen ? MAX : 0);
-      if (x >= OPEN) { g.card.classList.add('swipe-del-open'); g.card.style.transform = 'translateX(' + MAX + 'px)'; }
-      else { g.card.classList.remove('swipe-del-open'); g.card.style.transform = ''; }
+      if (x >= OPEN) { g.card.classList.add('swipe-del-open'); g.card.style.transform = 'translateX(' + MAX + 'px)'; if (g.wrap) g.wrap.classList.add('swipe-armed'); }
+      else { g.card.classList.remove('swipe-del-open'); g.card.style.transform = ''; if (g.wrap) g.wrap.classList.remove('swipe-armed'); }
     };
     listEl.addEventListener('touchend', finish, { passive: true });
     listEl.addEventListener('touchcancel', finish, { passive: true });
-    listEl.addEventListener('scroll', () => swipeCloseAll(), { passive: true }); // перелистнул вверх/вниз — кнопка спряталась (фидбек)
   };
   bind(document.getElementById('todo-list'));
   bind(document.getElementById('hist-list'));
+  // v98: закрытие открытой кнопки при ЛЮБОМ скролле на странице (capture-фаза ловит
+  // скролл любого контейнера — фидбек: «листаю вверх вниз — не пропадает подсветка»)
+  if (!window.__swipeScrollBound) {
+    window.__swipeScrollBound = true;
+    document.addEventListener('scroll', () => { if (_swipeGesture) return; swipeCloseAll(); }, true);
+  }
 }
 initSwipeDelete();
 // Удаление по кнопке из свайпа: без confirm (тап по кнопке = уже решение), подзадачи отсоединяются
@@ -14338,6 +14471,10 @@ window.__t = {
   stripCalendarCommand,
   tryLocalCalendarTask,
   haziCharTap,
+  hziPreviewNext,
+  hziPreviewBack,
+  hziNextLevelInfo,
+  hziRenderStageWrap,
   swipeDeleteNote,
   sendChatMessage,
   rememberShownToday: () => rememberShownToday(),
@@ -14371,7 +14508,35 @@ window.__t = {
 
 // ── REGISTER PROMPT — показываем после 10 заметок или 1 желания ──
 // Пользователь остаётся анонимом, но мягко предлагаем зарегистрироваться
+// v98: ПОСТОЯННАЯ мягкая полоска на главном для анонимов (фидбек: «добавить подсказку,
+// чтоб зарегистрировался — пользоваться везде и сохранить историю»). Крестик прячет
+// на 3 дня (не навсегда), тест-режим подавлен.
+const REG_HINT_HIDE_MS = 3 * 24 * 3600 * 1000;
+function regHintHidden() {
+  try {
+    const until = parseInt(localStorage.getItem('hz3_reg_hint_hide_until') || '0', 10);
+    return Date.now() < until;
+  } catch(e) { return false; }
+}
+function updateRegHintBar() {
+  const bar = document.getElementById('reg-hint-bar');
+  if (!bar) return;
+  const show = !!(currentUid && isAnonymousUser) && !HZ3_TEST_RUN && !regHintHidden();
+  bar.style.display = show ? 'block' : 'none';
+}
+function dismissRegHint(ev) {
+  if (ev && ev.stopPropagation) ev.stopPropagation();
+  try { localStorage.setItem('hz3_reg_hint_hide_until', String(Date.now() + REG_HINT_HIDE_MS)); } catch(e) {}
+  updateRegHintBar();
+}
+function openRegHintModal() {
+  showRegisterPromptModal((notes || []).length, (wishes || []).length);
+}
+window.updateRegHintBar = updateRegHintBar;
+window.dismissRegHint = dismissRegHint;
+window.openRegHintModal = openRegHintModal;
 function checkShowRegisterPrompt() {
+  updateRegHintBar(); // v98: полоска видна анониму всегда (крестик = пауза на 3 дня)
   if (!isAnonymousUser) return;  // только для анонимных
   const notesCount = (notes || []).length;
   const wishesCount = (wishes || []).length;
@@ -14538,6 +14703,7 @@ onAuthStateChanged(auth, async (user) => {
     if (dockEl) dockEl.style.display = '';
     if (statusEl) statusEl.style.display = '';
     goTo('main'); // главный экран показываем сразу — ничего не ждём
+    try { updateRegHintBar(); } catch(e) {} // v98: подсказка регистрации для анонимов
     await initUserData();
     // Подсказки грузим в фоне: showHintOnce вызываем только после загрузки hintsShown,
     // иначе уже скрытые ранее подсказки могли бы мелькнуть повторно. UI при этом не блокируется.
