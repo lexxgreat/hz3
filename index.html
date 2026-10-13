@@ -2344,6 +2344,7 @@ async function restorePunctuationAI(text) {
           { role: 'system', content: 'Ты корректор русских диктовок. Тебе дают текст, распознанный из речи, в котором потерялись знаки препинания. Верни ТОТ ЖЕ текст, расставив точки, запятые, вопросительные и восклицательные знаки. Строгие правила: не меняй, не добавляй и не удаляй ни одного слова; не исправляй слова и не перефразируй; НЕ СКЛЕИВАЙ и не разделяй слова (например «и и» оставь как «и и», НЕ превращай в «ИИ»); сохраняй все числа и имена; заглавная буква — только в начале предложений и в именах собственных. Ответ — только готовый текст, без пояснений и кавычек.' },
           { role: 'user', content: text }
         ], { max_tokens: 600, temperature: 0, timeoutMs: 9000 });
+    aiNoteOk(); // v96: единый бэкофф с классификатором — успех снимает паузу
     const out = (raw || '').trim().replace(/^["«]|["»]$/g, '').trim();
     if (!out) return null;
     // отбраковка: ИИ имеет право только на пунктуацию/регистр — состав и порядок слов обязан совпасть.
@@ -2381,6 +2382,7 @@ async function restorePunctuationAI(text) {
     if (!okWords) return null;
     return out;
   } catch (e) {
+    if (!aiPaused()) aiNoteFail(); // v96: таймаут/сеть/баланс — копим к общей паузе ИИ
     return null; // таймаут/сеть/баланс — тихо используем локальный вариант
   }
 }
@@ -2390,6 +2392,7 @@ async function restorePunctuationAI(text) {
 async function ensurePunctuation(text, statusFn) {
   let t = polishTranscript(text);
   if (!t || t.length < 18 || punctFailStreak >= PUNCT_FAIL_LIMIT) return t; // коротким («купи хлеб») хватает локального
+  if (aiPaused()) return t; // v96: ИИ на паузе (пустой баланс) — не ждём таймаут, сразу локальный текст
   if (statusFn) { try { statusFn('✨ Расставляю знаки...'); } catch (_) {} }
   const ai = await restorePunctuationAI(t);
   if (ai) { punctFailStreak = 0; return ai; }
@@ -3076,6 +3079,31 @@ function parseRelativeDateRu(text, baseDate) {
       }
     }
   }
+  // v96: АБСОЛЮТНЫЕ даты — «15 марта», «15-го марта», «3 сентября 2027», «15.03», «15.03.2026» —
+  // программно, без ИИ: работает даже при пустом балансе (фидбек: заметка с датой не попала в календарь)
+  if (!date) {
+    const MONTHS_RU = { 'января':0,'февраля':1,'марта':2,'апреля':3,'мая':4,'июня':5,'июля':6,'августа':7,'сентября':8,'октября':9,'ноября':10,'декабря':11 };
+    const mAbs = t.match(/(\d{1,2})\s*(?:-\s*)?(?:го|е)?\s+(января|февраля|марта|апреля|мая|июня|июля|августа|сентября|октября|ноября|декабря)(?:\s+(\d{4}))?/);
+    if (mAbs && parseInt(mAbs[1], 10) >= 1 && parseInt(mAbs[1], 10) <= 31) {
+      const day = parseInt(mAbs[1], 10), mon = MONTHS_RU[mAbs[2]];
+      let yr = mAbs[3] ? parseInt(mAbs[3], 10) : base.getFullYear();
+      const cand = new Date(yr, mon, day);
+      if (!mAbs[3] && cand.getTime() < base.getTime() - dayMs) cand.setFullYear(cand.getFullYear() + 1); // уже прошло в этом году — следующий
+      date = cand;
+    } else {
+      const mNum = t.match(/(^|[^0-9.])(\d{1,2})\.(\d{1,2})(?:\.(\d{2,4}))?(?![0-9.])/); // DD.MM или DD.MM.YYYY (без lookbehind — старые WebView)
+      if (mNum) {
+        const day = parseInt(mNum[2], 10), mon = parseInt(mNum[3], 10) - 1;
+        if (day >= 1 && day <= 31 && mon >= 0 && mon <= 11) {
+          let yr = mNum[4] ? parseInt(mNum[4], 10) : base.getFullYear();
+          if (yr < 100) yr += 2000;
+          const cand = new Date(yr, mon, day);
+          if (!mNum[4] && cand.getTime() < base.getTime() - dayMs) cand.setFullYear(cand.getFullYear() + 1);
+          date = cand;
+        }
+      }
+    }
+  }
   // время: «15:00» / «в 3 часа дня» / «в 9 утра» / «утром/днём/вечером»
   const mHm = t.match(/(\d{1,2}):(\d{2})/);
   if (mHm) {
@@ -3130,6 +3158,10 @@ function stripSchedulingPhrases(text) {
       new RegExp('\\s*' + B + 'на\\s+следующ(ей|ую)\\s+недел[а-яё]*' + E, 'gi'),
       // «в пятницу/во вторник/в среду…» (винительный + именительный)
       new RegExp('\\s*' + B + '(?:в|во)\\s+(понедельник|вторник|среду|среда|четверг|пятницу|пятница|субботу|суббота|воскресенье)' + E, 'gi'),
+      // v96: «15 марта», «15-го марта», «3 сентября 2027 года»
+      new RegExp('\\s*' + B + '\\d{1,2}(?:\\s?-?\\s?(?:го|е))?\\s+(?:января|февраля|марта|апреля|мая|июня|июля|августа|сентября|октября|ноября|декабря)(?:\\s+\\d{4})?(?:\\s+года)?' + E, 'gi'),
+      // v96: «15.03», «15.03.2026» (валидные ДД.ММ; порядок альтернатив — сначала двузначные, иначе «12.11» съедалось как «12.1»)
+      new RegExp('\\s*' + B + '(?:[12]\\d|3[01]|0?[1-9])\\.(?:1[0-2]|0?[1-9])(?:\\.\\d{2,4})?' + E, 'gi'),
       // «в 15:00», «к 15:00»
       new RegExp('\\s*(?:в|к)\\s*\\d{1,2}:\\d{2}', 'gi'),
       // «в 3 часа дня», «в 15 часов», «к 9 утра»
@@ -3230,6 +3262,16 @@ async function ensureArea(name, icon) {
 window.ensureArea = ensureArea;
 window.classifyAndRouteNote = classifyAndRouteNote; // тесты: разметка вне saveNote
 
+// ── v96: ПАУЗА ИИ ПРИ СБОЯХ (пустой баланс / сеть) ──
+// 2 провала подряд → 10 минут не дёргаем API вообще: классификатор/пунктуация
+// живут на локальных эвристиках (парсер дат, startsLikeAction, matchAreaByExemplars).
+// Один успех — счётчик и пауза сбрасываются.
+let _aiFailStreak = 0, _aiPausedUntil = 0;
+function aiPaused() { return Date.now() < _aiPausedUntil; }
+function aiNoteFail() { if (++_aiFailStreak >= 2) { _aiPausedUntil = Date.now() + 10 * 60000; _aiFailStreak = 0; } }
+function aiNoteOk() { _aiFailStreak = 0; _aiPausedUntil = 0; }
+window.aiPaused = aiPaused; window.aiNoteFail = aiNoteFail; window.aiNoteOk = aiNoteOk; // тесты
+
 // ИИ-вызов второго мозга: тесты могут перехватить через window.__aiHook(messages, options) → строка
 async function callBrainAI(messages, options) {
   if (window.__aiHook) return window.__aiHook(messages, options);
@@ -3248,9 +3290,9 @@ function buildAreaExemplars() {
   }
   return Object.keys(byTag)
     .sort((a, b) => byTag[b].length - byTag[a].length)
-    .slice(0, 20)
+    .slice(0, 12) // v96: 20 → 12 — экономия токенов промпта
     .map(t => {
-      const ex = byTag[t].slice(0, 2).map(n => '«' + String(n.text || '').slice(0, 55).replace(/\s+/g, ' ').trim() + '»').join(', ');
+      const ex = byTag[t].slice(0, 1).map(n => '«' + String(n.text || '').slice(0, 40).replace(/\s+/g, ' ').trim() + '»').join(', ');
       return t + ' (' + byTag[t].length + '): ' + ex;
     })
     .join('; ');
@@ -3312,12 +3354,14 @@ async function classifyAndRouteNote(note) {
     const tagLog = await loadTagLog();
     if (tagLog.length) {
       tagLogText = 'Правки пользователя (он сам переносил записи между областями — для ПОХОЖИХ текстов сразу выбирай итоговую область): '
-        + tagLog.slice(-8).map(it => '«' + String(it.t || '').slice(0, 50) + '»' + (it.from ? ' (было: ' + it.from + ')' : '') + ' → "' + it.to + '"').join('; ') + '. ';
+        + tagLog.slice(-5).map(it => '«' + String(it.t || '').slice(0, 40) + '»' + (it.from ? ' (было: ' + it.from + ')' : '') + ' → "' + it.to + '"').join('; ') + '. ';
     }
   } catch(e) {}
   const clList = await loadClusters();
-  const clusterNames = [...clList].sort((a,b)=>(b.count||0)-(a.count||0)).slice(0, 30).map(c => c.name);
+  const clusterNames = [...clList].sort((a,b)=>(b.count||0)-(a.count||0)).slice(0, 15).map(c => c.name);
   try {
+    // v96: при паузе ИИ (пустой баланс/сеть) вызова НЕТ — мгновенный локальный роутинг без ожидания и трат
+    if (aiPaused()) throw new Error('ai-paused');
     const resp = await callBrainAI([
       { role: 'system', content: 'Ты — классификатор записей личного дневника-трекера. Ответь ТОЛЬКО валидным JSON без markdown: {"task": true/false, "date": "YYYY-MM-DD" или null, "time": "HH:MM" или null, "area": "..." или null, "newArea": {"name":"...","icon":"эмодзи"} или null, "kind": "мысль|событие|решение|идея|вопрос|дело", "cluster": "..." или null, "wish": true/false, "urgent": true/false}. '
         + 'task: true — если запись это конкретное действие, которое предстоит сделать и потом можно поставить галочку (купить, позвонить, записаться, отправить, сделать, не забыть); false — мысль, факт, идея без действия, дневниковая запись, справка. Сомневаешься — true: лучше поставить в тудушку, чем потерять дело. «Должно быть/стоять/лежать где-то» («коробка должна стоять на балконе», «документ должен лежать в папке», «зарядка должна быть в машине») — это ТОЖЕ task: true: пользователь фиксирует желаемый порядок вещей — сформулируй в тексте действие («Отнести коробку на балкон»). Запись, начинающаяся с действия/инфинитива («Настроить кнопку», «Проверить фильтр», «Добавить подписи») — ВСЕГДА task: true, даже если звучит как заметка о работе над проектом. '
@@ -3329,8 +3373,8 @@ async function classifyAndRouteNote(note) {
         + 'kind: мысль (размышление, чувство, наблюдение) | событие (что произошло, факт из жизни) | решение (выбрал, постановил) | идея (придумал что-то, что можно сделать) | вопрос (сомнение, надо выяснить) | дело (конкретное действие — совпадает с task:true). '
         + 'cluster: если запись — однотипное повторяющееся дело (смотреть фильм/сериал, читать книгу, тренировка, купить X, встреча...) — короткое имя группы в именной форме из существующих [' + clusterNames.join(' | ') + '] (точное имя существующего, если подходит) или новое («Посмотреть фильмы», «Тренировка», «Купить продукты»); разовые дела и не-дела — null. '
         + 'Все даты/времена — в московском поясе (МСК = UTC+3), СЕЙЧАС ' + mskTimeStr + ' МСК. date: ТОЛЬКО если в тексте ЯВНО назван день или срок («сегодня», «завтра», «в пятницу», «через неделю») — вычисли точную дату от СЕГОДНЯ (сегодня=' + todayKey + ', завтра=' + tomorrowKey + '; «через неделю» = +7 дней; «на следующей неделе» = ближайший понедельник; названный день недели = ближайший будущий). День/срок НЕ назван — date: null и time: null: задача без срока просто ляжет в тудушку, её раскидают по календарю позже. ЗАПРЕЩЕНО ставить «сегодня» по умолчанию или «для порядка». time: если названо время («в 15:00», «утром» = 09:00, «вечером» = 18:00) — HH:MM; «через N минут/часов» = текущее время ' + mskTimeStr + ' + N (НИКОГДА не ставь время раньше текущего).' },
-      { role: 'user', content: note.text.slice(0, 500) }
-    ], { max_tokens: 240, temperature: 0 });
+      { role: 'user', content: note.text.slice(0, 400) }
+    ], { max_tokens: 170, temperature: 0 });
     const m = resp && resp.match(/\{[\s\S]*\}/);
     if (m) {
       parsed = JSON.parse(m[0]);
@@ -3340,7 +3384,11 @@ async function classifyAndRouteNote(note) {
         if (isValidTimeStr(parsed.time)) aiTime = parsed.time;
       }
     }
-  } catch(e) { console.warn('[Classify] AI failed, fallback to heuristic:', e); }
+    aiNoteOk(); // v96: успех — сбрасываем счётчик провалов и паузу
+  } catch(e) {
+    if (!aiPaused()) aiNoteFail(); // v96: сама пауза провалом не считается — иначе она продлевалась бы вечно
+    console.warn('[Classify] AI failed, fallback to heuristic:', e);
+  }
   if (isTask === null) isTask = heuristicIsTask(note.text);
   // СОГЛАСОВАННОСТЬ: ИИ вернул kind=«дело», но task=false — противоречит сам себе, верим «делу»
   if (parsed && parsed.kind === 'дело' && isTask === false) isTask = true;
@@ -8320,6 +8368,9 @@ function wardrobeBuy(id) {
   const xp = _hzi.xp || 0;
   if (xp < it.price) { showToast('Не хватает ' + (it.price - xp) + ' ⚡ — зарабатывай делами', 2400); return; }
   _hzi.xp = xp - it.price; // возвратов нет; xpMax (и уровень) не трогаем
+  const dayK = hziDayStr(); // v96: траты дня в дневной бакет — дашборд покажет «куда ушли ⚡»
+  const db = (_hzi.days = _hzi.days || {})[dayK] = _hzi.days[dayK] || {};
+  db.sp = (db.sp || 0) + it.price;
   _hzi.wardrobe = [...(_hzi.wardrobe || []), id];
   _hzi.worn = [...(_hzi.worn || []), id];
   hziSaveWardrobe(); renderHaziBadge(); renderHaziScreen(); updateWardrobeLabels(); renderWardrobeGrid(); renderWardrobeDetail();
@@ -8353,6 +8404,8 @@ function openWardrobeModal() {
 }
 function closeWardrobeModal() {
   const modal = document.getElementById('wardrobe-modal');
+  // v96: из вещи ✕/тап мимо возвращает К СПИСКУ ВЕЩЕЙ, а не выкидывает из гардероба; ✕ из списка закрывает модал
+  if (modal && modal.classList.contains('open') && _wardrobeDetail) { wardrobeShowHome(); return; }
   if (modal) modal.classList.remove('open');
   wardrobeShowHome(); // сброс детального просмотра — следующий вход начинается со списка
 }
@@ -8473,12 +8526,12 @@ function hziPeriodFrom(p) { // начало диапазона включите�
 }
 function hziSumPeriod(p) {
   const from = hziPeriodFrom(p), to = hziDayStr();
-  const t = { td: 0, ta: 0, n: 0, ms: 0, c: 0, xp: 0 };
+  const t = { td: 0, ta: 0, n: 0, ms: 0, c: 0, xp: 0, sp: 0 };
   if (!_hzi || !_hzi.days || !from) return t;
   for (const k of Object.keys(_hzi.days)) {
     if (k < from || k > to) continue;
     const b = _hzi.days[k] || {};
-    t.td += b.td || 0; t.ta += b.ta || 0; t.n += b.n || 0; t.ms += b.ms || 0; t.c += b.c || 0; t.xp += b.xp || 0;
+    t.td += b.td || 0; t.ta += b.ta || 0; t.n += b.n || 0; t.ms += b.ms || 0; t.c += b.c || 0; t.xp += b.xp || 0; t.sp += b.sp || 0;
   }
   return t;
 }
@@ -8506,6 +8559,13 @@ function hziRenderStats() {
     v = hziSumPeriod(_hziPeriod);
   }
   const card = (val, l) => `<div style="background:rgba(255,255,255,0.04);border:0.5px solid rgba(255,255,255,0.09);border-radius:14px;padding:10px 12px;"><div style="font-size:15.5px;font-weight:700;color:#fff;font-family:Inter,sans-serif;">${val}</div><div style="font-size:10.5px;color:rgba(255,255,255,0.4);margin-top:2px;font-family:Inter,sans-serif;">${l}</div></div>`;
+  // v96: пустой период — не шесть нулей (выглядит как баг), а честная подсказка + траты на гардероб, если были
+  if (_hziPeriod !== 'all' && !v.td && !v.ta && !v.n && !v.ms && !v.c && !v.xp) {
+    const plabel = _hziPeriod === 'day' ? 'за сегодня' : _hziPeriod === 'week' ? 'за эту неделю' : 'за этот месяц';
+    const spentLine = v.sp ? `<div style="font-size:11.5px;color:rgba(255,209,102,0.8);margin-top:6px;font-family:Inter,sans-serif;">⚡ ${v.sp} потрачено на гардероб</div>` : '';
+    st.innerHTML = `<div style="grid-column:1/-1;background:rgba(255,255,255,0.03);border:0.5px dashed rgba(255,255,255,0.16);border-radius:14px;padding:16px 14px;text-align:center;"><div style="font-size:12.5px;color:rgba(255,255,255,0.55);line-height:1.6;font-family:Inter,sans-serif;">🌤 Пока пусто ${plabel}.<br>Добавь заметку, закрой задачу или пройди шаг желания — и цифры появятся.</div>${spentLine}</div>`;
+    return;
+  }
   st.innerHTML = card('✅ ' + v.td, 'задач выполнено') + card('➕ ' + v.ta, 'задач добавлено') + card('📝 ' + v.n, 'заметок создано') + card('🌠 ' + v.ms, 'шагов желаний') + card('💬 ' + v.c, 'сообщений ИИ') + card('⚡ ' + v.xp, 'получено');
 }
 async function hziPersist() { // тесты/служебное: прямая запись состояния в облако
@@ -14023,6 +14083,10 @@ window.__t = {
   renderWardrobeGrid,
   updateWardrobeLabels,
   wardrobe: HZI_WARDROBE,
+  // v96: пауза ИИ при пустом балансе/сети
+  aiPaused,
+  aiNoteOk,
+  aiNoteFail,
   testRun: HZ3_TEST_RUN,
 };
 
@@ -14221,6 +14285,9 @@ onAuthStateChanged(auth, async (user) => {
     setTimeout(checkShowRegisterPrompt, 3000);
     // v93: «Помнить всегда» — попап при первом открытии за день (ждёт тишины от других модалок)
     setTimeout(maybeShowRememberPopup, 3600);
+    // v96: досинхронизация буфера ⚡ на старте — действия прошлой сессии не застревают в localStorage,
+    // дашборд «День» сразу показывает накопленное (фидбек: выбираю день — нули)
+    setTimeout(() => { hziFlush().catch(() => {}); }, 2500);
   } else {
     // Пользователь не залогинен — проверяем флаг
     // Если был logout → показываем auth screen (без auto-anonymous)
