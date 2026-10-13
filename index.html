@@ -8178,9 +8178,10 @@ function hziPoke(text) { // «+5⚡» всплывает от бейджа — �
   setTimeout(() => f.remove(), 1100);
   badge.classList.remove('hazi-happy'); void badge.offsetWidth; badge.classList.add('hazi-happy');
 }
-// ═══ v94: ГАРДЕРОБ — покупки за ⚡ ═══
+// ═══ v94/v95: ГАРДЕРОБ — покупки за ⚡ ═══
 // ⚡ стал тратимым: уровень считается от xpMax (лучший результат) и от покупок НЕ падает.
-// Покупка = −price ⚡, предмет навсегда; тап по купленному = надеть/снять. Возвратов нет.
+// v95 UX: тап по карточке → большой предпросмотр + явные кнопки «Купить · N⚡» / «Примерять»
+// (тап-тап подтверждение из v94 убрано — было непонятно). Примерка бесплатна; покупка навсегда, возвратов нет.
 const HZI_WARDROBE = [
   { id: 'bow',     name: 'Бантик',          emoji: '🎀', price: 25,  layer: 'front', svg: `<path d="M20 11 l-6.5 -4 v8z" fill="#FF6B81"/><path d="M20 11 l6.5 -4 v8z" fill="#FF6B81"/><circle cx="20" cy="11" r="2.3" fill="#E8556D"/>` },
   { id: 'cap',     name: 'Кепка',           emoji: '🧢', price: 30,  layer: 'front', svg: `<path d="M22 13.5 q10 -10.5 20 0z" fill="#00A8E8"/><rect x="40" y="11.6" width="9" height="2.8" rx="1.4" fill="#0086B8"/><rect x="22" y="12.2" width="20" height="1.6" fill="#0086B8" opacity="0.55"/>` },
@@ -8197,9 +8198,11 @@ const HZI_WARDROBE = [
   { id: 'halo',    name: 'Ореол',           emoji: '😇', price: 350, layer: 'front', svg: `<ellipse cx="32" cy="4.5" rx="10.5" ry="3" fill="none" stroke="#FFD166" stroke-width="2"/><ellipse cx="32" cy="4.5" rx="14.5" ry="5.2" fill="none" stroke="rgba(255,209,102,0.25)" stroke-width="1"/>` },
   { id: 'crown',   name: 'Корона',          emoji: '👑', price: 500, layer: 'front', svg: `<path d="M23 14 l1.5 -8.5 4.5 5.2 3 -7.2 3 7.2 4.5 -5.2 1.5 8.5z" fill="#FFD166" stroke="#FF9F43" stroke-width="1" stroke-linejoin="round"/><circle cx="32" cy="4.8" r="1.4" fill="#00D4FF"/><circle cx="24.8" cy="9.5" r="1" fill="#FF6B81"/><circle cx="39.2" cy="9.5" r="1" fill="#FF6B81"/>` }
 ];
-let _wardrobeConfirm = {}; // id → таймер подтверждения покупки (тап-тап)
+let _wardrobeDetail = null; // id предмета в детальном просмотре (большой предпросмотр)
+let _wardrobeTry = false;   // примерка некупленного: предпросмотр в детальном виде, никуда не сохраняется
 function hziHasItem(id) { return !!(_hzi && Array.isArray(_hzi.wardrobe) && _hzi.wardrobe.includes(id)); }
 function hziWears(id) { return !!(_hzi && Array.isArray(_hzi.worn) && _hzi.worn.includes(id)); }
+function hziStageNow() { return _hzi ? hziStageOf(hziLevelOf(_hzi.xpMax || _hzi.xp)) : 1; }
 function updateWardrobeLabels() {
   const n = _hzi && Array.isArray(_hzi.wardrobe) ? _hzi.wardrobe.length : 0;
   const cnt = document.getElementById('wardrobe-hazi-count');
@@ -8208,21 +8211,31 @@ function updateWardrobeLabels() {
   if (xpEl) xpEl.textContent = _hzi ? (_hzi.xp || 0) : 0;
 }
 async function hziSaveWardrobe() { try { await setDoc(uDocRef('meta', 'activity'), _hzi); } catch(e) { /* офлайн — поле уедет со следующим flush */ } }
+function renderWardrobeHero() { // большой предпросмотр Хэзи в том, что надето сейчас
+  const hero = document.getElementById('wardrobe-hero');
+  if (!hero) return;
+  const worn = (_hzi && Array.isArray(_hzi.worn)) ? _hzi.worn : [];
+  const emojis = worn.map(id => { const w = HZI_WARDROBE.find(x => x.id === id); return w ? w.emoji : ''; }).filter(Boolean).join(' ');
+  const cap = emojis ? 'На Хэзи сейчас: ' + emojis : 'Хэзи пока без вещей — тапни карточку, чтобы примерить';
+  hero.innerHTML = `<div style="display:flex;flex-direction:column;align-items:center;gap:3px;padding:2px 0 6px;">
+    ${hziSVG(hziStageNow(), 112, worn)}
+    <div style="font-size:10.5px;color:rgba(255,255,255,0.45);font-family:Inter,sans-serif;text-align:center;">${cap}</div>
+  </div>`;
+}
 function renderWardrobeGrid() {
   const grid = document.getElementById('wardrobe-grid');
   if (!grid) return;
-  const stage = _hzi ? hziStageOf(hziLevelOf(_hzi.xpMax || _hzi.xp)) : 1;
+  const stage = hziStageNow();
   const xp = _hzi ? (_hzi.xp || 0) : 0;
   grid.innerHTML = HZI_WARDROBE.map((it) => {
-    const owned = hziHasItem(it.id), worn = hziWears(it.id), confirming = !!_wardrobeConfirm[it.id];
+    const owned = hziHasItem(it.id), worn = hziWears(it.id);
     const can = xp >= it.price;
-    const border = worn ? 'rgba(0,212,255,0.65)' : confirming ? 'rgba(255,209,102,0.75)' : owned ? 'rgba(108,71,255,0.4)' : can ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.06)';
-    const bg = worn ? 'rgba(0,212,255,0.09)' : confirming ? 'rgba(255,209,102,0.10)' : 'rgba(255,255,255,0.04)';
+    const border = worn ? 'rgba(0,212,255,0.65)' : owned ? 'rgba(108,71,255,0.4)' : can ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.06)';
+    const bg = worn ? 'rgba(0,212,255,0.09)' : 'rgba(255,255,255,0.04)';
     const label = worn ? '<span style="color:rgba(160,235,255,0.95);">надето ✓</span>'
-      : confirming ? '<span style="color:#FFD166;">Купить · ' + it.price + '⚡?</span>'
-      : owned ? '<span style="color:rgba(255,255,255,0.55);">надеть</span>'
+      : owned ? '<span style="color:rgba(180,255,200,0.75);">куплено ✓</span>'
       : '<span style="color:' + (can ? 'rgba(255,209,102,0.85)' : 'rgba(255,110,110,0.7)') + ';">' + it.price + ' ⚡</span>';
-    return `<button onclick="wardrobeTap('${it.id}')" style="border-radius:13px;padding:9px 4px 7px;display:flex;flex-direction:column;align-items:center;gap:2px;background:${bg};border:0.5px solid ${border};cursor:pointer;opacity:${owned || can ? 1 : 0.5};-webkit-tap-highlight-color:transparent;font-family:Inter,sans-serif;">
+    return `<button onclick="wardrobeOpenItem('${it.id}')" style="border-radius:13px;padding:9px 4px 7px;display:flex;flex-direction:column;align-items:center;gap:2px;background:${bg};border:0.5px solid ${border};cursor:pointer;opacity:${owned || can ? 1 : 0.5};-webkit-tap-highlight-color:transparent;font-family:Inter,sans-serif;">
       <div style="height:46px;display:flex;align-items:center;justify-content:center;">${hziSVG(stage, 44, [it.id])}</div>
       <div style="font-size:10.5px;font-weight:600;color:rgba(255,255,255,0.85);white-space:nowrap;">${it.emoji} ${it.name}</div>
       <div style="font-size:9.5px;font-family:Inter,sans-serif;">${label}</div>
@@ -8230,30 +8243,86 @@ function renderWardrobeGrid() {
   }).join('');
   const bx = document.getElementById('wardrobe-xp');
   if (bx) bx.textContent = xp;
+  renderWardrobeHero();
 }
-function wardrobeTap(id) {
+function renderWardrobeDetail() { // v95: детальный просмотр — большой предпросмотр + кнопки «Купить» / «Примерять»
+  const box = document.getElementById('wardrobe-detail');
+  if (!box || !_wardrobeDetail) return;
+  const it = HZI_WARDROBE.find(x => x.id === _wardrobeDetail);
+  if (!it) { wardrobeShowHome(); return; }
+  const owned = hziHasItem(it.id);
+  const worn = hziWears(it.id);
+  const trying = owned ? worn : _wardrobeTry; // некупленное — предпросмотр; купленное — как реально надето
+  const stage = hziStageNow();
+  const xp = _hzi ? (_hzi.xp || 0) : 0;
+  const can = xp >= it.price;
+  const statusColor = owned ? 'rgba(180,255,200,0.85)' : can ? 'rgba(255,209,102,0.9)' : 'rgba(255,120,120,0.8)';
+  const status = owned ? (worn ? 'Куплено и надето ✓' : 'Куплено ✓') : (can ? it.price + ' ⚡ — хватает' : 'Не хватает ' + (it.price - xp) + ' ⚡');
+  const tryLabel = owned ? (worn ? 'Снять' : 'Надеть') : (trying ? 'Убрать' : '👁 Примерять');
+  const tryBtn = `<button onclick="wardrobeTryToggle('${it.id}')" style="flex:1;border-radius:12px;padding:13px 8px;font-size:13px;font-weight:700;cursor:pointer;-webkit-tap-highlight-color:transparent;font-family:Inter,sans-serif;background:rgba(0,212,255,0.08);border:0.5px solid rgba(0,212,255,0.45);color:#9FE8FF;">${tryLabel}</button>`;
+  const buySide = owned
+    ? `<div style="flex:1;display:flex;align-items:center;justify-content:center;font-size:12.5px;font-weight:600;color:rgba(180,255,200,0.8);font-family:Inter,sans-serif;">Куплено ✓</div>`
+    : `<button onclick="wardrobeBuy('${it.id}')" style="flex:1.15;border-radius:12px;padding:13px 8px;font-size:13px;font-weight:700;cursor:pointer;-webkit-tap-highlight-color:transparent;font-family:Inter,sans-serif;${can ? 'background:linear-gradient(135deg,#6C47FF,#5A38E8);border:none;color:#fff;box-shadow:0 4px 18px rgba(108,71,255,0.35);' : 'background:rgba(255,255,255,0.05);border:0.5px solid rgba(255,120,120,0.35);color:rgba(255,130,130,0.85);'}">Купить · ${it.price}⚡</button>`;
+  box.innerHTML = `
+    <button onclick="wardrobeBack()" style="background:none;border:none;color:rgba(185,167,255,0.75);font-size:12px;font-weight:600;cursor:pointer;padding:2px 0 4px;font-family:Inter,sans-serif;-webkit-tap-highlight-color:transparent;">← Все вещи</button>
+    <div style="display:flex;align-items:center;justify-content:center;padding:0 0 4px;">${hziSVG(stage, 172, trying ? [it.id] : [])}</div>
+    <div style="font-size:10.5px;color:rgba(255,255,255,0.4);text-align:center;margin:0 0 8px;font-family:Inter,sans-serif;">${owned ? '' : (trying ? 'Примерка: вещь надета на предпросмотре' : 'Нажми «Примерять», чтобы снова увидеть вещь на Хэзи')}</div>
+    <div style="text-align:center;margin-bottom:12px;">
+      <div style="font-size:15px;font-weight:700;color:rgba(255,255,255,0.92);font-family:Inter,sans-serif;">${it.emoji} ${it.name}</div>
+      <div style="font-size:11.5px;margin-top:2px;font-family:Inter,sans-serif;color:${statusColor};">${status}</div>
+    </div>
+    <div style="display:flex;gap:8px;">${tryBtn}${buySide}</div>
+    <div style="font-size:10.5px;color:rgba(255,255,255,0.35);text-align:center;margin-top:9px;font-family:Inter,sans-serif;">${owned ? 'Вещь твоя навсегда — надевай и снимай сколько хочешь' : 'Примерка бесплатна · покупка навсегда, возвратов нет'}</div>`;
+}
+function wardrobeOpenItem(id) { // тап по карточке — сразу большой предпросмотр
   if (!_hzi) return;
   const it = HZI_WARDROBE.find(x => x.id === id);
   if (!it) return;
-  if (hziHasItem(id)) { // надеть / снять — бесплатно
+  _wardrobeDetail = id;
+  _wardrobeTry = !hziHasItem(id); // некупленное открывается сразу с вещью на Хэзи
+  const home = document.getElementById('wardrobe-home');
+  const det = document.getElementById('wardrobe-detail');
+  const foot = document.getElementById('wardrobe-foot');
+  if (home) home.style.display = 'none';
+  if (det) det.style.display = '';
+  if (foot) foot.style.display = 'none';
+  renderWardrobeDetail();
+}
+function wardrobeShowHome() {
+  _wardrobeDetail = null; _wardrobeTry = false;
+  const home = document.getElementById('wardrobe-home');
+  const det = document.getElementById('wardrobe-detail');
+  const foot = document.getElementById('wardrobe-foot');
+  if (home) home.style.display = '';
+  if (det) det.style.display = 'none';
+  if (foot) foot.style.display = '';
+  renderWardrobeGrid();
+}
+function wardrobeBack() { wardrobeShowHome(); }
+function wardrobeTryToggle(id) {
+  if (!_hzi) return;
+  const it = HZI_WARDROBE.find(x => x.id === id);
+  if (!it) return;
+  if (hziHasItem(id)) { // куплено — надеть/снять по-настоящему
     const wasWorn = hziWears(id);
     _hzi.worn = wasWorn ? _hzi.worn.filter(x => x !== id) : [..._hzi.worn, id];
-    hziSaveWardrobe(); renderHaziBadge(); renderHaziScreen(); renderWardrobeGrid();
+    hziSaveWardrobe(); renderHaziBadge(); renderHaziScreen(); renderWardrobeGrid(); renderWardrobeDetail();
     showToast(wasWorn ? it.emoji + ' ' + it.name + ' — снято' : it.emoji + ' Хэзи надел: ' + it.name, 2000);
-    return;
+  } else { // примерка некупленного — только предпросмотр, бесплатно
+    _wardrobeTry = !_wardrobeTry;
+    renderWardrobeDetail();
   }
+}
+function wardrobeBuy(id) {
+  if (!_hzi) return;
+  const it = HZI_WARDROBE.find(x => x.id === id);
+  if (!it || hziHasItem(id)) return;
   const xp = _hzi.xp || 0;
   if (xp < it.price) { showToast('Не хватает ' + (it.price - xp) + ' ⚡ — зарабатывай делами', 2400); return; }
-  if (!_wardrobeConfirm[id]) { // первый тап — подтверждение, второй — покупка
-    _wardrobeConfirm[id] = setTimeout(() => { delete _wardrobeConfirm[id]; renderWardrobeGrid(); }, 3000);
-    renderWardrobeGrid();
-    return;
-  }
-  clearTimeout(_wardrobeConfirm[id]); delete _wardrobeConfirm[id];
   _hzi.xp = xp - it.price; // возвратов нет; xpMax (и уровень) не трогаем
   _hzi.wardrobe = [...(_hzi.wardrobe || []), id];
   _hzi.worn = [...(_hzi.worn || []), id];
-  hziSaveWardrobe(); renderHaziBadge(); renderHaziScreen(); renderWardrobeGrid();
+  hziSaveWardrobe(); renderHaziBadge(); renderHaziScreen(); updateWardrobeLabels(); renderWardrobeGrid(); renderWardrobeDetail();
   showToast(it.emoji + ' Куплено: ' + it.name + ' · −' + it.price + '⚡', 2600);
 }
 function openWardrobeModal() {
@@ -8268,24 +8337,33 @@ function openWardrobeModal() {
           <div style="font-size:16px;font-weight:700;color:#C9B8FF;font-family:Inter,sans-serif;">🎩 Гардероб Хэзи</div>
           <button onclick="closeWardrobeModal()" aria-label="Закрыть" style="background:none;border:none;color:rgba(255,255,255,0.35);font-size:18px;cursor:pointer;padding:4px;">✕</button>
         </div>
-        <div style="font-size:11px;color:rgba(255,255,255,0.42);margin:4px 0 12px;line-height:1.5;font-family:Inter,sans-serif;">Одевай Хэзи за заработанные ⚡ · баланс: <b id="wardrobe-xp" style="color:rgba(255,224,138,0.9);">0</b> ⚡ · уровень не падает</div>
-        <div id="wardrobe-grid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:7px;max-height:52vh;overflow-y:auto;margin-bottom:10px;"></div>
-        <div style="font-size:10.5px;color:rgba(255,255,255,0.35);line-height:1.5;font-family:Inter,sans-serif;">⚡ Зарабатывай делами: задача +5 · шаг желания +10 · стрик 🔥 +2 · бонус дня +10</div>
+        <div style="font-size:11px;color:rgba(255,255,255,0.42);margin:4px 0 8px;line-height:1.5;font-family:Inter,sans-serif;">Одевай Хэзи за заработанные ⚡ · баланс: <b id="wardrobe-xp" style="color:rgba(255,224,138,0.9);">0</b> ⚡ · уровень не падает</div>
+        <div id="wardrobe-home">
+          <div id="wardrobe-hero"></div>
+          <div id="wardrobe-grid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:7px;max-height:40vh;overflow-y:auto;margin-bottom:8px;"></div>
+        </div>
+        <div id="wardrobe-detail" style="display:none;"></div>
+        <div id="wardrobe-foot" style="font-size:10.5px;color:rgba(255,255,255,0.35);line-height:1.5;font-family:Inter,sans-serif;">⚡ Зарабатывай делами: задача +5 · шаг желания +10 · стрик 🔥 +2 · бонус дня +10</div>
       </div>`;
     document.body.appendChild(modal);
     modal.addEventListener('click', (e) => { if (e.target === modal) closeWardrobeModal(); });
   }
-  renderWardrobeGrid();
+  wardrobeShowHome();
   modal.classList.add('open');
 }
 function closeWardrobeModal() {
   const modal = document.getElementById('wardrobe-modal');
   if (modal) modal.classList.remove('open');
+  wardrobeShowHome(); // сброс детального просмотра — следующий вход начинается со списка
 }
 window.hziSetPeriod = hziSetPeriod; // v94-фикс: инлайн onclick пилюль — module-скоуп не глобален (прод-баг v92)
 window.openWardrobeModal = openWardrobeModal;
 window.closeWardrobeModal = closeWardrobeModal;
-window.wardrobeTap = wardrobeTap;
+window.wardrobeOpenItem = wardrobeOpenItem; // v95: все инлайн onclick гардероба — только через window
+window.wardrobeBuy = wardrobeBuy;
+window.wardrobeTryToggle = wardrobeTryToggle;
+window.wardrobeBack = wardrobeBack;
+window.wardrobeTap = wardrobeOpenItem; // совместимость со старыми тестами/закладками
 // ══════════ /WARDROBE ══════════
 
 // ── SVG Хэзи: 5 стадий (единый viewBox, классы анимаций в CSS) ──
@@ -13935,7 +14013,13 @@ window.__t = {
   // v94: гардероб Хэзи
   openWardrobeModal,
   closeWardrobeModal,
-  wardrobeTap,
+  wardrobeOpenItem,
+  wardrobeBuy,
+  wardrobeTryToggle,
+  wardrobeBack,
+  wardrobeTap: wardrobeOpenItem,
+  wardrobeShowHome,
+  renderWardrobeDetail,
   renderWardrobeGrid,
   updateWardrobeLabels,
   wardrobe: HZI_WARDROBE,
