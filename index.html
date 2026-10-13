@@ -642,6 +642,18 @@ body.todo-mouse-dragging *{cursor:grabbing !important}
 .hazi-evo-sparks span{position:absolute;font-size:15px;animation:hzTwinkle 1.8s ease-in-out infinite}
 /* ── /HAZI ── */
 
+/* ── REMEMBER v93: «Помнить всегда» — правила и утренний попап ── */
+@keyframes remPop{0%{opacity:0;transform:scale(.9) translateY(14px)}100%{opacity:1;transform:scale(1) translateY(0)}}
+.rem-glow{width:88px;height:88px;margin:0 auto 8px;border-radius:50%;background:radial-gradient(circle,rgba(124,92,255,0.26),rgba(124,92,255,0) 70%);display:flex;align-items:center;justify-content:center;animation:hzPulse 3.2s ease-in-out infinite}
+.rem-glow svg{width:60px;height:60px;overflow:visible}
+.rem-card{display:flex;gap:9px;align-items:flex-start;background:rgba(255,209,102,0.055);border:0.5px solid rgba(255,209,102,0.24);border-radius:13px;padding:10px 12px;animation:remPop .35s ease}
+.rem-card .rem-star{flex-shrink:0;font-size:12px;color:#FFD166;padding-top:1.5px;line-height:1}
+.rem-card .rem-text{flex:1;min-width:0;font-size:13px;line-height:1.5;color:rgba(255,255,255,0.86);word-break:break-word;font-family:'Inter',sans-serif}
+.rem-card .rem-del{flex-shrink:0;background:none;border:none;color:rgba(255,255,255,0.28);font-size:14px;cursor:pointer;padding:0 0 0 6px;line-height:1;-webkit-tap-highlight-color:transparent}
+.rem-card .rem-del:hover{color:rgba(255,110,110,0.85)}
+.rem-card.editing{border-color:rgba(0,212,255,0.5);background:rgba(0,212,255,0.07)}
+/* ── /REMEMBER ── */
+
 /* Желания-плашка на главном: искры статичны (v74 — по фидбеку мигание убрано) */
 
 /* ── CHAT SCREEN ── */
@@ -1519,6 +1531,10 @@ body[data-theme="business"] .cap-mic.recording{box-shadow:0 0 10px rgba(140,176,
       <div id="hazi-period" style="display:flex;gap:6px;margin:16px 0 0;"></div>
       <div id="hazi-streakline" style="margin-top:10px;text-align:center;font-size:11.5px;color:rgba(255,255,255,0.55);font-family:Inter,sans-serif;"></div>
       <div id="hazi-stats" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:10px 0 0;"></div>
+      <button id="remember-hazi-btn" onclick="openRememberModal()" style="width:100%;margin-top:12px;background:rgba(255,209,102,0.06);border:0.5px solid rgba(255,209,102,0.26);border-radius:13px;padding:11px 14px;color:rgba(255,224,138,0.92);font-size:12.5px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif;display:flex;align-items:center;justify-content:space-between;-webkit-tap-highlight-color:transparent;">
+        <span>🔖 Помнить всегда · <span id="remember-hazi-count">0</span></span>
+        <span style="color:rgba(255,255,255,0.35);">→</span>
+      </button>
       <div style="margin-top:16px;padding:12px 14px;border-radius:14px;background:rgba(108,71,255,0.07);border:0.5px solid rgba(108,71,255,0.22);font-size:11.5px;line-height:1.6;color:rgba(255,255,255,0.5);font-family:Inter,sans-serif;">
         ⚡ Хэзи растёт от твоих дел: <b style="color:rgba(255,255,255,0.75);">заметка +2</b> · <b style="color:rgba(255,255,255,0.75);">задача +5</b> · <b style="color:rgba(255,255,255,0.75);">шаг желания +10</b> · активный день 🔥 +2. Он родился из твоих мыслей — и однажды станет сверхчеловеком.
       </div>
@@ -1678,6 +1694,10 @@ body[data-theme="business"] .cap-mic.recording{box-shadow:0 0 10px rgba(140,176,
     <div style="padding:8px 16px 0;">
       <button onclick="goTo('hazi')" style="width:100%;background:rgba(255,209,102,0.07);border:0.5px solid rgba(255,209,102,0.3);border-radius:12px;padding:9px;color:rgba(255,209,102,0.92);font-size:12.5px;font-weight:500;cursor:pointer;font-family:'Inter',sans-serif;margin-bottom:8px;display:flex;align-items:center;justify-content:space-between;">
         <span>⚡ Хэзи · <span id="hazi-set-lvl">ур. 1</span></span>
+        <span style="color:rgba(255,255,255,0.4);">→</span>
+      </button>
+      <button onclick="openRememberModal()" style="width:100%;background:rgba(108,71,255,0.09);border:0.5px solid rgba(124,93,255,0.32);border-radius:12px;padding:9px;color:rgba(199,183,255,0.95);font-size:12.5px;font-weight:500;cursor:pointer;font-family:'Inter',sans-serif;margin-bottom:8px;display:flex;align-items:center;justify-content:space-between;">
+        <span>🔖 Помнить всегда · <span id="remember-set-count">0</span></span>
         <span style="color:rgba(255,255,255,0.4);">→</span>
       </button>
       <button id="pwa-install-btn" onclick="installFromSettings()" style="width:100%;background:rgba(108,71,255,0.1);border:0.5px solid rgba(108,71,255,0.35);border-radius:12px;padding:9px;color:rgba(160,130,255,0.95);font-size:12.5px;font-weight:500;cursor:pointer;font-family:'Inter',sans-serif;margin-bottom:8px;">📲 Установить приложение</button>
@@ -3272,6 +3292,7 @@ window.getWizardState = () => wizardState; // тесты
 
 async function classifyAndRouteNote(note) {
   if (!note || !note.id || !note.text) return;
+  if (note.remember === true) return; // v93: «Помнить всегда» — уже своя категория, ИИ её не переклассифицирует
   if (note.inTodo === true) return; // уже в тудушке
   const todayKey = formatDateKey(new Date());
   const tomorrowKey = formatDateKey(new Date(Date.now() + 86400000));
@@ -3572,6 +3593,7 @@ async function loadNotes() {
     renderTodo(); // тудушка всегда синхронна с общей базой записей
     renderFocusCard(); // карточка "сейчас важно" на главном экране тоже
     renderQuickTags(); // чипы тегов на главном: топ-6 по употребляемости (счётчики могли измениться)
+    updateRememberLabels(); // v93: счётчики «Помнить всегда» в настройках/на экране Хэзи
     try { if (hintsLoaded && notes.length >= 1) window.__questEvent('first-note'); } catch(e) {} // v89: квест-шаг 2
     setTimeout(maybeOfferTagWizard, 1200); // мастер тегов: предложение после ~50 записей (раз за сессию)
     setTimeout(() => { maybeSuggestTag().catch(() => {}); }, 2400); // v89 Н9: предложение тега по однотипным записям
@@ -3865,6 +3887,7 @@ window.bulkRemoveTag = bulkRemoveTag;
 function filterNotes() {
   const q = document.getElementById('hist-search').value.toLowerCase();
   let list = notes.filter(n => matchesDateFilter(n, histFilter, histMode));
+  list = list.filter(n => n.remember !== true); // v93: «Помнить всегда» живут в своём списке — не в истории
   if (histMode === 'added' && !showDoneInHistory) list = list.filter(n => !n.done);
   if (histTags.size) list = list.filter(n => histTags.has((n.tag || '').trim()));
   if (q) {
@@ -4161,10 +4184,20 @@ function renderModalActions(n) {
   if (!box) return;
   const isDone = n.done === true;
   const isInTodo = n.inTodo === true;
+  const isRemember = n.remember === true; // v93
   const st = 'padding:7px 11px;border-radius:9px;font-size:11.5px;font-weight:600;cursor:pointer;font-family:Inter,sans-serif;';
+  if (isRemember) {
+    // v93: правило «Помнить всегда» — в тудушке/выполнении не участвует
+    box.innerHTML = `
+      <button style="${st}border:0.5px solid rgba(255,209,102,0.45);background:rgba(255,209,102,0.12);color:#FFD166;cursor:default;">🔖 Помнить всегда</button>
+      <button onclick="modalToggleRemember()" style="${st}border:0.5px solid rgba(255,255,255,0.12);background:rgba(255,255,255,0.05);color:rgba(255,255,255,0.6);">↩ Сделать обычной</button>
+      <button onclick="modalDelete()" style="${st}border:0.5px solid rgba(255,80,80,0.3);background:rgba(255,80,80,0.1);color:rgba(255,110,110,0.9);">🗑 Удалить</button>`;
+    return;
+  }
   box.innerHTML = `
     <button onclick="modalToggleDone()" style="${st}border:0.5px solid ${isDone ? 'rgba(255,255,255,0.15)' : 'rgba(0,220,120,0.4)'};background:${isDone ? 'rgba(255,255,255,0.05)' : 'rgba(0,220,120,0.12)'};color:${isDone ? 'rgba(255,255,255,0.6)' : 'rgba(0,230,130,0.95)'};">${isDone ? '↩ Вернуть в работу' : '✓ Выполнить'}</button>
     <button onclick="modalToggleTodo()" style="${st}border:0.5px solid ${isInTodo ? 'rgba(255,80,80,0.3)' : 'rgba(108,71,255,0.4)'};background:${isInTodo ? 'rgba(255,80,80,0.08)' : 'rgba(108,71,255,0.1)'};color:${isInTodo ? 'rgba(255,110,110,0.9)' : 'rgba(139,92,246,0.95)'};">${isInTodo ? '✕ Из тудушки' : '➜ В тудушку'}</button>
+    <button onclick="modalToggleRemember()" style="${st}border:0.5px solid rgba(255,209,102,0.35);background:rgba(255,209,102,0.07);color:rgba(255,224,138,0.92);">🔖 Помнить всегда</button>
     <button onclick="modalDuplicate()" style="${st}border:0.5px solid rgba(0,212,255,0.3);background:rgba(0,212,255,0.08);color:rgba(0,212,255,0.85);">⧉ Дублировать</button>
     <button onclick="modalDelete()" style="${st}border:0.5px solid rgba(255,80,80,0.3);background:rgba(255,80,80,0.1);color:rgba(255,110,110,0.9);">🗑 Удалить</button>`;
   // v82: кнопка «Копировать» из этого ряда убрана — теперь иконка копирования стоит рядом с текстом (правый верхний угол поля)
@@ -4196,6 +4229,30 @@ async function modalToggleTodo() {
   if (fresh) renderModalActions(fresh);
 }
 window.modalToggleTodo = modalToggleTodo;
+
+// v93: «Помнить всегда» из редактора — заметка становится правилом (и наоборот).
+// Обратно в обычные — ничего не отнимает (тот же принцип, что у ⚡).
+async function modalToggleRemember() {
+  const n = notes.find(x => x.id === editingId);
+  if (!n) return;
+  const willBeRemember = !(n.remember === true);
+  try {
+    await updateDoc(uDocRef('notes', n.id), { remember: willBeRemember });
+    if (willBeRemember) {
+      n.remember = true;
+      try { hziAward('remember', n.id); } catch(e) {}
+      closeModal();
+      showToast('🔖 Правило «Помнить всегда» — Хэзи напомнит утром', 3000);
+    } else {
+      n.remember = false;
+      showToast('Запись снова обычная', 2200);
+    }
+    await loadNotes();
+    const fresh = notes.find(x => x.id === editingId);
+    if (fresh && !willBeRemember) renderModalActions(fresh);
+  } catch(e) { alert('Ошибка: ' + e.message); }
+}
+window.modalToggleRemember = modalToggleRemember;
 
 function modalCopyText() {
   // v82: копируем АКТУАЛЬНЫЙ текст из поля (несохранённые правки тоже копируются)
@@ -4461,11 +4518,12 @@ function tokenizeForCloud(text) {
 }
 
 function computeWordCloudItems(period) {
-  let filtered = notes;
+  let filtered = notes.filter(n => n.remember !== true); // v93: правила «Помнить всегда» — не мысли, в облаке не участвуют
   if (period !== 'all') {
     const nowDay = toMoscowDayStart(new Date().toISOString());
     const startDay = nowDay - (period - 1) * 24 * 60 * 60 * 1000;
     filtered = notes.filter(n => {
+      if (n.remember === true) return false; // v93: и в периодном фильтре правила не участвуют
       const day = toMoscowDayStart(n.createdAt);
       return day >= startDay && day <= nowDay;
     });
@@ -7956,6 +8014,7 @@ const HZI_RULES = {
   milestone: { xp: 10, cap: 4  }, // шаг желания выполнен
   wish:      { xp: 5,  cap: 2  }, // создано желание
   chat:      { xp: 1,  cap: 5  }, // сообщение ИИ в чате
+  remember:  { xp: 2,  cap: 5  }, // v93: правило «Помнить всегда» добавлено
   bonus:     { xp: 10, cap: 1  }, // день с выполненной задачей
   streak:    { xp: 2,  cap: 1  }  // активный день в стрике
 };
@@ -7967,7 +8026,7 @@ let _hziFlushTimer = null;
 function hziDayStr(off = 0) { return new Date(Date.now() + 3 * 3600000 + off * 86400000).toISOString().slice(0, 10); }
 function hziEmptyState() {
   return { xp: 0, born: null, retroDone: false, _noBirth: false, bonus7: false, bonus30: false,
-    totals: { notes: 0, tasks: 0, tasksAdded: 0, milestones: 0, wishes: 0, chats: 0, streakBest: 0, xpEarned: 0 },
+    totals: { notes: 0, tasks: 0, tasksAdded: 0, milestones: 0, wishes: 0, chats: 0, remembers: 0, streakBest: 0, xpEarned: 0 },
     days: {}, // v92: дневные бакеты метрик для дашборда (день/неделя/месяц)
     streak: { count: 0, lastDay: null }, caps: {}, used: [] };
 }
@@ -8045,6 +8104,7 @@ async function hziFlush(force) {
     else if (item.k === 'milestone') { _hzi.totals.milestones++; d.ms = (d.ms || 0) + 1; }
     else if (item.k === 'wish') { _hzi.totals.wishes++; d.w = (d.w || 0) + 1; }
     else if (item.k === 'chat') { _hzi.totals.chats++; d.c = (d.c || 0) + 1; }
+    else if (item.k === 'remember') { _hzi.totals.remembers = (_hzi.totals.remembers || 0) + 1; d.r = (d.r || 0) + 1; } // v93: правило «Помнить всегда» (в карточках дашборда не показываем — их немного и они навсегда)
     if (item.k === 'note' && !_hzi.born) _hzi.born = new Date(item.ts).toISOString();
   }
   // Стрик 🔥: день активен = есть закрытая задача/шаг ИЛИ 2+ новые заметки; серия +2⚡, бону­сы на 7 и 30
@@ -8251,6 +8311,209 @@ function hziReset() { // тесты
 window.hziReset = hziReset;
 // ══════════ /HZI ══════════
 
+// ══════════ REMEMBER v93: «Помнить всегда» ══════════
+// Правила-напоминания (notes с remember:true): не тудушка, не история, не облако —
+// просто всегда рядом. Хэзи показывает их в попапе при первом открытии за день.
+// «Приправа, не блюдо»: свои списки, свои фильтры, +2⚡ за новое правило (кап 5/день).
+function rememberList() { return (notes || []).filter(n => n.remember === true); }
+function rememberPlural(n) {
+  const m10 = n % 10, m100 = n % 100;
+  if (m10 === 1 && m100 !== 11) return 'правило';
+  if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) return 'правила';
+  return 'правил';
+}
+function updateRememberLabels() {
+  const n = rememberList().length;
+  const a = document.getElementById('remember-set-count');
+  if (a) a.textContent = n;
+  const b = document.getElementById('remember-hazi-count');
+  if (b) b.textContent = n + ' ' + rememberPlural(n);
+}
+
+// ── Модал управления списком ──
+let _remEditId = null; // id правила в режиме редактирования
+function openRememberModal() {
+  let modal = document.getElementById('remember-modal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'remember-modal';
+    modal.className = 'modal-overlay';
+    modal.innerHTML = `
+      <div class="modal" style="max-width:400px;padding:18px 16px 16px;animation:remPop .35s ease;">
+        <div style="display:flex;align-items:center;justify-content:space-between;">
+          <div style="font-size:16px;font-weight:700;color:#FFE9B8;font-family:Inter,sans-serif;">🔖 Помнить всегда</div>
+          <button onclick="closeRememberModal()" aria-label="Закрыть" style="background:none;border:none;color:rgba(255,255,255,0.35);font-size:18px;cursor:pointer;padding:4px;">✕</button>
+        </div>
+        <div style="font-size:11px;color:rgba(255,255,255,0.42);margin:4px 0 12px;line-height:1.5;font-family:Inter,sans-serif;">Правила, которые Хэзи напоминает каждый день. Это не тудушка — они просто всегда рядом</div>
+        <div id="remember-list" style="display:flex;flex-direction:column;gap:7px;max-height:42vh;overflow-y:auto;margin-bottom:10px;"></div>
+        <div id="remember-editing-bar" style="display:none;align-items:center;justify-content:space-between;font-size:11px;color:rgba(0,212,255,0.75);margin-bottom:6px;font-family:Inter,sans-serif;">
+          <span>✏️ Редактирование правила</span>
+          <button onclick="rememberCancelEdit()" style="background:none;border:none;color:rgba(255,255,255,0.45);font-size:11px;cursor:pointer;text-decoration:underline;font-family:Inter,sans-serif;">отмена</button>
+        </div>
+        <div style="display:flex;gap:8px;align-items:flex-end;">
+          <textarea id="remember-input" rows="1" placeholder="Например: не играть в автоматы" style="flex:1;background:rgba(255,255,255,0.05);border:0.5px solid rgba(255,255,255,0.12);border-radius:12px;padding:10px 12px;color:#fff;font-size:13px;font-family:Inter,sans-serif;outline:none;resize:none;min-height:40px;line-height:1.4;color-scheme:dark;"></textarea>
+          <button id="remember-add-btn" onclick="rememberAdd()" title="Добавить" style="flex-shrink:0;width:40px;height:40px;border-radius:12px;border:0.5px solid rgba(255,209,102,0.4);background:rgba(255,209,102,0.14);color:#FFD166;font-size:15px;cursor:pointer;display:flex;align-items:center;justify-content:center;">➤</button>
+        </div>
+      </div>`;
+    document.body.appendChild(modal);
+    const ta = modal.querySelector('#remember-input');
+    if (ta) {
+      ta.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); rememberAdd(); } });
+      ta.addEventListener('input', () => { ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight, 96) + 'px'; });
+    }
+    modal.addEventListener('click', (e) => { if (e.target === modal) closeRememberModal(); });
+  }
+  rememberCancelEdit();
+  renderRememberList();
+  modal.classList.add('open');
+}
+function closeRememberModal() {
+  const modal = document.getElementById('remember-modal');
+  if (modal) modal.classList.remove('open');
+}
+function renderRememberList() {
+  const el = document.getElementById('remember-list');
+  if (!el) return;
+  const items = rememberList();
+  if (!items.length) {
+    const stage = _hzi ? hziStageOf(hziLevelOf(_hzi.xp)) : 1;
+    el.innerHTML = `<div style="text-align:center;padding:14px 8px 10px;">
+      <div class="rem-glow">${hziSVG(stage)}</div>
+      <div style="font-size:12px;color:rgba(255,255,255,0.5);line-height:1.6;font-family:Inter,sans-serif;">Пока пусто. Добавь правило, которое хочешь помнить всегда —<br>например, «не играть в автоматы» или «думать позитивно»</div>
+    </div>`;
+    return;
+  }
+  el.innerHTML = items.map(n => `
+    <div class="rem-card${_remEditId === n.id ? ' editing' : ''}">
+      <span class="rem-star">✦</span>
+      <span class="rem-text" onclick="rememberStartEdit('${n.id}')">${escHtml(n.text || '')}</span>
+      <button class="rem-del" onclick="rememberDelete('${n.id}')" title="Удалить">✕</button>
+    </div>`).join('');
+}
+function rememberSetEditor(editing) {
+  const btn = document.getElementById('remember-add-btn');
+  if (btn) btn.textContent = editing ? '✓' : '➤';
+  const bar = document.getElementById('remember-editing-bar');
+  if (bar) bar.style.display = editing ? 'flex' : 'none';
+}
+function rememberStartEdit(id) {
+  const n = notes.find(x => x.id === id);
+  if (!n || n.remember !== true) return;
+  _remEditId = id;
+  const ta = document.getElementById('remember-input');
+  if (ta) { ta.value = n.text || ''; ta.focus(); }
+  rememberSetEditor(true);
+  renderRememberList();
+}
+function rememberCancelEdit() {
+  _remEditId = null;
+  const ta = document.getElementById('remember-input');
+  if (ta) ta.value = '';
+  rememberSetEditor(false);
+  renderRememberList();
+}
+async function rememberAdd() {
+  const ta = document.getElementById('remember-input');
+  if (!ta) return;
+  const text = ta.value.trim();
+  if (!text) return;
+  if (text.length > 300) { showToast('Правило слишком длинное — до 300 символов', 2600); return; }
+  try {
+    if (_remEditId) {
+      const n = notes.find(x => x.id === _remEditId);
+      if (!n || n.remember !== true) { rememberCancelEdit(); return; }
+      await updateDoc(uDocRef('notes', _remEditId), { text });
+      _remEditId = null;
+      rememberSetEditor(false);
+      showToast('✓ Правило обновлено', 2200);
+    } else {
+      const docRef = await addDoc(notesCol(), { text, type: 'text', tag: null, remember: true, createdAt: new Date().toISOString() });
+      try { hziAward('remember', docRef.id); } catch(e) {}
+      showToast('🔖 Правило добавлено · +2⚡', 2400);
+    }
+    ta.value = '';
+    ta.style.height = 'auto';
+    await loadNotes(); // перерисует метки и списки
+    renderRememberList();
+  } catch(e) { alert('Ошибка: ' + e.message); }
+}
+async function rememberDelete(id) {
+  const n = notes.find(x => x.id === id);
+  if (!n) return;
+  if (!confirm('Удалить правило «' + (n.text || '').slice(0, 60) + '»?')) return;
+  try {
+    await deleteDoc(uDocRef('notes', id));
+    if (_remEditId === id) { _remEditId = null; rememberSetEditor(false); }
+    await loadNotes();
+    renderRememberList();
+    showToast('Правило удалено', 2200);
+  } catch(e) { alert('Ошибка: ' + e.message); }
+}
+
+// ── Ежедневный попап: первое открытие за день (по МСК, пометка на устройстве) ──
+const REMEMBER_SHOWN_KEY = 'hz3_remember_shown';
+let _remPopupTries = 0;
+function rememberShownToday() { try { return localStorage.getItem(REMEMBER_SHOWN_KEY) === hziDayStr(); } catch(e) { return false; } }
+function markRememberShown() { try { localStorage.setItem(REMEMBER_SHOWN_KEY, hziDayStr()); } catch(e) {} }
+function remModalAllowed() { // в тест-режиме подавлен (как модалки Хэзи), тест включает явно
+  try { if (window.__rememberShowModals === true) return true; } catch(e) {}
+  return !HZ3_TEST_RUN;
+}
+function rememberGreet() {
+  const h = mskNow().getUTCHours();
+  if (h >= 5 && h < 12) return 'Доброе утро';
+  if (h >= 12 && h < 17) return 'Добрый день';
+  if (h >= 17 && h < 23) return 'Добрый вечер';
+  return 'Тихая ночь';
+}
+function maybeShowRememberPopup() {
+  if (!remModalAllowed()) return;
+  if (rememberShownToday()) return;
+  if (document.getElementById('remember-daily-open')) return;
+  const items = rememberList();
+  if (!items.length) { markRememberShown(); return; } // правил нет — не дёргаем, попробуем завтра
+  // другие стартовые модалки (регистрация, итог дня, офферы) важнее — дождёмся тишины
+  if (document.querySelector('.modal-overlay.open')) {
+    if (_remPopupTries < 24) { _remPopupTries++; setTimeout(maybeShowRememberPopup, 1500); }
+    return;
+  }
+  markRememberShown();
+  showRememberDaily(items);
+}
+function showRememberDaily(items) {
+  const stage = _hzi ? hziStageOf(hziLevelOf(_hzi.xp)) : 1;
+  const ov = document.createElement('div');
+  ov.id = 'remember-daily-open';
+  ov.className = 'modal-overlay';
+  ov.innerHTML = `
+    <div class="modal" style="max-width:340px;text-align:center;padding:20px 18px 16px;animation:remPop .4s ease;">
+      <div class="rem-glow">${hziSVG(stage)}</div>
+      <div style="font-size:17px;font-weight:800;color:#FFD166;font-family:Inter,sans-serif;">🔖 Помнить всегда</div>
+      <div style="font-size:11.5px;color:rgba(255,255,255,0.45);margin:5px 0 13px;font-family:Inter,sans-serif;">${rememberGreet()}. Правила, которые выбрал ты сам</div>
+      <div style="display:flex;flex-direction:column;gap:7px;text-align:left;max-height:44vh;overflow-y:auto;">
+        ${items.map(n => `<div class="rem-card"><span class="rem-star">✦</span><span class="rem-text">${escHtml(n.text || '')}</span></div>`).join('')}
+      </div>
+      <button class="modal-save" style="margin-top:14px;width:100%;" onclick="closeRememberDaily()">Буду помнить 💜</button>
+      <button style="background:none;border:none;color:rgba(255,255,255,0.38);font-size:11.5px;margin-top:9px;cursor:pointer;text-decoration:underline;font-family:Inter,sans-serif;" onclick="closeRememberDaily();openRememberModal();">Изменить список</button>
+    </div>`;
+  document.body.appendChild(ov);
+  requestAnimationFrame(() => ov.classList.add('open'));
+  ov.addEventListener('click', (e) => { if (e.target === ov) closeRememberDaily(); });
+}
+function closeRememberDaily() {
+  const ov = document.getElementById('remember-daily-open');
+  if (ov) ov.remove();
+}
+window.openRememberModal = openRememberModal;
+window.closeRememberModal = closeRememberModal;
+window.rememberAdd = rememberAdd;
+window.rememberDelete = rememberDelete;
+window.rememberStartEdit = rememberStartEdit;
+window.rememberCancelEdit = rememberCancelEdit;
+window.closeRememberDaily = closeRememberDaily;
+window.maybeShowRememberPopup = maybeShowRememberPopup;
+// ══════════ /REMEMBER ══════════
+
 // ── КВЕСТ: 9 шагов ──
 const QUEST_LAST = 9;
 function questSkipped() { return hintsShown.has('quest_skipped'); }
@@ -8331,7 +8594,10 @@ function showOrdinaryHints(screen) {
         () => notes.some(n => n.scheduledDate || n.scheduledTime) && typeof Notification !== 'undefined' && Notification.permission === 'default',
         { label: '🔔 Разрешить', fn: "dismissHint('notif_hint'); requestReminderPermission();" }],
       ['stale_14', 'Есть задачи, которые висят без движения 14+ дней. В вечернем итоге дня ИИ разберёт, почему они не делаются, и предложит микро-шаги', 'main-hint',
-        () => typeof getLongStaleNotes === 'function' && getLongStaleNotes().length >= 1]
+        () => typeof getLongStaleNotes === 'function' && getLongStaleNotes().length >= 1],
+      // v93: знакомство с «Помнить всегда» — одноразовая, в тест-режиме выключена (не влияет на регресс)
+      ['remember_intro', '🔖 <b>Помнить всегда</b> — есть правила, которые важно не забывать? Добавь их — Хэзи будет показывать их каждое утро при первом открытии', 'main-hint',
+        () => !HZ3_TEST_RUN && notes.length >= 4 && rememberList().length === 0, { label: '🔖 Добавить правило', fn: "dismissHint('remember_intro'); openRememberModal();" }]
     ]);
     if (!activeHintId) setTimeout(() => { maybeSuggestTag().catch(() => {}); }, 300); // v89 Н9: тег-предложение — в хвосте очереди
   } else if (screen === 'hist') {
@@ -10766,6 +11032,7 @@ function getTodayDateString() {
 function getNotesForDate(dateStr) {
   // dateStr: YYYY-MM-DD по московскому времени — createdAt тоже приводим к Москве
   return notes.filter(n => {
+    if (n.remember === true) return false; // v93: правила — не записи дня
     if (!n.createdAt) return false;
     return formatDateKey(new Date(n.createdAt)) === dateStr;
   });
@@ -10869,6 +11136,7 @@ function getCandidatesForLinking(newNote) {
 // Основная функция: AI находит похожие заметки
 async function findAndSaveLinksForNote(note) {
   if (!note || !note.id || !note.text) return;
+  if (note.remember === true) return; // v93: правила не участвуют в связках
   try {
     const candidates = getCandidatesForLinking(note);
     if (candidates.length === 0) return;
@@ -13503,6 +13771,15 @@ window.__t = {
   hziDayStr,
   hziPersist,
   hziDays: () => (_hzi && _hzi.days) || {},
+  // v93: «Помнить всегда» — правила и утренний попап
+  rememberList: () => notes.filter(n => n.remember === true),
+  rememberShownToday: () => rememberShownToday(),
+  markRememberShown,
+  maybeShowRememberPopup,
+  updateRememberLabels,
+  openRememberModal,
+  rememberAdd,
+  rememberDelete,
   testRun: HZ3_TEST_RUN,
 };
 
@@ -13699,6 +13976,8 @@ onAuthStateChanged(auth, async (user) => {
     setTimeout(() => checkAndGeneratePsychologistInsight(), 5000);
     // Проверяем, нужно ли показать prompt «Зарегистрируйся» (после 10 заметок или 1 желания)
     setTimeout(checkShowRegisterPrompt, 3000);
+    // v93: «Помнить всегда» — попап при первом открытии за день (ждёт тишины от других модалок)
+    setTimeout(maybeShowRememberPopup, 3600);
   } else {
     // Пользователь не залогинен — проверяем флаг
     // Если был logout → показываем auth screen (без auto-anonymous)
