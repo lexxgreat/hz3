@@ -1531,12 +1531,16 @@ body[data-theme="business"] .cap-mic.recording{box-shadow:0 0 10px rgba(140,176,
       <div id="hazi-period" style="display:flex;gap:6px;margin:16px 0 0;"></div>
       <div id="hazi-streakline" style="margin-top:10px;text-align:center;font-size:11.5px;color:rgba(255,255,255,0.55);font-family:Inter,sans-serif;"></div>
       <div id="hazi-stats" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:10px 0 0;"></div>
+      <button id="wardrobe-hazi-btn" onclick="openWardrobeModal()" style="width:100%;margin-top:12px;background:rgba(108,71,255,0.07);border:0.5px solid rgba(139,92,246,0.35);border-radius:13px;padding:11px 14px;color:rgba(201,184,255,0.92);font-size:12.5px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif;display:flex;align-items:center;justify-content:space-between;-webkit-tap-highlight-color:transparent;">
+        <span>🎩 Гардероб · <span id="wardrobe-hazi-count">0/14</span> · <span id="wardrobe-hazi-xp">0</span> ⚡</span>
+        <span style="color:rgba(255,255,255,0.35);">→</span>
+      </button>
       <button id="remember-hazi-btn" onclick="openRememberModal()" style="width:100%;margin-top:12px;background:rgba(255,209,102,0.06);border:0.5px solid rgba(255,209,102,0.26);border-radius:13px;padding:11px 14px;color:rgba(255,224,138,0.92);font-size:12.5px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif;display:flex;align-items:center;justify-content:space-between;-webkit-tap-highlight-color:transparent;">
         <span>🔖 Помнить всегда · <span id="remember-hazi-count">0</span></span>
         <span style="color:rgba(255,255,255,0.35);">→</span>
       </button>
       <div style="margin-top:16px;padding:12px 14px;border-radius:14px;background:rgba(108,71,255,0.07);border:0.5px solid rgba(108,71,255,0.22);font-size:11.5px;line-height:1.6;color:rgba(255,255,255,0.5);font-family:Inter,sans-serif;">
-        ⚡ Хэзи растёт от твоих дел: <b style="color:rgba(255,255,255,0.75);">заметка +2</b> · <b style="color:rgba(255,255,255,0.75);">задача +5</b> · <b style="color:rgba(255,255,255,0.75);">шаг желания +10</b> · активный день 🔥 +2. Он родился из твоих мыслей — и однажды станет сверхчеловеком.
+        ⚡ Хэзи растёт от твоих дел: <b style="color:rgba(255,255,255,0.75);">заметка +2</b> · <b style="color:rgba(255,255,255,0.75);">задача +5</b> · <b style="color:rgba(255,255,255,0.75);">шаг желания +10</b> · активный день 🔥 +2. Он родился из твоих мыслей — и однажды станет сверхчеловеком. Заработанные ⚡ можно тратить в 🎩 Гардеробе — уровень не упадёт: он растёт от лучшего результата.
       </div>
     </div>
   </div>
@@ -8025,7 +8029,7 @@ let _hzi = null;            // кэш состояния
 let _hziFlushTimer = null;
 function hziDayStr(off = 0) { return new Date(Date.now() + 3 * 3600000 + off * 86400000).toISOString().slice(0, 10); }
 function hziEmptyState() {
-  return { xp: 0, born: null, retroDone: false, _noBirth: false, bonus7: false, bonus30: false,
+  return { xp: 0, xpMax: 0, wardrobe: [], worn: [], born: null, retroDone: false, _noBirth: false, bonus7: false, bonus30: false,
     totals: { notes: 0, tasks: 0, tasksAdded: 0, milestones: 0, wishes: 0, chats: 0, remembers: 0, streakBest: 0, xpEarned: 0 },
     days: {}, // v92: дневные бакеты метрик для дашборда (день/неделя/месяц)
     streak: { count: 0, lastDay: null }, caps: {}, used: [] };
@@ -8052,7 +8056,14 @@ function hziAward(kind, id) {
 async function hziLoad() {
   try {
     const snap = await getDoc(uDocRef('meta', 'activity'));
-    if (snap.exists()) { _hzi = Object.assign(hziEmptyState(), snap.data()); renderHaziBadge(); return; }
+    if (snap.exists()) {
+      _hzi = Object.assign(hziEmptyState(), snap.data());
+      // v94-миграция: ⚡ стал тратимым (гардероб) — уровень считается от xpMax (лучший результат)
+      if (!_hzi.xpMax) _hzi.xpMax = _hzi.xp || 0; // у v93-профилей xpMax нет (из empty-стейта приходит 0)
+      if (!Array.isArray(_hzi.wardrobe)) _hzi.wardrobe = [];
+      if (!Array.isArray(_hzi.worn)) _hzi.worn = [];
+      renderHaziBadge(); return;
+    }
   } catch(e) { /* сеть — начнём с пустого, буфер сохранит баллы */ }
   _hzi = hziEmptyState();
   try { // ретро-грант: стартовый заряд за уже сделанные дела (одноразово — маркер retroDone)
@@ -8060,6 +8071,7 @@ async function hziLoad() {
     _hzi.retroDone = true;
     if (doneN > 0) {
       _hzi.xp = Math.min(HZI_RETRO_CAP, doneN * 3);
+      _hzi.xpMax = _hzi.xp;
       _hzi.totals.tasks = doneN;
       _hzi.totals.xpEarned = _hzi.xp;
       _hzi._noBirth = true; // Хэзи уже живёт — без модалки рождения
@@ -8075,7 +8087,7 @@ async function hziFlush(force) {
   if (!buf.length && !force) return _hzi;
   if (!_hzi) await hziLoad();
   const today = hziDayStr();
-  const prevLevel = hziLevelOf(_hzi.xp);
+  const prevLevel = hziLevelOf(_hzi.xpMax || _hzi.xp); // v94: уровень от лучшего результата
   const bornBefore = !!_hzi.born;
   let gained = 0, dirty = buf.length > 0;
   if (!_hzi.days) _hzi.days = {}; // миграция v91 → v92
@@ -8133,8 +8145,9 @@ async function hziFlush(force) {
   }
   if (dirty) { try { await setDoc(uDocRef('meta', 'activity'), _hzi); hziBufSet([]); } catch(e) { /* буфер остаётся — досинхронится позже */ } }
   else if (buf.length) hziBufSet([]); // всё отброшено капами/дедупом — буфер пуст
+  _hzi.xpMax = Math.max(_hzi.xpMax || 0, _hzi.xp); // v94: лучший результат — уровень никогда не падает от трат
   renderHaziBadge();
-  const newLevel = hziLevelOf(_hzi.xp);
+  const newLevel = hziLevelOf(_hzi.xpMax || _hzi.xp);
   if (newLevel > prevLevel) { setTimeout(() => hziShowEvolution(newLevel), 500); }
   else if (!bornBefore && _hzi.born && !_hzi._noBirth) { setTimeout(() => hziShowBirth(), 500); }
   if (gained > 0 && buf.length) hziPoke('+' + gained + '⚡');
@@ -8143,10 +8156,11 @@ async function hziFlush(force) {
 function renderHaziBadge() {
   if (!_hzi) return;
   const badge = document.getElementById('hazi-badge');
-  const level = hziLevelOf(_hzi.xp), stage = hziStageOf(level);
+  const level = hziLevelOf(_hzi.xpMax || _hzi.xp), stage = hziStageOf(level);
   if (badge) {
     const holder = badge.querySelector('.hazi-badge-svg');
-    if (holder && holder.dataset.stage !== String(stage)) { holder.innerHTML = hziSVG(stage); holder.dataset.stage = String(stage); }
+    const wornKey = (_hzi.worn || []).join(',');
+    if (holder && (holder.dataset.stage !== String(stage) || holder.dataset.worn !== wornKey)) { holder.innerHTML = hziSVG(stage, null, _hzi.worn || []); holder.dataset.stage = String(stage); holder.dataset.worn = wornKey; }
     const lv = badge.querySelector('.hazi-badge-lvl');
     if (lv && lv.textContent !== String(level)) lv.textContent = level;
   }
@@ -8164,9 +8178,123 @@ function hziPoke(text) { // «+5⚡» всплывает от бейджа — �
   setTimeout(() => f.remove(), 1100);
   badge.classList.remove('hazi-happy'); void badge.offsetWidth; badge.classList.add('hazi-happy');
 }
+// ═══ v94: ГАРДЕРОБ — покупки за ⚡ ═══
+// ⚡ стал тратимым: уровень считается от xpMax (лучший результат) и от покупок НЕ падает.
+// Покупка = −price ⚡, предмет навсегда; тап по купленному = надеть/снять. Возвратов нет.
+const HZI_WARDROBE = [
+  { id: 'bow',     name: 'Бантик',          emoji: '🎀', price: 25,  layer: 'front', svg: `<path d="M20 11 l-6.5 -4 v8z" fill="#FF6B81"/><path d="M20 11 l6.5 -4 v8z" fill="#FF6B81"/><circle cx="20" cy="11" r="2.3" fill="#E8556D"/>` },
+  { id: 'cap',     name: 'Кепка',           emoji: '🧢', price: 30,  layer: 'front', svg: `<path d="M22 13.5 q10 -10.5 20 0z" fill="#00A8E8"/><rect x="40" y="11.6" width="9" height="2.8" rx="1.4" fill="#0086B8"/><rect x="22" y="12.2" width="20" height="1.6" fill="#0086B8" opacity="0.55"/>` },
+  { id: 'clover',  name: 'Листик',          emoji: '🍀', price: 35,  layer: 'front', svg: `<path d="M40 12.5 q1 -6.5 6.5 -7.5 q-1 6.5 -6.5 7.5z" fill="#5BC489"/><path d="M40 12.5 q-0.5 -4 -4 -5.5" stroke="#3E9C68" stroke-width="1.3" fill="none" stroke-linecap="round"/>` },
+  { id: 'glasses', name: 'Очки',            emoji: '🕶️', price: 40,  layer: 'front', svg: `<circle cx="26.5" cy="33" r="6.2" fill="rgba(0,212,255,0.10)" stroke="#00D4FF" stroke-width="1.6"/><circle cx="37.5" cy="33" r="6.2" fill="rgba(0,212,255,0.10)" stroke="#00D4FF" stroke-width="1.6"/><path d="M32.6 32.6 h-1.2 M43.8 31.8 h3 M18.2 31.8 h3" stroke="#00D4FF" stroke-width="1.4" stroke-linecap="round"/>` },
+  { id: 'bolt',    name: 'Молния-брошь',    emoji: '⚡', price: 45,  layer: 'front', svg: `<path d="M33.5 37 l-4.5 7.5 h3.2 l-2.2 6.5 6.5 -8.5 h-3.2 l3.5 -5.5z" fill="#FFD166" stroke="#FF9F43" stroke-width="0.8" stroke-linejoin="round"/>` },
+  { id: 'scarf',   name: 'Шарф',            emoji: '🧣', price: 50,  layer: 'front', svg: `<path d="M21.5 45.5 q10.5 5.5 21 0 l1.3 3.8 q-11.8 5.5 -23.6 0z" fill="#FF6B81"/><path d="M40.5 49.5 q3.5 4 2.4 8.2 l-4.6 -1.2 q1.6 -3.4 0.6 -6.6z" fill="#E8556D"/>` },
+  { id: 'balloon', name: 'Шарик',           emoji: '🎈', price: 70,  layer: 'front', svg: `<path d="M46 42 q6.5 -6 5.5 -14.5" stroke="rgba(255,255,255,0.5)" stroke-width="1" fill="none" stroke-linecap="round"/><circle cx="51.5" cy="20.5" r="5.4" fill="#FF6B81"/><path d="M51.5 15 l1.4 2.4 h-2.8z" fill="#E8556D"/><ellipse cx="49.6" cy="18.6" rx="1.7" ry="2.4" fill="rgba(255,255,255,0.35)"/>` },
+  { id: 'hat',     name: 'Цилиндр',         emoji: '🎩', price: 80,  layer: 'front', svg: `<rect x="21" y="1.5" width="19" height="10.5" rx="1.2" fill="#23264A"/><rect x="21" y="8.2" width="19" height="2.4" fill="#6C47FF"/><rect x="15.5" y="10.8" width="30" height="3.2" rx="1.6" fill="#2C3060"/>` },
+  { id: 'phones',  name: 'Наушники',        emoji: '🎧', price: 90,  layer: 'front', svg: `<path d="M19 32 q-1.5 -18.5 13 -18.5 t13 18.5" stroke="#8B5CF6" stroke-width="2.6" fill="none" stroke-linecap="round"/><rect x="13.8" y="28.5" width="6.4" height="10" rx="3" fill="#7C5CFF"/><rect x="43.8" y="28.5" width="6.4" height="10" rx="3" fill="#7C5CFF"/>` },
+  { id: 'moon',    name: 'Ободок с луной',  emoji: '🌙', price: 100, layer: 'front', svg: `<path d="M19.5 14.5 q12.5 -9.5 25 0" stroke="#B79CFF" stroke-width="2" fill="none" stroke-linecap="round"/><path d="M36.5 6.5 a4.6 4.6 0 1 0 4.7 5.6 a3.8 3.8 0 0 1 -4.7 -5.6z" fill="#FFD166"/>` },
+  { id: 'flame',   name: 'Огненная аура',   emoji: '🔥', price: 150, layer: 'back',  svg: `<circle cx="32" cy="33" r="27" fill="rgba(255,110,60,0.07)"/><circle cx="32" cy="33" r="24" fill="none" stroke="rgba(255,140,70,0.35)" stroke-width="1" stroke-dasharray="3 6"/><path d="M7.5 24 q-2.5 3.5 0 7 q2.5 -3.5 0 -7z" fill="#FF9F43"/><path d="M56.5 30 q-2.5 3.5 0 7 q2.5 -3.5 0 -7z" fill="#FF6B43"/><path d="M32 2.5 q-2.5 3.5 0 7 q2.5 -3.5 0 -7z" fill="#FFD166"/>` },
+  { id: 'cape',    name: 'Плащ героя',      emoji: '🦸', price: 200, layer: 'back',  svg: `<path d="M24 18 q-10.5 16 -8.5 34.5 q16.5 -6.5 33 0 q2 -18.5 -8.5 -34.5 q-8 4.5 -16 0z" fill="#FF5A5F" opacity="0.92"/>` },
+  { id: 'halo',    name: 'Ореол',           emoji: '😇', price: 350, layer: 'front', svg: `<ellipse cx="32" cy="4.5" rx="10.5" ry="3" fill="none" stroke="#FFD166" stroke-width="2"/><ellipse cx="32" cy="4.5" rx="14.5" ry="5.2" fill="none" stroke="rgba(255,209,102,0.25)" stroke-width="1"/>` },
+  { id: 'crown',   name: 'Корона',          emoji: '👑', price: 500, layer: 'front', svg: `<path d="M23 14 l1.5 -8.5 4.5 5.2 3 -7.2 3 7.2 4.5 -5.2 1.5 8.5z" fill="#FFD166" stroke="#FF9F43" stroke-width="1" stroke-linejoin="round"/><circle cx="32" cy="4.8" r="1.4" fill="#00D4FF"/><circle cx="24.8" cy="9.5" r="1" fill="#FF6B81"/><circle cx="39.2" cy="9.5" r="1" fill="#FF6B81"/>` }
+];
+let _wardrobeConfirm = {}; // id → таймер подтверждения покупки (тап-тап)
+function hziHasItem(id) { return !!(_hzi && Array.isArray(_hzi.wardrobe) && _hzi.wardrobe.includes(id)); }
+function hziWears(id) { return !!(_hzi && Array.isArray(_hzi.worn) && _hzi.worn.includes(id)); }
+function updateWardrobeLabels() {
+  const n = _hzi && Array.isArray(_hzi.wardrobe) ? _hzi.wardrobe.length : 0;
+  const cnt = document.getElementById('wardrobe-hazi-count');
+  if (cnt) cnt.textContent = n + '/' + HZI_WARDROBE.length;
+  const xpEl = document.getElementById('wardrobe-hazi-xp');
+  if (xpEl) xpEl.textContent = _hzi ? (_hzi.xp || 0) : 0;
+}
+async function hziSaveWardrobe() { try { await setDoc(uDocRef('meta', 'activity'), _hzi); } catch(e) { /* офлайн — поле уедет со следующим flush */ } }
+function renderWardrobeGrid() {
+  const grid = document.getElementById('wardrobe-grid');
+  if (!grid) return;
+  const stage = _hzi ? hziStageOf(hziLevelOf(_hzi.xpMax || _hzi.xp)) : 1;
+  const xp = _hzi ? (_hzi.xp || 0) : 0;
+  grid.innerHTML = HZI_WARDROBE.map((it) => {
+    const owned = hziHasItem(it.id), worn = hziWears(it.id), confirming = !!_wardrobeConfirm[it.id];
+    const can = xp >= it.price;
+    const border = worn ? 'rgba(0,212,255,0.65)' : confirming ? 'rgba(255,209,102,0.75)' : owned ? 'rgba(108,71,255,0.4)' : can ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.06)';
+    const bg = worn ? 'rgba(0,212,255,0.09)' : confirming ? 'rgba(255,209,102,0.10)' : 'rgba(255,255,255,0.04)';
+    const label = worn ? '<span style="color:rgba(160,235,255,0.95);">надето ✓</span>'
+      : confirming ? '<span style="color:#FFD166;">Купить · ' + it.price + '⚡?</span>'
+      : owned ? '<span style="color:rgba(255,255,255,0.55);">надеть</span>'
+      : '<span style="color:' + (can ? 'rgba(255,209,102,0.85)' : 'rgba(255,110,110,0.7)') + ';">' + it.price + ' ⚡</span>';
+    return `<button onclick="wardrobeTap('${it.id}')" style="border-radius:13px;padding:9px 4px 7px;display:flex;flex-direction:column;align-items:center;gap:2px;background:${bg};border:0.5px solid ${border};cursor:pointer;opacity:${owned || can ? 1 : 0.5};-webkit-tap-highlight-color:transparent;font-family:Inter,sans-serif;">
+      <div style="height:46px;display:flex;align-items:center;justify-content:center;">${hziSVG(stage, 44, [it.id])}</div>
+      <div style="font-size:10.5px;font-weight:600;color:rgba(255,255,255,0.85);white-space:nowrap;">${it.emoji} ${it.name}</div>
+      <div style="font-size:9.5px;font-family:Inter,sans-serif;">${label}</div>
+    </button>`;
+  }).join('');
+  const bx = document.getElementById('wardrobe-xp');
+  if (bx) bx.textContent = xp;
+}
+function wardrobeTap(id) {
+  if (!_hzi) return;
+  const it = HZI_WARDROBE.find(x => x.id === id);
+  if (!it) return;
+  if (hziHasItem(id)) { // надеть / снять — бесплатно
+    const wasWorn = hziWears(id);
+    _hzi.worn = wasWorn ? _hzi.worn.filter(x => x !== id) : [..._hzi.worn, id];
+    hziSaveWardrobe(); renderHaziBadge(); renderHaziScreen(); renderWardrobeGrid();
+    showToast(wasWorn ? it.emoji + ' ' + it.name + ' — снято' : it.emoji + ' Хэзи надел: ' + it.name, 2000);
+    return;
+  }
+  const xp = _hzi.xp || 0;
+  if (xp < it.price) { showToast('Не хватает ' + (it.price - xp) + ' ⚡ — зарабатывай делами', 2400); return; }
+  if (!_wardrobeConfirm[id]) { // первый тап — подтверждение, второй — покупка
+    _wardrobeConfirm[id] = setTimeout(() => { delete _wardrobeConfirm[id]; renderWardrobeGrid(); }, 3000);
+    renderWardrobeGrid();
+    return;
+  }
+  clearTimeout(_wardrobeConfirm[id]); delete _wardrobeConfirm[id];
+  _hzi.xp = xp - it.price; // возвратов нет; xpMax (и уровень) не трогаем
+  _hzi.wardrobe = [...(_hzi.wardrobe || []), id];
+  _hzi.worn = [...(_hzi.worn || []), id];
+  hziSaveWardrobe(); renderHaziBadge(); renderHaziScreen(); renderWardrobeGrid();
+  showToast(it.emoji + ' Куплено: ' + it.name + ' · −' + it.price + '⚡', 2600);
+}
+function openWardrobeModal() {
+  let modal = document.getElementById('wardrobe-modal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'wardrobe-modal';
+    modal.className = 'modal-overlay';
+    modal.innerHTML = `
+      <div class="modal" style="max-width:400px;padding:18px 16px 16px;animation:remPop .35s ease;">
+        <div style="display:flex;align-items:center;justify-content:space-between;">
+          <div style="font-size:16px;font-weight:700;color:#C9B8FF;font-family:Inter,sans-serif;">🎩 Гардероб Хэзи</div>
+          <button onclick="closeWardrobeModal()" aria-label="Закрыть" style="background:none;border:none;color:rgba(255,255,255,0.35);font-size:18px;cursor:pointer;padding:4px;">✕</button>
+        </div>
+        <div style="font-size:11px;color:rgba(255,255,255,0.42);margin:4px 0 12px;line-height:1.5;font-family:Inter,sans-serif;">Одевай Хэзи за заработанные ⚡ · баланс: <b id="wardrobe-xp" style="color:rgba(255,224,138,0.9);">0</b> ⚡ · уровень не падает</div>
+        <div id="wardrobe-grid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:7px;max-height:52vh;overflow-y:auto;margin-bottom:10px;"></div>
+        <div style="font-size:10.5px;color:rgba(255,255,255,0.35);line-height:1.5;font-family:Inter,sans-serif;">⚡ Зарабатывай делами: задача +5 · шаг желания +10 · стрик 🔥 +2 · бонус дня +10</div>
+      </div>`;
+    document.body.appendChild(modal);
+    modal.addEventListener('click', (e) => { if (e.target === modal) closeWardrobeModal(); });
+  }
+  renderWardrobeGrid();
+  modal.classList.add('open');
+}
+function closeWardrobeModal() {
+  const modal = document.getElementById('wardrobe-modal');
+  if (modal) modal.classList.remove('open');
+}
+window.hziSetPeriod = hziSetPeriod; // v94-фикс: инлайн onclick пилюль — module-скоуп не глобален (прод-баг v92)
+window.openWardrobeModal = openWardrobeModal;
+window.closeWardrobeModal = closeWardrobeModal;
+window.wardrobeTap = wardrobeTap;
+// ══════════ /WARDROBE ══════════
+
 // ── SVG Хэзи: 5 стадий (единый viewBox, классы анимаций в CSS) ──
-function hziSVG(stage, size) {
+function hziSVG(stage, size, worn) { // v94: worn — массив id предметов гардероба (слои до/после тела)
   const s = size ? ` width="${size}" height="${size}"` : '';
+  const wornArr = Array.isArray(worn) ? worn : [];
+  const wItem = (id) => HZI_WARDROBE.find(x => x.id === id) || null;
+  const backLayers = wornArr.map(wItem).filter(Boolean).filter(it => it.layer === 'back').map(it => it.svg).join('');
+  const frontLayers = wornArr.map(wItem).filter(Boolean).filter(it => it.layer !== 'back').map(it => it.svg).join('');
   const defs = `<defs><radialGradient id="hzG" cx="35%" cy="30%" r="80%"><stop offset="0%" stop-color="#B79CFF"/><stop offset="55%" stop-color="#7C5CFF"/><stop offset="100%" stop-color="#5A38E8"/></radialGradient><linearGradient id="hzCapeG" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#FFD166"/><stop offset="100%" stop-color="#FF9F43"/></linearGradient></defs>`;
   const eyes = (cy) => `<g class="hz-eyes"><ellipse cx="26.5" cy="${cy}" rx="2.7" ry="3.2" fill="#fff"/><ellipse cx="37.5" cy="${cy}" rx="2.7" ry="3.2" fill="#fff"/><circle cx="27.2" cy="${cy + 0.6}" r="1.3" fill="#060918"/><circle cx="38.2" cy="${cy + 0.6}" r="1.3" fill="#060918"/></g>`;
   const smile = `<path d="M29 41 q3 2.6 6 0" stroke="#060918" stroke-width="1.5" stroke-linecap="round" fill="none" opacity=".85"/>`;
@@ -8184,7 +8312,7 @@ function hziSVG(stage, size) {
   } else {
     body = `<g class="hz-a-float"><circle class="hz-aura" cx="32" cy="33" r="26.5" stroke="rgba(0,212,255,0.55)" stroke-width="1.1" stroke-dasharray="4 7" fill="none"/><circle class="hz-aura a2" cx="32" cy="33" r="21" stroke="rgba(255,209,102,0.5)" stroke-width="1" stroke-dasharray="2 6" fill="none"/><path d="M12 24 l4 5 -3 0.4 3.4 4.6" stroke="#FFD166" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round" class="hz-bolt"/><path d="M52 22 l-4 5 3 0.4 -3.4 4.6" stroke="#FFD166" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round" class="hz-bolt b2"/>${blob}<path d="M22 29 h20 a2.2 2.2 0 0 1 2.2 2.2 v2.2 a3.2 3.2 0 0 1 -3.2 3.2 h-4.6 l-2.8 -2 -2.8 2 h-8.8 a3.2 3.2 0 0 1 -3.2 -3.2 v-2.2 a2.2 2.2 0 0 1 2.2 -2.2z" fill="#00D4FF" opacity="0.93"/><ellipse cx="27.4" cy="33" rx="2.2" ry="1.5" fill="#fff"/><ellipse cx="36.6" cy="33" rx="2.2" ry="1.5" fill="#fff"/><circle cx="27.8" cy="33.2" r="0.95" fill="#060918"/><circle cx="37" cy="33.2" r="0.95" fill="#060918"/><path d="M28.5 41.5 q3.5 3 7 0" stroke="#060918" stroke-width="1.5" stroke-linecap="round" fill="none"/></g><path class="hz-spark" d="M9 40 l1 2.6 2.6 1 -2.6 1 -1 2.6 -1 -2.6 -2.6 -1 2.6 -1z" fill="#FFD166"/><path class="hz-spark s2" d="M55 12 l1 2.6 2.6 1 -2.6 1 -1 2.6 -1 -2.6 -2.6 -1 2.6 -1z" fill="#00D4FF"/>`;
   }
-  return `<svg class="hazi-svg st${stage}" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg"${s} aria-hidden="true">${defs}${body}</svg>`;
+  return `<svg class="hazi-svg st${stage}" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg"${s} aria-hidden="true" data-worn="${wornArr.join(',')}">${defs}${backLayers}${body}${frontLayers}</svg>`;
 }
 // ── Модалки: рождение и эволюция ──
 // В тестовом режиме (hz3test=1) модалки подавлены — иначе overlay накрывает
@@ -8209,7 +8337,7 @@ function hziSparks() {
 }
 function hziShowBirth() {
   if (document.getElementById('hazi-modal-open') || !hziModalAllowed()) return;
-  const stage = hziStageOf(hziLevelOf(_hzi.xp));
+  const stage = hziStageOf(hziLevelOf(_hzi.xpMax || _hzi.xp));
   const ov = hziModal(`${hziSparks()}<div class="hazi-evo-stage">${hziSVG(stage)}</div>
     <div class="hazi-evo-title">Рождение Хэзи</div>
     <div class="hazi-evo-sub">Из твоей мысли вылупился <b>Хэзи</b> — он растёт вместе с тобой</div>
@@ -8232,9 +8360,12 @@ function hziShowEvolution(level) {
 // ── Экран Хэзи ──
 function renderHaziScreen() {
   if (!_hzi) { hziLoad().then(() => renderHaziScreen()).catch(() => {}); return; }
-  const level = hziLevelOf(_hzi.xp), stage = hziStageOf(level);
+  const level = hziLevelOf(_hzi.xpMax || _hzi.xp), stage = hziStageOf(level);
   const wrap = document.getElementById('hazi-stage-wrap');
-  if (wrap) { const st = wrap.dataset.stage; if (st !== String(stage)) { wrap.innerHTML = hziSVG(stage, 150); wrap.dataset.stage = String(stage); } }
+  if (wrap) {
+    const wornKey = (_hzi.worn || []).join(',');
+    if (wrap.dataset.stage !== String(stage) || wrap.dataset.worn !== wornKey) { wrap.innerHTML = hziSVG(stage, 150, _hzi.worn || []); wrap.dataset.stage = String(stage); wrap.dataset.worn = wornKey; }
+  }
   const nameEl = document.getElementById('hazi-name');
   if (nameEl) nameEl.textContent = 'Хэзи · ' + HZI_STAGE_NAMES[stage];
   const lvlEl = document.getElementById('hazi-lvltxt');
@@ -8244,11 +8375,12 @@ function renderHaziScreen() {
     if (level >= 10) { fill.style.width = '100%'; txt.textContent = _hzi.xp + ' ⚡ · максимум'; }
     else {
       const cur = HZI_LEVELS[level - 1], next = HZI_LEVELS[level];
-      fill.style.width = Math.min(100, Math.round(((_hzi.xp - cur) / (next - cur)) * 100)) + '%';
-      txt.textContent = `${_hzi.xp} ⚡ · до ур. ${level + 1} осталось ${next - _hzi.xp}`;
+      fill.style.width = Math.min(100, Math.round((((_hzi.xpMax || _hzi.xp) - cur) / (next - cur)) * 100)) + '%';
+      txt.textContent = `${_hzi.xp} ⚡ · до ур. ${level + 1} осталось ${next - (_hzi.xpMax || _hzi.xp)}`;
     }
   }
   hziRenderStats();
+  updateWardrobeLabels();
 }
 // ── v92: ДАШБОРД — выбор периода (Всё время · День · Неделя · Месяц) ──
 // Дни в конвенции hziDayStr (МСК). Неделя — календарная с понедельника, месяц — с 1 числа.
@@ -8351,7 +8483,7 @@ function openRememberModal() {
           <button onclick="rememberCancelEdit()" style="background:none;border:none;color:rgba(255,255,255,0.45);font-size:11px;cursor:pointer;text-decoration:underline;font-family:Inter,sans-serif;">отмена</button>
         </div>
         <div style="display:flex;gap:8px;align-items:flex-end;">
-          <textarea id="remember-input" rows="1" placeholder="Например: не играть в автоматы" style="flex:1;background:rgba(255,255,255,0.05);border:0.5px solid rgba(255,255,255,0.12);border-radius:12px;padding:10px 12px;color:#fff;font-size:13px;font-family:Inter,sans-serif;outline:none;resize:none;min-height:40px;line-height:1.4;color-scheme:dark;"></textarea>
+          <textarea id="remember-input" rows="1" placeholder="Например: думать позитивно" style="flex:1;background:rgba(255,255,255,0.05);border:0.5px solid rgba(255,255,255,0.12);border-radius:12px;padding:10px 12px;color:#fff;font-size:13px;font-family:Inter,sans-serif;outline:none;resize:none;min-height:40px;line-height:1.4;color-scheme:dark;"></textarea>
           <button id="remember-add-btn" onclick="rememberAdd()" title="Добавить" style="flex-shrink:0;width:40px;height:40px;border-radius:12px;border:0.5px solid rgba(255,209,102,0.4);background:rgba(255,209,102,0.14);color:#FFD166;font-size:15px;cursor:pointer;display:flex;align-items:center;justify-content:center;">➤</button>
         </div>
       </div>`;
@@ -8376,10 +8508,14 @@ function renderRememberList() {
   if (!el) return;
   const items = rememberList();
   if (!items.length) {
-    const stage = _hzi ? hziStageOf(hziLevelOf(_hzi.xp)) : 1;
+    const stage = _hzi ? hziStageOf(hziLevelOf(_hzi.xpMax || _hzi.xp)) : 1;
     el.innerHTML = `<div style="text-align:center;padding:14px 8px 10px;">
       <div class="rem-glow">${hziSVG(stage)}</div>
-      <div style="font-size:12px;color:rgba(255,255,255,0.5);line-height:1.6;font-family:Inter,sans-serif;">Пока пусто. Добавь правило, которое хочешь помнить всегда —<br>например, «не играть в автоматы» или «думать позитивно»</div>
+      <div style="font-size:12px;color:rgba(255,255,255,0.5);line-height:1.6;font-family:Inter,sans-serif;">Пока пусто. Добавь правило, которое хочешь помнить всегда —<br>или выбери готовое:</div>
+      <div style="display:flex;gap:6px;justify-content:center;flex-wrap:wrap;margin-top:9px;">
+        <button onclick="rememberQuickAdd('Думать позитивно')" style="background:rgba(255,209,102,0.08);border:0.5px solid rgba(255,209,102,0.3);border-radius:999px;padding:6px 11px;color:rgba(255,224,138,0.9);font-size:11px;font-weight:600;cursor:pointer;font-family:Inter,sans-serif;-webkit-tap-highlight-color:transparent;">✨ Думать позитивно</button>
+        <button onclick="rememberQuickAdd('Благодарить за всё')" style="background:rgba(255,209,102,0.08);border:0.5px solid rgba(255,209,102,0.3);border-radius:999px;padding:6px 11px;color:rgba(255,224,138,0.9);font-size:11px;font-weight:600;cursor:pointer;font-family:Inter,sans-serif;-webkit-tap-highlight-color:transparent;">🙏 Благодарить за всё</button>
+      </div>
     </div>`;
     return;
   }
@@ -8450,6 +8586,20 @@ async function rememberDelete(id) {
   } catch(e) { alert('Ошибка: ' + e.message); }
 }
 
+// v94: готовые примеры в пустом списке — тап добавляет правило сразу
+let _remQuickBusy = false;
+async function rememberQuickAdd(text) {
+  if (_remQuickBusy) return;
+  _remQuickBusy = true;
+  try {
+    if (notes.some(n => n.remember === true && (n.text || '').trim().toLowerCase() === String(text).toLowerCase())) { showToast('Такое правило уже есть', 2000); return; }
+    const ta = document.getElementById('remember-input');
+    if (ta) ta.value = text;
+    await rememberAdd();
+  } finally { _remQuickBusy = false; }
+}
+window.rememberQuickAdd = rememberQuickAdd;
+
 // ── Ежедневный попап: первое открытие за день (по МСК, пометка на устройстве) ──
 const REMEMBER_SHOWN_KEY = 'hz3_remember_shown';
 let _remPopupTries = 0;
@@ -8481,7 +8631,7 @@ function maybeShowRememberPopup() {
   showRememberDaily(items);
 }
 function showRememberDaily(items) {
-  const stage = _hzi ? hziStageOf(hziLevelOf(_hzi.xp)) : 1;
+  const stage = _hzi ? hziStageOf(hziLevelOf(_hzi.xpMax || _hzi.xp)) : 1;
   const ov = document.createElement('div');
   ov.id = 'remember-daily-open';
   ov.className = 'modal-overlay';
@@ -13778,8 +13928,17 @@ window.__t = {
   maybeShowRememberPopup,
   updateRememberLabels,
   openRememberModal,
+  closeRememberModal,
   rememberAdd,
   rememberDelete,
+  rememberQuickAdd,
+  // v94: гардероб Хэзи
+  openWardrobeModal,
+  closeWardrobeModal,
+  wardrobeTap,
+  renderWardrobeGrid,
+  updateWardrobeLabels,
+  wardrobe: HZI_WARDROBE,
   testRun: HZ3_TEST_RUN,
 };
 
