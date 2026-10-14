@@ -4973,7 +4973,8 @@ function renderCalendar() {
   const tasks = getCalendarTasks();
   const monthStart = getMonthDate(calendarMonthOffset);
   const title = document.getElementById('calendar-month-title');
-  if (title) title.textContent = monthStart.toLocaleDateString('ru-RU', { month: 'long', year: 'numeric' });
+  // v99: «Октябрь 2026» без « г.» — на узких экранах «Г.» переносилось на вторую строку
+  if (title) { const _cm = monthStart.toLocaleDateString('ru-RU', { month: 'long' }); title.textContent = _cm.charAt(0).toUpperCase() + _cm.slice(1) + ' ' + monthStart.getFullYear(); }
   const todayKey = formatDateKey(new Date());
   if (!calendarSelectedKey) calendarSelectedKey = todayKey;
 
@@ -7933,7 +7934,8 @@ function renderWishChat() {
     </div>`;
     return;
   }
-  el.innerHTML = wishChatMessages.map(m => `<div class="chat-bubble ${m.role==='user'?'bubble-user':'bubble-ai'}">${escHtmlChat(m.content)}</div>`).join('');
+  // v99: markdown-жирный в чате желания — «**слово**» рендерится <b> вместо сырых звёздочек (как в главном чате с v89)
+  el.innerHTML = wishChatMessages.map(m => `<div class="chat-bubble ${m.role==='user'?'bubble-user':'bubble-ai'}">${mdLiteChat(m.content)}</div>`).join('');
   el.scrollTop = el.scrollHeight;
 }
 
