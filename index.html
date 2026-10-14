@@ -4928,6 +4928,48 @@ function toggleSortMode() {
 }
 window.toggleSortMode = toggleSortMode;
 
+// ── v101: АВТО-КОНВЕЙЕР «🚀 Разложить» ──
+// Фидбек: «Кнопка «Раскидать» — очередь разъезжается по дням конвейером. Очередь не разъезжается автоматически».
+// Задачи без дат (в порядке тудушки) сами встают по дням: начиная с сегодняшнего,
+// до 3 задач на день, учитывая уже запланированные на эту дату. Ручной драг работает как раньше.
+let _calAutoBusy = false;
+function _plRu(n, one, few, many) {
+  const m10 = n % 10, m100 = n % 100;
+  if (m10 === 1 && m100 !== 11) return one;
+  if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) return few;
+  return many;
+}
+async function autoDistributeQueue() {
+  if (_calAutoBusy) return;
+  const tasks = getCalendarTasks();
+  const queue = tasks.filter(t => !scheduledOf(t)).sort((a, b) => (a.todoOrder || 0) - (b.todoOrder || 0));
+  if (!queue.length) { showToast('✓ Все задачи уже распределены', 2200); return; }
+  _calAutoBusy = true;
+  try {
+    const PER_DAY = 3;
+    const load = {}; // дата → сколько уже запланировано (все задачи, не только очередь)
+    tasks.forEach(t => { const k = scheduledOf(t); if (k) load[k] = (load[k] || 0) + 1; });
+    const cur = parseDayKey(formatDateKey(new Date())); // сегодня (MSK-день)
+    const patches = [];
+    for (const t of queue) {
+      let guard = 0;
+      while (guard++ < 400 && (load[formatDateKey(cur)] || 0) >= PER_DAY) cur.setDate(cur.getDate() + 1);
+      const k = formatDateKey(cur);
+      load[k] = (load[k] || 0) + 1;
+      patches.push({ id: t.id, key: k });
+    }
+    await Promise.all(patches.map(p => updateDoc(uDocRef('notes', p.id), { scheduledDate: p.key })));
+    await loadNotes();
+    calendarMonthOffset = 0; // показать результат — вернуться к текущему месяцу
+    renderCalendar();
+    showToast('🚀 Разложил ' + patches.length + ' ' + _plRu(patches.length, 'задачу', 'задачи', 'задач') + ' по дням — очередь пустая', 3200);
+  } catch (e) {
+    alert('Ошибка: ' + e.message);
+  }
+  _calAutoBusy = false;
+}
+window.autoDistributeQueue = autoDistributeQueue;
+
 function getCalendarTasks() {
   // Только то, что можно сделать: в тудушке и ещё не выполнено
   return notes.filter(n => n.inTodo === true && n.done !== true);
@@ -5019,8 +5061,15 @@ function renderCalendar() {
   // ── Низ: в режиме распределения — очередь-конвейер; в обычном — Ближайшие + Без срока ──
   if (calendarSortMode) {
     const queue = tasks.filter(t => !scheduledOf(t)).sort((a, b) => (a.todoOrder || 0) - (b.todoOrder || 0));
+    // v101: кнопка «🚀 Разложить» — конвейер сам раскидывает очередь по дням
+    const sortHead = queue.length
+      ? `<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+          <div style="font-size:11px;color:rgba(0,230,130,0.75);text-transform:uppercase;letter-spacing:1px;font-family:Inter,sans-serif;">🎯 Очередь на распределение · ${queue.length}</div>
+          <button onclick="autoDistributeQueue()" style="margin-left:auto;flex-shrink:0;background:linear-gradient(135deg,#6C47FF,#00A8E8);border:0;border-radius:99px;padding:6px 12px;color:#fff;font-size:11px;font-weight:700;cursor:pointer;font-family:Inter,sans-serif;white-space:nowrap;-webkit-tap-highlight-color:transparent;">🚀 Разложить</button>
+        </div>`
+      : '<div style="font-size:11px;color:rgba(0,230,130,0.75);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;font-family:Inter,sans-serif;">🎯 Очередь на распределение · 0</div>';
     html += `<div data-drop-none="1" style="margin-top:14px;padding:10px 8px 6px;border-top:0.5px solid rgba(255,255,255,0.08);">
-      <div style="font-size:11px;color:rgba(0,230,130,0.75);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;font-family:Inter,sans-serif;">🎯 Очередь на распределение · ${queue.length}</div>
+      ${sortHead}
       ${queue.length === 0 ? '<div style="font-size:12px;color:rgba(0,230,130,0.6);padding:2px 8px 6px;font-style:italic;">✓ Все задачи распределены</div>' : queue.map((t, i) => calTaskCard(t, { qTop: i === 0 })).join('')}
     </div>`;
   } else {
@@ -5041,7 +5090,7 @@ function renderCalendar() {
   list.innerHTML = html;
   const sub = document.getElementById('calendar-sub');
   if (sub) sub.textContent = calendarSortMode
-    ? 'Тяни верхнюю задачу из очереди на день — очередь сдвинется сама'
+    ? 'Жми «🚀 Разложить» — очередь уедет по дням сама, или тяни задачу вручную'
     : `${tasks.length} задач · ${tasks.filter(t => scheduledOf(t)).length} распределено`;
   bindCalDrag();
   bindCalSwipe();
@@ -9125,7 +9174,7 @@ function tryShowQuest() {
     4: { el: 'main-hint', ok: q(3), text: '📚 Освоился? Теперь <b>Тудушка</b> — вкладка ☑️ внизу. Там живут твои дела: напиши «позвонить маме завтра» — ИИ сам поймёт, что это задача. Шаги из желаний тоже приходят сюда — по одному' },
     5: { el: 'todo-hint', ok: q(4) && getTodoQueue().filter(n => !n.done).length >= 1, text: '☑️ Управляй задачами: <b>тапни по карточке</b> — откроется целиком. <b>Смахни вправо</b> на главном — отложится пониже. <b>Перечеркни весь экран крест-накрест (Х)</b> — задача выполнена' },
     6: { el: 'main-hint', ok: q(5), text: '💬 А ещё можно <b>просто поговорить</b>: вкладка 💬 внизу. Спроси «что у меня на сегодня?» — получишь разбор своих записей' },
-    7: { el: 'main-hint', ok: q(6), text: '📅 Планируй по дням: <b>Календарь</b> — вкладка внизу. Кнопка <b>«🎯 Раскидать»</b> разложит задачи сама — тяни задачу на нужный день' },
+    7: { el: 'main-hint', ok: q(6), text: '📅 Планируй по дням: <b>Календарь</b> — вкладка внизу. Кнопка <b>«🎯 Раскидать»</b>: жми <b>«🚀 Разложить»</b> — очередь сама встанет по дням, или тяни задачу вручную' },
     8: { el: 'main-hint', ok: q(7), text: '🌠 Пора о большом: <b>золотая плашка «Желания»</b> под полем ввода. Цель, шаги-майлстоуны и настроение' },
     9: { el: 'wishes-hint', ok: q(8), text: '🌠 <b>Тапни по желанию</b> — откроются детали: картинка мечты, шаги и чат, где помогут разбить цель на шаги. В Тудушку шаги приходят по одному: сделаешь один — придёт следующий' }
   };
@@ -14396,6 +14445,7 @@ window.__t = {
   addNoteFromChat,
   loadNotes,
   renderCalendar,
+  autoDistributeQueue,
   deleteDoc,
   uDocRef,
   wishes: () => wishes,
