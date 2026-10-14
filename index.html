@@ -62,16 +62,16 @@ body{background:#060918;font-family:'Inter',sans-serif;display:flex;justify-cont
   padding-right:max(8px, env(safe-area-inset-right));
   box-sizing:border-box;
 }
-/* ── v102: КОМП/ПЛАНШЕТ (>=500px) — ПРИЛОЖЕНИЕ ВО ВЕСЬ ЭКРАН ──
-   Фидбек: «не нравится что по бокам края обрезанные — нужно чтобы было во весь
-   экран по ширине в зависимости от экрана». Вместо плавающей рамки-мокапа 390px
-   (500-1023px) и колонки 620px со скруглениями (>=1024px) — приложение на всю
-   ширину и высоту окна: никаких боковых полей и обрезков на любом мониторе. */
+/* ── КОМП/ПЛАНШЕТ (>=500px) — десктопная рамка-мокап как до v102 ──
+   v103: фидбек уточнил — «во весь экран» относилось к САЙТУ, а приложение
+   оставить «как было до этого, компьютерную версию. Её не надо на всю ширину».
+   Возвращаю плавающую рамку 390×844 (500-1023px) и колонку 620px (>=1024px). */
 @media(min-width:500px){
   .phone{
-    width:100%;max-width:none;height:100%;
-    border-radius:0;border:none;box-shadow:none;
-    /* Reset safe-area padding: на компе нет чёлки/статусбара приложения */
+    width:390px;height:min(844px, calc(100dvh - 24px));border-radius:48px;
+    border:1px solid rgba(108,71,255,0.25);
+    box-shadow:0 0 0 1px rgba(0,0,0,0.9),0 40px 80px rgba(0,0,0,0.8),0 0 100px rgba(108,71,255,0.08);
+    /* Reset safe-area padding on desktop frame */
     padding-top:0;padding-bottom:0;padding-left:0;padding-right:0;
   }
   .dock{
@@ -80,16 +80,34 @@ body{background:#060918;font-family:'Inter',sans-serif;display:flex;justify-cont
     align-items:center;
     background:rgba(255,255,255,0.02);
   }
-  body{align-items:stretch}
+  body{align-items:center}
 }
 
-/* ── >=1024px: полноэкранный веб ──
-   Тонкие неброские скроллбары внутри списков + мышь должна видеть, что кликабельно. */
+/* ── v85: ВЕБ-ВЕРСИЯ ДЛЯ КОМПА (>=1024px), восстановлено в v103 ──
+   Широкий столбец приложения: видно больше, вокруг — фирменный фон
+   с фиолетово-циановым свечением. Скроллбары тонкие, мышь видит кликабельное. */
 @media(min-width:1024px){
+  body{
+    background:
+      radial-gradient(900px 520px at 18% -10%, rgba(108,71,255,0.16), transparent 60%),
+      radial-gradient(760px 480px at 85% 112%, rgba(0,212,255,0.10), transparent 60%),
+      radial-gradient(620px 400px at 82% 2%, rgba(255,209,102,0.05), transparent 55%),
+      #060918;
+  }
+  .phone{
+    width:min(620px, calc(100vw - 56px));
+    max-width:none; /* базовый max-width:430px больше не ограничивает широкий столбец */
+    height:min(920px, calc(100dvh - 44px));
+    border-radius:26px;
+    border:1px solid rgba(139,92,246,0.28);
+    box-shadow:0 0 0 1px rgba(0,0,0,0.85),0 50px 110px rgba(0,0,0,0.75),0 0 130px rgba(108,71,255,0.10);
+  }
+  /* тонкие неброские скроллбары внутри списков */
   .phone ::-webkit-scrollbar{width:8px;height:8px}
   .phone ::-webkit-scrollbar-track{background:transparent}
   .phone ::-webkit-scrollbar-thumb{background:rgba(139,92,246,0.22);border-radius:8px}
   .phone ::-webkit-scrollbar-thumb:hover{background:rgba(139,92,246,0.45)}
+  /* мышь должна видеть, что кликабельно */
   .note-card{cursor:pointer}
   .dock-item{cursor:pointer}
 }
