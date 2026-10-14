@@ -15,7 +15,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="Хэзэнштейн">
+<meta name="apple-mobile-web-app-title" content="ХЗ">
 <meta name="format-detection" content="telephone=no">
 <link rel="apple-touch-icon" href="icon-any-180.png">
 <link rel="apple-touch-icon" sizes="192x192" href="icon-any-192.png">
@@ -623,7 +623,7 @@ body.todo-mouse-dragging *{cursor:grabbing !important}
 /* ── HAZI v91: баллы активности, уровни, монстрик ── */
 #hazi-badge{position:relative;flex-shrink:0;width:42px;height:42px;border-radius:50%;border:0.5px solid rgba(255,255,255,0.14);background:radial-gradient(circle at 35% 30%,rgba(108,71,255,0.30),rgba(8,10,26,0.65));cursor:pointer;display:flex;align-items:center;justify-content:center;transition:transform .2s;padding:0;-webkit-tap-highlight-color:transparent}
 #hazi-badge:active{transform:scale(0.9)}
-#hazi-badge .hazi-badge-lvl{position:absolute;bottom:-4px;right:-4px;background:#6C47FF;color:#fff;font-size:9px;font-weight:700;line-height:1;border-radius:99px;padding:2px 5px;border:1px solid rgba(6,9,24,0.95);font-family:'Inter',sans-serif}
+/* v100: цифра-уровень снята с бейджа (фидбек: «циферки вылезли не к месту») — уровень живёт на экране Хэзи и в настройках */
 #hazi-badge svg{width:30px;height:30px;overflow:visible}
 #hazi-badge.hazi-happy{animation:hziHappy .5s ease}
 @keyframes hziHappy{0%{transform:scale(1)}35%{transform:scale(1.18) rotate(-4deg)}70%{transform:scale(0.96) rotate(2deg)}100%{transform:scale(1)}}
@@ -1236,7 +1236,6 @@ body[data-theme="business"] .cap-mic.recording{box-shadow:0 0 10px rgba(140,176,
       </div>
       <button id="hazi-badge" onclick="goTo('hazi')" title="Хэзи — твой напарник" aria-label="Открыть Хэзи">
         <span class="hazi-badge-svg" data-stage="0"></span>
-        <span class="hazi-badge-lvl">1</span>
       </button>
     </div>
 
@@ -1525,7 +1524,7 @@ body[data-theme="business"] .cap-mic.recording{box-shadow:0 0 10px rgba(140,176,
     <div class="chat-header">
       <div class="chat-avatar">🤖</div>
       <div class="chat-title-wrap">
-        <div class="chat-title">Хазенштейн ИИ</div>
+        <div class="chat-title">Хэзэнштейн ИИ</div>
         <div class="chat-subtitle" id="chat-subtitle">Готов помочь</div>
       </div>
       <button class="chat-clear-btn" onclick="openDailySummaryManual()" title="Итог дня"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.6)" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="M7 14l3.5-3.5 2.5 2.5L18 8"/><path d="M14.5 8H18v3.5"/></svg></button>
@@ -8311,8 +8310,7 @@ function renderHaziBadge() {
     const holder = badge.querySelector('.hazi-badge-svg');
     const wornKey = (_hzi.worn || []).join(',');
     if (holder && (holder.dataset.stage !== String(stage) || holder.dataset.worn !== wornKey)) { holder.innerHTML = hziSVG(stage, null, _hzi.worn || []); holder.dataset.stage = String(stage); holder.dataset.worn = wornKey; }
-    const lv = badge.querySelector('.hazi-badge-lvl');
-    if (lv && lv.textContent !== String(level)) lv.textContent = level;
+    // v100: цифра-уровень с бейджа снята — уровень виден на экране Хэзи и в настройках
   }
   const set = document.getElementById('hazi-set-lvl');
   if (set) set.textContent = 'ур. ' + level;
@@ -8740,7 +8738,7 @@ function hziReset() { // тесты
   _hzi = null;
   try { localStorage.removeItem(HZI_BUF_KEY); } catch(e) {}
   const b = document.getElementById('hazi-badge');
-  if (b) { const h = b.querySelector('.hazi-badge-svg'); if (h) { h.innerHTML = ''; h.dataset.stage = '0'; } const lv = b.querySelector('.hazi-badge-lvl'); if (lv) lv.textContent = '1'; }
+  if (b) { const h = b.querySelector('.hazi-badge-svg'); if (h) { h.innerHTML = ''; h.dataset.stage = '0'; } }
 }
 // v97: тап по самому Хэзи (его экран) = завлекалка → гардероб (фидбек: «очень хочется на него нажать»)
 function haziCharTap() {
@@ -12943,7 +12941,7 @@ function buildSystemPrompt() {
   // ИИ читает её ПЕРВОЙ, а за деталями идёт в конкретные записи БАЗЫ ДАННЫХ и историю чата.
   const kbContext = buildKbContext();
 
-  return `Ты — личный ИИ-ассистент пользователя в приложении Hazenstein. Сейчас: ${todayStr}.
+  return `Ты — личный ИИ-ассистент пользователя в приложении «Хэзэнштейн» (сокращённо — «ХЗ»). ВАЖНО про имена: «Хэзи» — это только талисман-персонаж приложения (сферочка с глазами), сам ассистент и приложение Хэзи НЕ зовутся; приложение — «Хэзэнштейн» или коротко «ХЗ». Сейчас: ${todayStr}.
 СЕГОДНЯ (машиночитаемо, для вычисления сроков задач в поле date): ${todayKeyStr}.
 
 ЗНАКОМСТВО: если в разделе "ДОПОЛНИТЕЛЬНЫЕ ИНСТРУКЦИИ" ниже нет имени пользователя — вежливо спроси, как к нему обращаться, при первом же удобном случае в диалоге (не обязательно первым сообщением, если пользователь уже начал с чего-то другого — сначала ответь по существу, а имя спроси следом). Когда пользователь назовёт имя, предложи запомнить его через update_prompt как обычно (с подтверждением, по общему правилу выше), и сформулируй rule СТРОГО в виде "Пользователя зовут Имя" (без лишних слов) — это нужно чтобы имя можно было показать на главном экране.
