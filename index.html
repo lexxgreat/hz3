@@ -1421,6 +1421,7 @@ body[data-theme="business"] .cap-mic.recording{box-shadow:0 0 10px rgba(140,176,
           <div class="hist-title">📅 Календарь</div>
           <div class="hist-sub" id="calendar-sub">План на неделю</div>
         </div>
+        <button onclick="openCalFilesModal()" id="calendar-files-btn" title="Экспорт/импорт календаря (.ics)" style="background:rgba(108,71,255,0.15);border:0.5px solid rgba(108,71,255,0.4);border-radius:10px;padding:8px 12px;color:rgba(139,92,246,0.95);font-size:14px;cursor:pointer;font-family:Inter,sans-serif;line-height:1;">📤</button>
       </div>
     </div>
     <div style="display:flex;gap:6px;padding:8px 16px;align-items:center;border-bottom:0.5px solid rgba(255,255,255,0.06);">
@@ -1953,7 +1954,7 @@ service cloud.firestore {
   <!-- Import preview modal — shows what will be imported, allows deselect -->
   <div class="modal-overlay" id="import-modal">
     <div class="modal" style="max-width:480px;max-height:80vh;display:flex;flex-direction:column;">
-      <div class="modal-title">Импорт записей</div>
+      <div class="modal-title" id="import-title">Импорт записей</div>
       <div id="import-summary" style="font-size:12px;color:rgba(255,255,255,0.6);margin-bottom:10px;"></div>
       <div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap;">
         <button id="import-select-all" onclick="importToggleAll(true)" style="padding:5px 12px;border-radius:99px;border:0.5px solid rgba(108,71,255,0.4);background:rgba(108,71,255,0.1);color:rgba(139,92,246,0.9);font-size:11px;cursor:pointer;font-family:'Inter',sans-serif;">☑ Все</button>
@@ -1967,6 +1968,20 @@ service cloud.firestore {
       </div>
     </div>
   </div>
+
+  <!-- v104: Календарь ⇄ файлы (.ics) — экспорт плана в чужой календарь / перенос событий оттуда -->
+  <div class="modal-overlay" id="cal-files-modal">
+    <div class="modal" style="max-width:340px;">
+      <div class="modal-title">Файлы календаря</div>
+      <div style="font-size:12px;color:rgba(255,255,255,0.6);line-height:1.55;margin-bottom:14px;font-family:Inter,sans-serif;">Скачай план в <b style="color:rgba(255,255,255,0.8);">.ics</b> — файл откроется в Google / Apple / Яндекс календаре. Или загрузи <b style="color:rgba(255,255,255,0.8);">.ics</b> из чужого календаря — события станут задачами с датами (дубликаты пропустим).</div>
+      <button onclick="exportCalendarIcs()" style="width:100%;background:rgba(108,71,255,0.12);border:0.5px solid rgba(108,71,255,0.45);border-radius:10px;padding:11px;color:rgba(159,132,255,0.95);font-size:13px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif;">📤 Скачать .ics</button>
+      <button onclick="document.getElementById('ics-file-input').click()" style="width:100%;margin-top:8px;background:rgba(0,180,120,0.1);border:0.5px solid rgba(0,200,140,0.35);border-radius:10px;padding:11px;color:rgba(0,220,150,0.9);font-size:13px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif;">📥 Загрузить .ics</button>
+      <div class="modal-btns" style="margin-top:14px;">
+        <button class="modal-cancel" onclick="closeCalFilesModal()">Закрыть</button>
+      </div>
+    </div>
+  </div>
+  <input type="file" id="ics-file-input" accept=".ics,.ical,text/calendar" style="display:none;">
 
   <!-- ── Напоминание о задаче (всплывает за N минут до старта) ── -->
   <div class="modal-overlay" id="reminder-popup">
@@ -13677,7 +13692,8 @@ window.exportNotes = async function() {
 
 // ИМПОРТ — поддерживает JSON (формат экспорта) и простые текстовые файлы (построчно)
 // Перед импортом показывает модалку с превью: каждая запись + её тег, можно снять выделение
-let importCandidates = []; // массив объектов {text, type, tag, createdAt, selected}
+// v104: JSON-бэкап восстанавливается полностью — даты/время/выполненность/тудушка больше не теряются
+let importCandidates = []; // массив объектов {text, type, tag, createdAt, scheduledDate, scheduledTime, done, inTodo, selected}
 
 function parseImportFile(text, filename) {
   // 1) Попытка распарсить как JSON
@@ -13693,6 +13709,11 @@ function parseImportFile(text, filename) {
           type: typeof o.type === 'string' ? o.type : 'text',
           tag: typeof o.tag === 'string' && o.tag.trim() ? o.tag.trim() : null,
           createdAt: typeof o.createdAt === 'string' ? o.createdAt : null,
+          scheduledDate: typeof o.scheduledDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(o.scheduledDate) ? o.scheduledDate : null,
+          scheduledTime: typeof o.scheduledTime === 'string' && /^\d{1,2}:\d{2}/.test(o.scheduledTime) ? o.scheduledTime.slice(0, 5) : null,
+          done: o.done === true,
+          doneAt: typeof o.doneAt === 'string' ? o.doneAt : null,
+          inTodo: o.inTodo === true,
         }));
     } catch (e) {
       // не JSON — ниже обработаем как текст
@@ -13700,7 +13721,7 @@ function parseImportFile(text, filename) {
   }
   // 2) Текстовый файл — каждая непустая строка = запись
   const lines = text.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0);
-  return lines.map(l => ({ text: l, type: 'text', tag: null, createdAt: null }));
+  return lines.map(l => ({ text: l, type: 'text', tag: null, createdAt: null, scheduledDate: null, scheduledTime: null, done: false, doneAt: null, inTodo: false }));
 }
 
 document.getElementById('import-file-input').addEventListener('change', async (e) => {
@@ -13729,14 +13750,26 @@ function renderImportModal() {
   const list = document.getElementById('import-list');
   const summary = document.getElementById('import-summary');
   const count = document.getElementById('import-count');
+  const titleEl = document.getElementById('import-title');
+
+  // v104: календарный импорт (все кандидаты с датами) — своя сводка и заголовок
+  const isCal = importCandidates.length > 0 && importCandidates.every(n => !!n.scheduledDate);
+  if (titleEl) titleEl.textContent = isCal ? 'Импорт событий календаря' : 'Импорт записей';
 
   // Сводка: сколько записей, какие теги
-  const tags = {};
-  for (const n of importCandidates) {
-    if (n.tag) tags[n.tag] = (tags[n.tag] || 0) + 1;
+  if (isCal) {
+    const dates = importCandidates.map(n => n.scheduledDate).sort();
+    const fmt = k => { const d = parseDayKey(k); return d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' }); };
+    const dupes = window._icsDupes || 0;
+    summary.textContent = `Всего: ${importCandidates.length}` + (dupes ? ` · дубликатов пропущено: ${dupes}` : '') + ` · даты: ${fmt(dates[0])} — ${fmt(dates[dates.length - 1])}`;
+  } else {
+    const tags = {};
+    for (const n of importCandidates) {
+      if (n.tag) tags[n.tag] = (tags[n.tag] || 0) + 1;
+    }
+    const tagList = Object.keys(tags).length ? Object.entries(tags).map(([t,c]) => `#${t} (${c})`).join(', ') : 'нет тегов';
+    summary.textContent = `Всего: ${importCandidates.length} · Теги: ${tagList}`;
   }
-  const tagList = Object.keys(tags).length ? Object.entries(tags).map(([t,c]) => `#${t} (${c})`).join(', ') : 'нет тегов';
-  summary.textContent = `Всего: ${importCandidates.length} · Теги: ${tagList}`;
 
   // Список с чекбоксами
   list.innerHTML = '';
@@ -13760,11 +13793,20 @@ function renderImportModal() {
     const textWrap = document.createElement('div');
     textWrap.style.cssText = 'flex:1;min-width:0;';
     const textEl = document.createElement('div');
-    textEl.style.cssText = 'font-size:13px;color:rgba(255,255,255,0.85);line-height:1.4;word-break:break-word;';
+    textEl.style.cssText = 'font-size:13px;color:rgba(255,255,255,0.85);line-height:1.4;word-break:break-word;' + (n.done ? 'text-decoration:line-through;opacity:0.55;' : '');
     textEl.textContent = n.text.length > 200 ? n.text.slice(0, 200) + '…' : n.text;
+    // v104: вторая строка — дата/время события, выполненность, тег или дата записи
+    const meta = [];
+    if (n.scheduledDate) {
+      const d = parseDayKey(n.scheduledDate);
+      meta.push('📅 ' + d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' }) + (n.scheduledTime ? ' · ' + n.scheduledTime.slice(0, 5) : ''));
+    }
+    if (n.done) meta.push('✓ выполнено');
+    else if (n.tag) meta.push('#' + n.tag);
+    if (!n.scheduledDate && n.createdAt) meta.push(new Date(n.createdAt).toLocaleString('ru-RU'));
     const tagEl = document.createElement('div');
     tagEl.style.cssText = 'font-size:11px;color:rgba(139,92,246,0.7);margin-top:3px;';
-    tagEl.textContent = n.tag ? '#' + n.tag : (n.createdAt ? new Date(n.createdAt).toLocaleString('ru-RU') : '');
+    tagEl.textContent = meta.join(' · ');
     textWrap.appendChild(textEl);
     if (tagEl.textContent) textWrap.appendChild(tagEl);
 
@@ -13792,6 +13834,26 @@ function closeImportModal() {
   document.getElementById('import-modal').classList.remove('open');
 }
 
+// v104: сборка документа для импортированной записи — чистая функция (тестируется без Firestore).
+// Запись с датой (.ics или JSON-бэкап) становится задачей: inTodo + scheduledDate/Time + порядок по умному скору;
+// запись с inTodo из JSON-бэкапа возвращается в тудушку; обычная запись — как раньше.
+function buildImportedNotePatch(n, createdAt) {
+  const patch = { text: n.text, type: n.type || 'text', tag: n.tag || null, createdAt };
+  const hasDate = !!n.scheduledDate;
+  if (hasDate || n.inTodo === true) {
+    patch.inTodo = true;
+    if (hasDate) {
+      patch.scheduledDate = n.scheduledDate;
+      if (n.scheduledTime) patch.scheduledTime = n.scheduledTime;
+      if (n.done) { patch.done = true; patch.doneAt = n.doneAt || new Date().toISOString(); }
+      patch.todoOrder = n.done ? null : computeSmartOrder(smartScoreForFields({ scheduledDate: n.scheduledDate }));
+    } else {
+      patch.todoOrder = computeSmartOrder(smartScoreForFields({}));
+    }
+  }
+  return patch;
+}
+
 async function confirmImport() {
   const selected = importCandidates.filter(n => n.selected);
   if (!selected.length) return;
@@ -13800,25 +13862,22 @@ async function confirmImport() {
   btn.textContent = 'Импорт…';
   try {
     const baseTime = Date.now();
-    let imported = 0;
+    let imported = 0, scheduled = 0;
     for (let i = 0; i < selected.length; i++) {
       const n = selected[i];
       // Если есть original createdAt — сохраняем порядок (но со сдвигом чтобы не конфликтовать)
       const createdAt = n.createdAt || new Date(baseTime - i * 1000).toISOString();
-      await addDoc(notesCol(), {
-        text: n.text,
-        type: n.type || 'text',
-        tag: n.tag || null,
-        createdAt,
-      });
+      await addDoc(notesCol(), buildImportedNotePatch(n, createdAt));
       imported++;
+      if (n.scheduledDate) scheduled++;
     }
     closeImportModal();
-    alert('Импортировано записей: ' + imported);
     await loadNotes();
     checkTagSuggestions();
+    renderCalendar(); // v104: появились задачи с датами — календарь перерисовать
+    showToast(imported ? `📥 Импортировано: ${imported}` + (scheduled ? ` · в календаре: ${scheduled}` : '') : 'Ничего не выбрано', 3600);
   } catch(e) {
-    alert('Ошибка импорта: ' + e.message);
+    showToast('Ошибка импорта: ' + e.message, 3200);
   } finally {
     btn.disabled = false;
     btn.textContent = 'Импортировать';
@@ -13827,6 +13886,265 @@ async function confirmImport() {
 window.importToggleAll = importToggleAll;
 window.closeImportModal = closeImportModal;
 window.confirmImport = confirmImport;
+
+// ═══════════ v104: КАЛЕНДАРЬ ⇄ ФАЙЛЫ (.ics) ═══════════
+// Экспорт: задачи с датой → VEVENT (с временем или «весь день»), выполненные — с префиксом «✓ ».
+// Импорт: парсер RFC 5545 (unfold, VEVENT, DTSTART DATE/date-time/Z, RRULE) с превью и дедупликацией.
+// Повторяющиеся события разворачиваются в отдельные задачи на 90 дней вперёд (кап 40 на событие).
+
+function icsEscape(s) {
+  return String(s).replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\r?\n/g, '\\n');
+}
+function icsUnescape(s) {
+  return String(s).replace(/\\n/gi, '\n').replace(/\\,/g, ',').replace(/\\;/g, ';').replace(/\\\\/g, '\\');
+}
+// Перенос длинных строк по RFC 5545: строка ≤ 75 ОКТЕТОВ (эмодзи = 4 байта!), продолжение начинается с пробела
+function icsFold(line) {
+  const MAX = 75;
+  const parts = [];
+  let cur = '', curBytes = 0, isFirst = true;
+  for (const ch of String(line)) {
+    const b = new TextEncoder().encode(ch).length;
+    const cap = isFirst ? MAX : MAX - 1;
+    if (curBytes > 0 && curBytes + b > cap) {
+      parts.push(cur);
+      cur = ' '; curBytes = 1; isFirst = false;
+    }
+    cur += ch; curBytes += b;
+  }
+  parts.push(cur);
+  return parts.join('\r\n');
+}
+
+// Сборка ICS из массива {id?, text, date:'YYYY-MM-DD', time:'HH:MM'|null, done, tag?} — чистая функция
+function buildCalendarIcs(items) {
+  const now = new Date();
+  // DTSTAMP в UTC
+  const stamp = now.toISOString().replace(/[-:]/g, '').slice(0, 15) + 'Z';
+  const nextDayKey = key => formatDateKey(new Date(parseDayKey(key).getTime() + 86400000));
+  const lines = [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//Hazenstein//Calendar//RU',
+    'CALSCALE:GREGORIAN',
+    'METHOD:PUBLISH',
+    'X-WR-CALNAME:Хэзэнштейн',
+    'X-WR-TZID:Europe/Moscow'
+  ];
+  const sorted = items.slice().sort((a, b) => ((a.date + (a.time || '')) + '').localeCompare((b.date + (b.time || '')) + ''));
+  for (const it of sorted) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(it.date || '')) continue; // страховка от битых дат
+    const d = it.date.replace(/-/g, '');
+    lines.push('BEGIN:VEVENT');
+    lines.push('UID:' + (it.id || ('hz3-' + d + '-' + Math.random().toString(36).slice(2, 10))) + '@hazenstein.app');
+    lines.push('DTSTAMP:' + stamp);
+    if (it.time) {
+      lines.push('DTSTART:' + d + 'T' + it.time.replace(':', '') + '00');
+      // DTEND = старт + 30 минут (задача — не событие, длительность условная; переход через полночь учитываем)
+      let hh = parseInt(it.time.slice(0, 2), 10), mm = parseInt(it.time.slice(3, 5), 10) + 30, dEnd = d;
+      if (mm >= 60) { mm -= 60; hh++; if (hh >= 24) { hh -= 24; dEnd = nextDayKey(it.date).replace(/-/g, ''); } }
+      lines.push('DTEND:' + dEnd + 'T' + String(hh).padStart(2, '0') + String(mm).padStart(2, '0') + '00');
+    } else {
+      lines.push('DTSTART;VALUE=DATE:' + d);
+      lines.push('DTEND;VALUE=DATE:' + nextDayKey(it.date).replace(/-/g, '')); // весь день, конец эксклюзивный
+    }
+    lines.push('SUMMARY:' + icsEscape((it.done ? '✓ ' : '') + it.text));
+    if (it.tag) { lines.push('DESCRIPTION:' + icsEscape('#' + it.tag)); lines.push('CATEGORIES:' + icsEscape(it.tag)); }
+    lines.push('STATUS:CONFIRMED');
+    lines.push('END:VEVENT');
+  }
+  lines.push('END:VCALENDAR');
+  return lines.map(icsFold).join('\r\n') + '\r\n';
+}
+
+// Экспорт текущего календаря в скачиваемый .ics
+window.exportCalendarIcs = async function() {
+  try {
+    const items = notes
+      .filter(n => n.scheduledDate && n.inTodo === true)
+      .map(n => ({ id: n.id, text: n.text, date: scheduledOf(n), time: n.scheduledTime ? n.scheduledTime.slice(0, 5) : null, done: n.done === true, tag: n.tag || null }));
+    if (!items.length) { showToast('В календаре нет задач с датами — нечего выгружать', 3000); return; }
+    const ics = buildCalendarIcs(items);
+    const blob = new Blob([ics], { type: 'text/calendar;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'hazenstein_calendar_' + formatDateKey(new Date()) + '.ics';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+    closeCalFilesModal();
+    showToast('📤 Выгрузил в .ics: ' + items.length + ' ' + _plRu(items.length, 'задачу', 'задачи', 'задач'), 3200);
+  } catch(e) { showToast('Ошибка экспорта: ' + e.message, 3200); }
+};
+
+// --- Парсер .ics ---
+// DTSTART/DTEND/UNTIL: 'YYYYMMDD' (весь день) | 'YYYYMMDDTHHMMSS' (локальное) | '...Z' (UTC → сдвиг в московское,
+// как весь остальной код приложения — formatDateKey тоже живёт в UTC+3). TZID-зоны не мапим — берём как локальное.
+function parseIcsDateTime(val, params) {
+  val = String(val || '').trim();
+  if (/^\d{8}$/.test(val) || (params && params.VALUE === 'DATE')) {
+    if (/^\d{8}$/.test(val)) return { date: val.slice(0, 4) + '-' + val.slice(4, 6) + '-' + val.slice(6, 8), time: null };
+    return null;
+  }
+  const m = /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})(Z?)$/.exec(val);
+  if (!m) return null;
+  let [, y, mo, d, hh, mi, ss, z] = m;
+  if (z) {
+    const msk = new Date(Date.UTC(+y, +mo - 1, +d, +hh, +mi) + 3 * 3600 * 1000);
+    const pad = n => String(n).padStart(2, '0');
+    y = String(msk.getFullYear()); mo = pad(msk.getMonth() + 1); d = pad(msk.getDate()); hh = pad(msk.getHours()); mi = pad(msk.getMinutes());
+  }
+  return { date: `${y}-${mo}-${d}`, time: `${hh}:${mi}` };
+}
+
+function parseIcsRrule(val) {
+  const parts = {};
+  String(val).split(';').forEach(p => { const i = p.indexOf('='); if (i > 0) parts[p.slice(0, i).toUpperCase()] = p.slice(i + 1); });
+  const freq = (parts.FREQ || '').toUpperCase();
+  if (['DAILY', 'WEEKLY', 'MONTHLY'].indexOf(freq) < 0) return null; // YEARLY и экзотика — только первое событие
+  let until = null;
+  if (parts.UNTIL) { const u = parseIcsDateTime(parts.UNTIL, {}); if (u) until = u.date; }
+  const DAYMAP = { MO: 1, TU: 2, WE: 3, TH: 4, FR: 5, SA: 6, SU: 0 };
+  const byday = parts.BYDAY
+    ? parts.BYDAY.toUpperCase().split(',').map(s => DAYMAP[s.replace(/^[-+]?\d+/, '')]).filter(x => x !== undefined)
+    : null;
+  return { freq, interval: Math.max(1, parseInt(parts.INTERVAL, 10) || 1), count: parseInt(parts.COUNT, 10) || Infinity, until, byday };
+}
+
+// Разворот повторяющегося события в конкретные даты: будущие (>= todayKey), горизонт 90 дней, кап 40 экземпляров.
+// COUNT/UNTIL считаем от начала серии; историческую часть серии при длинной серии считаем с точностью до дня (кап 400 дней назад).
+function expandRrule(ev, todayKey, horizonDays = 90, cap = 40) {
+  const rr = ev.rrule, start = ev.dtstart;
+  if (!rr) return [start.date];
+  const startDate = parseDayKey(start.date);
+  const today = parseDayKey(todayKey);
+  const horizon = new Date(today.getTime() + horizonDays * 86400000);
+  const startDow = startDate.getDay();
+  const iterFrom = new Date(Math.max(startDate.getTime(), today.getTime() - 400 * 86400000));
+  const out = [];
+  let occ = 0;
+  for (let t = iterFrom.getTime(); t <= horizon.getTime(); t += 86400000) {
+    const d = new Date(t);
+    const key = formatDateKey(d);
+    const dow = d.getDay();
+    let match = false;
+    if (rr.freq === 'DAILY') {
+      const diff = Math.round((t - startDate.getTime()) / 86400000);
+      match = diff >= 0 && diff % rr.interval === 0;
+    } else if (rr.freq === 'WEEKLY') {
+      const daysSince = Math.round((t - startDate.getTime()) / 86400000);
+      const weeksSince = Math.floor((daysSince + (startDow + 6) % 7) / 7); // неделя начинается с понедельника (WKST=MO)
+      match = daysSince >= 0 && (weeksSince % rr.interval === 0) && (rr.byday ? rr.byday.includes(dow) : dow === startDow);
+    } else if (rr.freq === 'MONTHLY') {
+      const monthDiff = (d.getFullYear() - startDate.getFullYear()) * 12 + (d.getMonth() - startDate.getMonth());
+      match = monthDiff >= 0 && monthDiff % rr.interval === 0 && d.getDate() === startDate.getDate();
+    }
+    if (!match) continue;
+    occ++;
+    if (occ > rr.count) break;
+    if (rr.until && key > rr.until) break;
+    if (key >= todayKey) out.push(key);
+    if (out.length >= cap) break;
+  }
+  return out;
+}
+
+// Парсер текста .ics → массив событий {summary, dtstart:{date,time}, rrule}
+function parseIcsText(text) {
+  // unfold: продолжение строки начинается с пробела/таба (RFC 5545 §3.1)
+  const src = String(text).replace(/\r\n/g, '\n').replace(/\r/g, '\n').replace(/\n[ \t]/g, '');
+  const lines = src.split('\n');
+  const events = [];
+  let cur = null, depth = 0;
+  for (const raw of lines) {
+    const line = raw.replace(/\s+$/, '');
+    if (!line) continue;
+    if (/^BEGIN:VEVENT$/i.test(line)) { cur = {}; depth = 0; continue; }
+    if (/^END:VEVENT$/i.test(line)) { if (cur) events.push(cur); cur = null; continue; }
+    if (!cur) continue;
+    if (/^BEGIN:/i.test(line)) { depth++; continue; }  // VALARM и прочие вложенные — игнорируем
+    if (/^END:/i.test(line)) { depth = Math.max(0, depth - 1); continue; }
+    if (depth > 0) continue;
+    const ci = line.indexOf(':');
+    if (ci < 0) continue;
+    const left = line.slice(0, ci), val = line.slice(ci + 1);
+    const name = (left.split(';')[0] || '').toUpperCase();
+    const params = {};
+    left.split(';').slice(1).forEach(p => { const eq = p.indexOf('='); if (eq > 0) params[p.slice(0, eq).toUpperCase()] = p.slice(eq + 1); });
+    if (name === 'SUMMARY') cur.summary = icsUnescape(val);
+    else if (name === 'DTSTART') cur.dtstart = parseIcsDateTime(val, params);
+    else if (name === 'RRULE') cur.rrule = parseIcsRrule(val);
+  }
+  return events.filter(e => e.dtstart && e.dtstart.date);
+}
+
+// Файл .ics → кандидаты импорта (с дедупликацией) → общая превью-модалка
+window.handleIcsFile = async function(file) {
+  try {
+    const text = await file.text();
+    const events = parseIcsText(text);
+    if (!events.length) { showToast('В файле не найдено событий календаря', 3000); return; }
+    const todayKey = formatDateKey(new Date());
+    // разворот RRULE + плоский список
+    const flat = [];
+    for (const ev of events) {
+      const instances = ev.rrule ? expandRrule(ev, todayKey) : [ev.dtstart.date];
+      if (!instances.length) continue;
+      // свой же экспорт помечает выполненные префиксом «✓ » — вернём им выполненность
+      let txt = (ev.summary || '(без названия)').trim();
+      const done = /^✓\s*/.test(txt);
+      if (done) txt = txt.replace(/^✓\s*/, '');
+      for (const date of instances) flat.push({ text: txt, scheduledDate: date, scheduledTime: ev.dtstart.time, done });
+    }
+    flat.sort((a, b) => ((a.scheduledDate + (a.scheduledTime || '')) + '').localeCompare((b.scheduledDate + (b.scheduledTime || '')) + ''));
+    // дубликаты: внутри файла и против существующих незавершённых задач с той же датой
+    const seen = new Set();
+    let dupes = 0;
+    const cand = [];
+    for (const f of flat) {
+      const k = f.text.toLowerCase().trim() + '|' + f.scheduledDate + '|' + (f.scheduledTime || '');
+      if (seen.has(k) || notes.some(n => n.scheduledDate === f.scheduledDate && n.done !== true && (n.text || '').toLowerCase().trim() === f.text.toLowerCase().trim())) { dupes++; continue; }
+      seen.add(k);
+      cand.push({ text: f.text, type: 'text', tag: null, createdAt: null, scheduledDate: f.scheduledDate, scheduledTime: f.scheduledTime, done: f.done, doneAt: null, inTodo: false, selected: true });
+    }
+    if (!cand.length) { showToast('Все события из файла уже есть в календаре — дубликатов не добавляю', 3200); return; }
+    const MAX_IMPORT = 500;
+    if (cand.length > MAX_IMPORT) { cand.length = MAX_IMPORT; showToast('Событий больше ' + MAX_IMPORT + ' — беру первые ' + MAX_IMPORT, 3200); }
+    importCandidates = cand;
+    window._icsDupes = dupes;
+    renderImportModal();
+    document.getElementById('import-modal').classList.add('open');
+    closeCalFilesModal();
+  } catch(e) { showToast('Не получилось прочитать файл: ' + e.message, 3200); }
+};
+
+function openCalFilesModal() { document.getElementById('cal-files-modal').classList.add('open'); }
+function closeCalFilesModal() { document.getElementById('cal-files-modal').classList.remove('open'); }
+window.openCalFilesModal = openCalFilesModal;
+window.closeCalFilesModal = closeCalFilesModal;
+
+document.getElementById('ics-file-input').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  e.target.value = '';
+  if (!file) return;
+  await window.handleIcsFile(file);
+});
+
+// экспортируем для e2e-тестов (чистые функции без Firestore)
+window.buildCalendarIcs = buildCalendarIcs;
+window.parseIcsText = parseIcsText;
+window.expandRrule = expandRrule;
+window.parseIcsDateTime = parseIcsDateTime;
+window.buildImportedNotePatch = buildImportedNotePatch;
+window.icsFold = icsFold;
+window.icsEscape = icsEscape;
+window.icsUnescape = icsUnescape;
+window.formatDateKey = formatDateKey;
+window.parseDayKey = parseDayKey;
+window.renderImportModal = renderImportModal;
+window.parseImportFile = parseImportFile;
+window.getImportCandidates = () => importCandidates; // тестам: let-переменная не видна в window напрямую
+window.setImportCandidates = arr => { importCandidates = arr || []; }; // тестам: управляемый импорт
 
 // голос в чате — та же модель «нажал — говоришь — нажал — отправилось», что и на главном экране
 let chatActiveRecorder = null;
