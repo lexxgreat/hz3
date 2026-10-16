@@ -1973,7 +1973,7 @@ service cloud.firestore {
   <div class="modal-overlay" id="cal-files-modal">
     <div class="modal" style="max-width:340px;">
       <div class="modal-title">Файлы календаря</div>
-      <div style="font-size:12px;color:rgba(255,255,255,0.6);line-height:1.55;margin-bottom:14px;font-family:Inter,sans-serif;">Скачай план в <b style="color:rgba(255,255,255,0.8);">.ics</b> и импортируй в свой календарь: <b style="color:rgba(255,255,255,0.8);">calendar.google.com</b> → ⚙ → Настройки → Импорт и экспорт (на телефоне — в браузере, включив «Версию для ПК»). Или загрузи <b style="color:rgba(255,255,255,0.8);">.ics</b> из чужого календаря — события станут задачами с датами (дубликаты пропустим).</div>
+      <div style="font-size:12px;color:rgba(255,255,255,0.6);line-height:1.55;margin-bottom:14px;font-family:Inter,sans-serif;">Скачай план в <b style="color:rgba(255,255,255,0.8);">.ics</b> и импортируй в свой календарь: <b style="color:rgba(255,255,255,0.8);">calendar.google.com</b> → ⚙ → Настройки → Импорт и экспорт (на телефоне — в браузере, включив «Версию для ПК»). Или загрузи <b style="color:rgba(255,255,255,0.8);">.ics</b> из чужого календаря — события станут задачами с датами (дубликаты пропустим). Понимаю и zip-архив из экспорта Google — сам достану .ics внутри.</div>
       <button onclick="exportCalendarIcs()" style="width:100%;background:rgba(108,71,255,0.12);border:0.5px solid rgba(108,71,255,0.45);border-radius:10px;padding:11px;color:rgba(159,132,255,0.95);font-size:13px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif;">📤 Скачать .ics</button>
       <button onclick="document.getElementById('ics-file-input').click()" style="width:100%;margin-top:8px;background:rgba(0,180,120,0.1);border:0.5px solid rgba(0,200,140,0.35);border-radius:10px;padding:11px;color:rgba(0,220,150,0.9);font-size:13px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif;">📥 Загрузить .ics</button>
       <div class="modal-btns" style="margin-top:14px;">
@@ -1981,7 +1981,7 @@ service cloud.firestore {
       </div>
     </div>
   </div>
-  <input type="file" id="ics-file-input" accept=".ics,.ical,text/calendar" style="display:none;">
+  <input type="file" id="ics-file-input" accept=".ics,.ical,text/calendar,.zip,application/zip" style="display:none;">
 
   <!-- ── Напоминание о задаче (всплывает за N минут до старта) ── -->
   <div class="modal-overlay" id="reminder-popup">
@@ -2146,6 +2146,7 @@ function renderPromptRules() {
 window.renderPromptRules = renderPromptRules;
 
 let notes = [];
+window.__setNotes = arr => { notes.splice(0, notes.length, ...(arr || [])); }; // только тестам: подменить список заметок
 let editingId = null;
 let editingSelectedTag = null;
 
@@ -13734,11 +13735,13 @@ document.getElementById('import-file-input').addEventListener('change', async (e
     if (!parsed.length) { alert('В файле не найдено записей для импорта'); return; }
 
     const MAX_IMPORT = 500;
-    importCandidates = parsed.slice(0, MAX_IMPORT).map(n => ({ ...n, selected: true }));
+    // v106: выполненные по умолчанию НЕ выбраны — за них спросит отдельная галочка в превью
+    importCandidates = parsed.slice(0, MAX_IMPORT).map(n => ({ ...n, selected: !n.done }));
     if (parsed.length > MAX_IMPORT) {
       alert('В файле ' + parsed.length + ' записей. Импортируем первые ' + MAX_IMPORT + '.');
     }
 
+    window._icsDupes = 0; // v106: сброс — иначе дубликаты от прошлого .ics-импорта утекут в JSON-сводку
     renderImportModal();
     document.getElementById('import-modal').classList.add('open');
   } catch(e) {
@@ -13751,17 +13754,30 @@ function renderImportModal() {
   const summary = document.getElementById('import-summary');
   const count = document.getElementById('import-count');
   const titleEl = document.getElementById('import-title');
+  const dupes = window._icsDupes || 0;
 
   // v104: календарный импорт (все кандидаты с датами) — своя сводка и заголовок
   const isCal = importCandidates.length > 0 && importCandidates.every(n => !!n.scheduledDate);
   if (titleEl) titleEl.textContent = isCal ? 'Импорт событий календаря' : 'Импорт записей';
 
+  // v106: пустой результат (.ics-импорт, всё ушло в дубликаты) — честное объяснение вместо пустого списка
+  if (!importCandidates.length && dupes > 0) {
+    if (titleEl) titleEl.textContent = 'Импорт событий календаря';
+    summary.textContent = `Новых событий нет · дубликатов пропущено: ${dupes}`;
+    list.innerHTML = '<div style="padding:14px 10px;font-size:12.5px;color:rgba(255,255,255,0.6);line-height:1.55;text-align:center;">Все события из файла уже есть в календаре — дубликаты не добавляю, чтобы не было двойников.</div>';
+    updateImportCount();
+    return;
+  }
+
   // Сводка: сколько записей, какие теги
   if (isCal) {
     const dates = importCandidates.map(n => n.scheduledDate).sort();
     const fmt = k => { const d = parseDayKey(k); return d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' }); };
-    const dupes = window._icsDupes || 0;
-    summary.textContent = `Всего: ${importCandidates.length}` + (dupes ? ` · дубликатов пропущено: ${dupes}` : '') + ` · даты: ${fmt(dates[0])} — ${fmt(dates[dates.length - 1])}`;
+    const doneCount = importCandidates.filter(n => n.done).length;
+    summary.textContent = `Всего: ${importCandidates.length}`
+      + (doneCount ? ` · выполненных: ${doneCount}` : '')
+      + (dupes ? ` · дубликатов пропущено: ${dupes}` : '')
+      + ` · даты: ${fmt(dates[0])} — ${fmt(dates[dates.length - 1])}`;
   } else {
     const tags = {};
     for (const n of importCandidates) {
@@ -13773,6 +13789,24 @@ function renderImportModal() {
 
   // Список с чекбоксами
   list.innerHTML = '';
+
+  // v106: вопрос про выполненные — если есть, спрашиваем явно, по умолчанию выключены
+  const doneCount = importCandidates.filter(n => n.done).length;
+  if (doneCount) {
+    const qRow = document.createElement('label');
+    qRow.style.cssText = 'display:flex;gap:9px;align-items:center;padding:9px 10px;margin-bottom:6px;background:rgba(108,71,255,0.09);border:0.5px solid rgba(108,71,255,0.35);border-radius:10px;cursor:pointer;';
+    const qCb = document.createElement('input');
+    qCb.type = 'checkbox';
+    qCb.checked = importCandidates.some(n => n.done && n.selected);
+    qCb.style.cssText = 'accent-color:#6C47FF;cursor:pointer;flex-shrink:0;';
+    qCb.onchange = () => { importCandidates.forEach(n => { if (n.done) n.selected = qCb.checked; }); renderImportModal(); };
+    const qLbl = document.createElement('span');
+    qLbl.style.cssText = 'font-size:12.5px;color:rgba(255,255,255,0.82);line-height:1.4;';
+    qLbl.textContent = `Добавить выполненные (${doneCount})?`; // вопрос, как просили
+    qRow.appendChild(qCb); qRow.appendChild(qLbl);
+    list.appendChild(qRow);
+  }
+
   importCandidates.forEach((n, i) => {
     const item = document.createElement('label');
     item.style.cssText = 'display:flex;gap:8px;align-items:flex-start;padding:8px;border-radius:8px;cursor:pointer;border:0.5px solid transparent;transition:background 0.15s;';
@@ -13854,16 +13888,28 @@ function buildImportedNotePatch(n, createdAt) {
   return patch;
 }
 
+// v106: прогресс импорта — «Добавляю 12 из 60…» в кнопке и сводке (чистая функция, тестируется напрямую)
+function setImportProgress(done, total) {
+  const msg = `Добавляю ${done} из ${total}…`;
+  const btn = document.getElementById('import-confirm-btn');
+  const sum = document.getElementById('import-summary');
+  if (btn) btn.textContent = msg;
+  if (sum) sum.textContent = msg;
+}
+window.setImportProgress = setImportProgress;
+
 async function confirmImport() {
   const selected = importCandidates.filter(n => n.selected);
   if (!selected.length) return;
   const btn = document.getElementById('import-confirm-btn');
   btn.disabled = true;
-  btn.textContent = 'Импорт…';
+  btn.textContent = 'Добавляю…';
   try {
     const baseTime = Date.now();
     let imported = 0, scheduled = 0;
-    for (let i = 0; i < selected.length; i++) {
+    const total = selected.length;
+    for (let i = 0; i < total; i++) {
+      setImportProgress(i + 1, total); // v106: живой прогресс вместо молчащей кнопки
       const n = selected[i];
       // Если есть original createdAt — сохраняем порядок (но со сдвигом чтобы не конфликтовать)
       const createdAt = n.createdAt || new Date(baseTime - i * 1000).toISOString();
@@ -13875,12 +13921,14 @@ async function confirmImport() {
     await loadNotes();
     checkTagSuggestions();
     renderCalendar(); // v104: появились задачи с датами — календарь перерисовать
-    showToast(imported ? `📥 Импортировано: ${imported}` + (scheduled ? ` · в календаре: ${scheduled}` : '') : 'Ничего не выбрано', 3600);
+    showToast(`📥 Добавил ${imported} ${_plRu(imported, 'дело', 'дела', 'дел')}` + (scheduled ? ` · в календаре: ${scheduled}` : ''), 3600);
   } catch(e) {
     showToast('Ошибка импорта: ' + e.message, 3200);
   } finally {
     btn.disabled = false;
     btn.textContent = 'Импортировать';
+    // v106: если модалка осталась открыта (ошибка) — вернуть сводку вместо прогресса
+    if (document.getElementById('import-modal').classList.contains('open')) renderImportModal();
   }
 }
 window.importToggleAll = importToggleAll;
@@ -14078,11 +14126,63 @@ function parseIcsText(text) {
   return events.filter(e => e.dtstart && e.dtstart.date);
 }
 
-// Файл .ics → кандидаты импорта (с дедупликацией) → общая превью-модалка
+// v106: ZIP-архив из экспорта Google Calendar — это .zip с .ics внутри (DEFLATE или STORE).
+// Читаем центральный каталог ZIP сами (без библиотек), DEFLATE разжимаем нативным DecompressionStream.
+async function extractIcsFromZip(buf) {
+  const u8 = new Uint8Array(buf);
+  const dv = new DataView(buf);
+  // ищем EOCD (0x06054b50) с конца: он минимум 22 байта + может быть комментарий до 65535
+  let eocd = -1;
+  const minEocd = Math.max(0, u8.length - 22 - 65535);
+  for (let i = u8.length - 22; i >= minEocd; i--) {
+    if (u8[i] === 0x50 && u8[i + 1] === 0x4b && u8[i + 2] === 0x05 && u8[i + 3] === 0x06) { eocd = i; break; }
+  }
+  if (eocd < 0) return [];
+  const count = dv.getUint16(eocd + 10, true);
+  let p = dv.getUint32(eocd + 16, true); // смещение центрального каталога
+  const dec = new TextDecoder();
+  const out = [];
+  for (let i = 0; i < count && p + 46 <= u8.length; i++) {
+    if (dv.getUint32(p, true) !== 0x02014b50) break; // сигнатура записи каталога
+    const method = dv.getUint16(p + 10, true);
+    const compSize = dv.getUint32(p + 20, true);
+    const nameLen = dv.getUint16(p + 28, true), extraLen = dv.getUint16(p + 30, true), commLen = dv.getUint16(p + 32, true);
+    const lho = dv.getUint32(p + 42, true);
+    const name = dec.decode(u8.subarray(p + 46, p + 46 + nameLen));
+    if (/\.ics$/i.test(name) && lho + 30 <= u8.length) {
+      // размеры имени/extra в ЛОКАЛЬНОМ заголовке могут отличаться от каталога — читаем их там
+      const lName = dv.getUint16(lho + 26, true), lExtra = dv.getUint16(lho + 28, true);
+      const start = lho + 30 + lName + lExtra;
+      const raw = u8.subarray(start, Math.min(start + compSize, u8.length));
+      try {
+        if (method === 0) out.push(dec.decode(raw)); // STORE
+        else if (method === 8 && typeof DecompressionStream !== 'undefined') { // DEFLATE
+          const stream = new Blob([raw]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+          out.push(dec.decode(new Uint8Array(await new Response(stream).arrayBuffer())));
+        }
+      } catch (e) { /* битая запись — пропускаем, остальное важнее */ }
+    }
+    p += 46 + nameLen + extraLen + commLen;
+  }
+  return out;
+}
+window.extractIcsFromZip = extractIcsFromZip;
+
+// Файл .ics (или .zip от Google) → кандидаты импорта (с дедупликацией) → общая превью-модалка
 window.handleIcsFile = async function(file) {
   try {
-    const text = await file.text();
-    const events = parseIcsText(text);
+    // v106: ZIP-детект по сигнатуре PK (гугловский экспорт календаря — архив, а не голый .ics)
+    const head = new Uint8Array(await file.slice(0, 4).arrayBuffer());
+    const isZip = head[0] === 0x50 && head[1] === 0x4b && (head[2] === 3 || head[2] === 5 || head[2] === 7);
+    let texts;
+    if (isZip) {
+      if (typeof DecompressionStream === 'undefined') { showToast('Это ZIP-архив от Google — распакуй его и загрузи .ics файл внутри', 5000); return; }
+      texts = await extractIcsFromZip(await file.arrayBuffer());
+      if (!texts.length) { showToast('В архиве не нашлось .ics — распакуй его и загрузи файл календаря', 4500); return; }
+    } else {
+      texts = [await file.text()];
+    }
+    const events = texts.flatMap(t => parseIcsText(t));
     if (!events.length) { showToast('В файле не найдено событий календаря', 3000); return; }
     const todayKey = formatDateKey(new Date());
     // разворот RRULE + плоский список
@@ -14105,9 +14205,12 @@ window.handleIcsFile = async function(file) {
       const k = f.text.toLowerCase().trim() + '|' + f.scheduledDate + '|' + (f.scheduledTime || '');
       if (seen.has(k) || notes.some(n => n.scheduledDate === f.scheduledDate && n.done !== true && (n.text || '').toLowerCase().trim() === f.text.toLowerCase().trim())) { dupes++; continue; }
       seen.add(k);
-      cand.push({ text: f.text, type: 'text', tag: null, createdAt: null, scheduledDate: f.scheduledDate, scheduledTime: f.scheduledTime, done: f.done, doneAt: null, inTodo: false, selected: true });
+      // v106: выполненные по умолчанию НЕ выбраны — за них отдельно спросит галочка в превью
+      cand.push({ text: f.text, type: 'text', tag: null, createdAt: null, scheduledDate: f.scheduledDate, scheduledTime: f.scheduledTime, done: f.done, doneAt: null, inTodo: false, selected: !f.done });
     }
-    if (!cand.length) { showToast('Все события из файла уже есть в календаре — дубликатов не добавляю', 3200); return; }
+    // v106: даже если добавлять нечего (всё дубликаты) — открываем модалку с честным объяснением,
+    // а не молча-пропадающий тост (фидбек: «загрузил с гугла — ничего не добавилось»)
+    if (!cand.length && !dupes) { showToast('События файла без подходящих дат — нечего импортировать', 3600); return; }
     const MAX_IMPORT = 500;
     if (cand.length > MAX_IMPORT) { cand.length = MAX_IMPORT; showToast('Событий больше ' + MAX_IMPORT + ' — беру первые ' + MAX_IMPORT, 3200); }
     importCandidates = cand;
@@ -14115,6 +14218,7 @@ window.handleIcsFile = async function(file) {
     renderImportModal();
     document.getElementById('import-modal').classList.add('open');
     closeCalFilesModal();
+    if (!cand.length) showToast('Новых событий нет — всё уже в календаре', 4000);
   } catch(e) { showToast('Не получилось прочитать файл: ' + e.message, 3200); }
 };
 
@@ -15322,6 +15426,8 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
       // Автообновление: когда новый SW активировался (skipWaiting) — перезагружаем
       // страницу, чтобы свежая версия работала сразу, а не после следующего открытия
       var hadController = !!navigator.serviceWorker.controller;
+      // v106: тестовый прогон (?hz3test=1) — без авто-релоада посреди теста (источник флейков)
+      if (new URLSearchParams(location.search).get('hz3test') === '1') window.__swReloaded = true;
       navigator.serviceWorker.addEventListener('controllerchange', function() {
         if (!hadController || window.__swReloaded) return;
         window.__swReloaded = true;
