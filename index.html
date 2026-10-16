@@ -13729,6 +13729,7 @@ function parseImportFile(text, filename) {
 // v107: вынесено из слушателя — вызывается и из «Записи», и при переадресации из календарной модалки.
 // Все ответвления говорят вслух (тосты) — «ничего не происходит» больше не должно быть физически.
 window.handleJsonImportFile = async function(file) {
+  window.__importBusy = true; // v108: SW не перезагружает страницу посреди чтения файла
   try {
     const text = await file.text();
     const parsed = parseImportFile(text, file.name);
@@ -13746,7 +13747,7 @@ window.handleJsonImportFile = async function(file) {
     document.getElementById('import-modal').classList.add('open');
   } catch(e) {
     showToast('Ошибка чтения файла: ' + e.message, 3200);
-  }
+  } finally { window.__importBusy = false; }
 };
 
 document.getElementById('import-file-input').addEventListener('change', async (e) => {
@@ -13923,27 +13924,41 @@ async function confirmImport() {
   const btn = document.getElementById('import-confirm-btn');
   btn.disabled = true;
   btn.textContent = 'Добавляю…';
+  window.__importBusy = true; // v108: SW не перезагружает страницу посреди записи в базу
   try {
     const baseTime = Date.now();
-    let imported = 0, scheduled = 0;
+    let imported = 0, scheduled = 0, failed = 0;
     const total = selected.length;
     for (let i = 0; i < total; i++) {
       setImportProgress(i + 1, total); // v106: живой прогресс вместо молчащей кнопки
       const n = selected[i];
       // Если есть original createdAt — сохраняем порядок (но со сдвигом чтобы не конфликтовать)
       const createdAt = n.createdAt || new Date(baseTime - i * 1000).toISOString();
-      await addDoc(notesCol(), buildImportedNotePatch(n, createdAt));
-      imported++;
-      if (n.scheduledDate) scheduled++;
+      // v108: одна упавшая запись (сеть моргнула) больше не убивает остальные 56 —
+      // пишем дальше, в конце честный счёт
+      try {
+        await addDoc(notesCol(), buildImportedNotePatch(n, createdAt));
+        imported++;
+        if (n.scheduledDate) scheduled++;
+      } catch (e) {
+        failed++;
+        try { console.warn('[hz3 import] запись не сохранилась:', (n.text || '').slice(0, 40), e); } catch (_e) {}
+      }
     }
-    closeImportModal();
-    await loadNotes();
-    checkTagSuggestions();
-    renderCalendar(); // v104: появились задачи с датами — календарь перерисовать
-    showToast(`📥 Добавил ${imported} ${_plRu(imported, 'дело', 'дела', 'дел')}` + (scheduled ? ` · в календаре: ${scheduled}` : ''), 3600);
+    if (imported > 0) {
+      closeImportModal();
+      await loadNotes();
+      checkTagSuggestions();
+      renderCalendar(); // v104: появились задачи с датами — календарь перерисовать
+      showToast(`📥 Готово: ${imported} из ${total}` + (scheduled ? ` · в календаре: ${scheduled}` : '') + (failed ? ` · не получилось: ${failed} (попробуй ещё раз)` : ''), 4200);
+    } else {
+      // v108: ни одной не записали — модалку оставляем открытой, честно объясняем
+      showToast('Ни одной записи не сохранилось — похоже, нет сети. Попробуй ещё раз', 4500);
+    }
   } catch(e) {
     showToast('Ошибка импорта: ' + e.message, 3200);
   } finally {
+    window.__importBusy = false;
     btn.disabled = false;
     btn.textContent = 'Импортировать';
     // v106: если модалка осталась открыта (ошибка) — вернуть сводку вместо прогресса
@@ -14208,6 +14223,7 @@ window.extractIcsFromZip = extractIcsFromZip;
 
 // Файл .ics (или .zip от Google) → кандидаты импорта (с дедупликацией) → общая превью-модалка
 window.handleIcsFile = async function(file) {
+  window.__importBusy = true; // v108: SW не перезагружает страницу посреди чтения/превью файла
   try {
     // v107: импорт говорит на каждом шаге — первым делом подтверждаем, что файл дошёл
     const kb = file.size >= 1024 ? Math.round(file.size / 1024) + ' КБ' : file.size + ' Б';
@@ -14272,6 +14288,7 @@ window.handleIcsFile = async function(file) {
     closeCalFilesModal();
     if (!cand.length) showToast('Новых событий нет — всё уже в календаре', 4000);
   } catch(e) { showToast('Не получилось прочитать файл: ' + e.message, 3200); }
+  finally { window.__importBusy = false; }
 };
 
 function openCalFilesModal() { document.getElementById('cal-files-modal').classList.add('open'); }
@@ -15483,8 +15500,24 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
       if (new URLSearchParams(location.search).get('hz3test') === '1') window.__swReloaded = true;
       navigator.serviceWorker.addEventListener('controllerchange', function() {
         if (!hadController || window.__swReloaded) return;
-        window.__swReloaded = true;
-        location.reload();
+        // v108: НЕ убиваем страницу, пока пользователь что-то делает. Перезагрузка посреди
+        // импорта давала «читаю файл… и всё свернулось, ничего не добавилось»: 57 addDoc'ов
+        // идут секундами и умирали на середине, а обычная заметка (1 быстрый запрос) успевала.
+        // Ждём «тишины» (не больше 2 минут) — иначе обновление применится при следующем открытии.
+        var busy = function() {
+          if (document.hidden) return true;
+          if (window.__importBusy) return true;
+          if (document.querySelector('.modal-overlay.open')) return true;
+          var ae = document.activeElement;
+          if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.isContentEditable)) return true;
+          return false;
+        };
+        var tries = 0;
+        var t = setInterval(function() {
+          tries++;
+          if (!busy()) { clearInterval(t); window.__swReloaded = true; location.reload(); return; }
+          if (tries >= 120) clearInterval(t); // сдаёмся — обновление подхватится при следующем запуске
+        }, 1000);
       });
       navigator.serviceWorker.register('./sw.js', { scope: './' })
         .then(function(reg) {
