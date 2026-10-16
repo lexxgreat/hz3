@@ -2200,6 +2200,9 @@ async function addTag(label, icon) {
 }
 
 async function deleteTag(id) {
+  // v110: подтверждение — кнопка рядом с «⇄ Слить», случайно стереть область обидно
+  const t = tags.find(x => x.id === id);
+  if (t && !confirm('Удалить область «' + t.label + '»?\nСами записи останутся, но потеряют эту область-тег. Если записи нужны в другой области — лучше «⇄ Слить».')) return;
   try {
     await deleteDoc(uDocRef('tags', id));
     tags = tags.filter(t => t.id !== id);
@@ -2209,6 +2212,100 @@ async function deleteTag(id) {
 }
 window.deleteTag = deleteTag;
 window.addTag = addTag; // тесты: посев областей
+
+// ── СЛИТЬ ОБЛАСТИ ВРУЧНУЮ (v110): ИИ-«Сжать области» ищет только ЯВНЫЕ дубли («Документы»/«документы»),
+// а смысловые для конкретного человека («Приложение» и «Хэзэнштейн» — оба про это приложение) он сливать не имеет права.
+// Даём ручной инструмент: «⇄ Слить» у области → выбрать куда → записи переносятся (tag+area), дубль удаляется.
+// Соответствие регистронезависимое (normDim), как везде; тестам можно подменить запись хуками __mergePutHook/__mergeDelHook.
+function mergeTagNoteCount(label) {
+  const k = normDim(String(label || '').trim());
+  if (!k) return 0;
+  return notes.filter(n => normDim((n.tag || '').trim()) === k || normDim((n.area || '').trim()) === k).length;
+}
+function ruNotesCount(c) {
+  return c + ' ' + (c % 10 === 1 && c % 100 !== 11 ? 'запись' : (c % 10 >= 2 && c % 10 <= 4 && (c % 100 < 10 || c % 100 >= 20) ? 'записи' : 'записей'));
+}
+function closeMergeTag() {
+  const ov = document.getElementById('merge-tag-overlay');
+  if (ov) ov.remove();
+}
+function openMergeTag(sourceId) {
+  const src = tags.find(t => t.id === sourceId);
+  if (!src) return;
+  const others = tags.filter(t => t.id !== sourceId);
+  if (!others.length) { alert('Других областей нет — сливать не с чем.'); return; }
+  closeMergeTag();
+  const ov = document.createElement('div');
+  ov.id = 'merge-tag-overlay';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:10050;display:flex;align-items:flex-end;justify-content:center;padding:16px;font-family:Inter,sans-serif;';
+  const box = document.createElement('div');
+  box.style.cssText = 'background:#12102A;border:0.5px solid rgba(139,92,246,0.35);border-radius:16px;padding:16px;width:100%;max-width:420px;max-height:70vh;display:flex;flex-direction:column;box-shadow:0 12px 40px rgba(0,0,0,0.6);';
+  const title = document.createElement('div');
+  title.className = 'merge-tag-title';
+  title.style.cssText = 'font-size:15px;font-weight:700;color:#fff;';
+  title.textContent = 'Слить «' + src.label + '» в какую область?';
+  const sub = document.createElement('div');
+  sub.className = 'merge-tag-sub';
+  sub.style.cssText = 'font-size:11.5px;color:rgba(255,255,255,0.5);margin-top:4px;line-height:1.45;';
+  sub.textContent = 'Записи (' + ruNotesCount(mergeTagNoteCount(src.label)) + ') перенесутся целиком, эта область удалится. Отменить слияние потом нельзя — но записи всегда можно перенести обратно вручную.';
+  const list = document.createElement('div');
+  list.style.cssText = 'overflow-y:auto;margin-top:12px;display:flex;flex-direction:column;gap:8px;';
+  for (const t of others) {
+    const btn = document.createElement('button');
+    btn.className = 'merge-target-btn';
+    btn.setAttribute('data-tag-label', t.label);
+    btn.style.cssText = 'display:flex;align-items:center;gap:10px;width:100%;text-align:left;background:rgba(108,71,255,0.08);border:0.5px solid rgba(139,92,246,0.3);border-radius:12px;padding:11px 12px;color:rgba(255,255,255,0.9);font-size:13.5px;font-weight:600;cursor:pointer;font-family:Inter,sans-serif;';
+    const ic = document.createElement('span');
+    ic.style.cssText = 'font-size:16px;flex-shrink:0;';
+    ic.textContent = t.icon || '🏷️';
+    const nm = document.createElement('span');
+    nm.style.cssText = 'flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+    nm.textContent = t.label;
+    const cN = document.createElement('span');
+    cN.style.cssText = 'font-size:11px;font-weight:500;color:rgba(255,255,255,0.45);flex-shrink:0;';
+    cN.textContent = ruNotesCount(mergeTagNoteCount(t.label));
+    btn.appendChild(ic); btn.appendChild(nm); btn.appendChild(cN);
+    btn.onclick = () => { closeMergeTag(); pickMergeTag(sourceId, t.id); };
+    list.appendChild(btn);
+  }
+  const cancel = document.createElement('button');
+  cancel.style.cssText = 'margin-top:12px;width:100%;background:transparent;border:none;color:rgba(255,255,255,0.5);font-size:12.5px;cursor:pointer;font-family:Inter,sans-serif;padding:6px;';
+  cancel.textContent = 'Отмена';
+  cancel.onclick = closeMergeTag;
+  box.appendChild(title); box.appendChild(sub); box.appendChild(list); box.appendChild(cancel);
+  ov.appendChild(box);
+  ov.onclick = e => { if (e.target === ov) closeMergeTag(); };
+  document.body.appendChild(ov);
+}
+async function pickMergeTag(sourceId, targetId) {
+  const src = tags.find(t => t.id === sourceId);
+  const dst = tags.find(t => t.id === targetId);
+  if (!src || !dst || src.id === dst.id) return;
+  const matched = notes.filter(n => normDim((n.tag || '').trim()) === normDim(src.label) || normDim((n.area || '').trim()) === normDim(src.label));
+  if (!confirm('Слить «' + src.label + '» → «' + dst.label + '»?\n' + (matched.length ? 'Перенесётся записей: ' + matched.length + '.' : 'У области записей нет — просто удалю пустой тег.'))) return;
+  try {
+    const putDoc = window.__mergePutHook || (async (id, patch) => { await updateDoc(uDocRef('notes', id), patch); });
+    const delTagDoc = window.__mergeDelHook || (async id => { await deleteDoc(uDocRef('tags', id)); });
+    for (const n of matched) {
+      try { await putDoc(n.id, { tag: dst.label, area: dst.label }); } catch (e) { console.warn('[MergeTag] запись не записалась', n.id, e); }
+      n.tag = dst.label; n.area = dst.label;
+    }
+    try { await delTagDoc(src.id); } catch (e) { console.warn('[MergeTag] тег не удалился', src.id, e); }
+    tags = tags.filter(t => t.id !== src.id);
+    renderQuickTags();
+    renderTagsScreen();
+    updateBrainStats();
+    showToast('⇄ Слил «' + src.label + '» → «' + dst.label + '»' + (matched.length ? ' · записей: ' + matched.length : ''));
+  } catch (e) {
+    console.warn('[MergeTag] merge failed', e);
+    alert('Не удалось слить: ' + (e.message || 'неизвестная ошибка'));
+  }
+}
+window.openMergeTag = openMergeTag; // тесты
+window.pickMergeTag = pickMergeTag; // тесты
+window.closeMergeTag = closeMergeTag; // тесты
+window.ruNotesCount = ruNotesCount; // тесты
+window.mergeTagNoteCount = mergeTagNoteCount; // тесты
 
 function renderQuickTags() {
   const el = document.getElementById('qtags-list');
@@ -2320,15 +2417,22 @@ function renderTagsScreen() {
     el.innerHTML = '<div class="hist-empty"><div class="hist-empty-icon">🏷️</div>Пока нет тегов — можешь добавить вручную ниже, или подожди, ИИ предложит сам после нескольких заметок</div>';
     return;
   }
+  // v110: у каждой области — счётчик записей (tag или area, нормализованный) и кнопка «⇄ Слить» —
+  // ручное объединение областей (ИИ-«Сжать» видит только явные дубли, смысловые пары типа
+  // «Приложение»/«Хэзэнштейн» должен решать сам человек)
   el.innerHTML = tags.map(t => `
     <div class="note-card">
       <div class="note-text" style="font-size:15px;">${t.icon} ${t.label}</div>
+      <div style="font-size:11px;color:rgba(255,255,255,0.4);margin-top:2px;">${ruNotesCount(mergeTagNoteCount(t.label))}</div>
       <div class="note-actions">
+        <button class="note-btn note-undone" onclick="openMergeTag('${t.id}')">⇄ Слить</button>
         <button class="note-btn note-undone" onclick="deleteTag('${t.id}')">✕ Удалить</button>
       </div>
     </div>
   `).join('');
 }
+
+window.renderTagsScreen = renderTagsScreen; // тесты
 
 // ── РЕЧЬ ──
 // ── ГОЛОСОВАЯ ЗАПИСЬ ЧЕРЕЗ WHISPER (Polza) ──
@@ -12210,7 +12314,7 @@ async function compressAreas() {
     return;
   }
   if (btn) { btn.textContent = '🧹 Сжать области'; btn.style.opacity = '1'; }
-  if (!Array.isArray(groups) || !groups.length) { alert('Дубликатов не нашлось — все области разные 🎉'); return; }
+  if (!Array.isArray(groups) || !groups.length) { alert('Дубликатов не нашлось — все области разные 🎉\n\nЕсли две области для тебя по смыслу одна (например «Приложение» и «Хэзэнштейн») — слей их вручную: экран «Теги» → кнопка «⇄ Слить» у лишней. Записи перенесутся, дубль удалится.'); return; }
   let mergedAny = 0;
   for (const g of groups) {
     if (!g || !g.keep || !Array.isArray(g.merge) || !g.merge.length) continue;
@@ -14232,7 +14336,7 @@ window.handleIcsFile = async function(file) {
     // v109: в тосте версия — если юзер пришлёт скрин, сразу видно, на какой он сборке.
     const kb = file.size >= 1024 ? Math.round(file.size / 1024) + ' КБ' : file.size + ' Б';
     const fname = file.name || 'файл';
-    showToast('📖 Читаю «' + fname + '» (' + kb + ') · v109', 2200);
+    showToast('📖 Читаю «' + fname + '» (' + kb + ') · v110', 2200);
     // v107: JSON-бэкап выбрали в календарной модалке — молча переношу в импорт записей
     if (/\.json$/i.test(fname)) { showToast('Это файл записей (JSON) — открываю импорт записей', 2600); await window.handleJsonImportFile(file); return; }
     // v106: ZIP-детект по сигнатуре PK (гугловский экспорт календаря — архив, а не голый .ics)
