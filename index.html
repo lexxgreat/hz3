@@ -13743,6 +13743,8 @@ window.handleJsonImportFile = async function(file) {
     }
 
     window._icsDupes = 0; // v106: сброс — иначе дубликаты от прошлого .ics-импорта утекут в JSON-сводку
+    // v109: страховка восстановления превью после перезагрузки страницы
+    try { sessionStorage.setItem('hz3ImportRescue', JSON.stringify({ ts: Date.now(), fname: file.name || 'файл', dupes: 0, candidates: importCandidates })); } catch(e) {}
     renderImportModal();
     document.getElementById('import-modal').classList.add('open');
   } catch(e) {
@@ -13886,6 +13888,7 @@ function importToggleAll(select) {
 
 function closeImportModal() {
   document.getElementById('import-modal').classList.remove('open');
+  try { sessionStorage.removeItem('hz3ImportRescue'); } catch(e) {} // v109: превью закрыто сознательно — спасать больше нечего
 }
 
 // v104: сборка документа для импортированной записи — чистая функция (тестируется без Firestore).
@@ -14225,10 +14228,11 @@ window.extractIcsFromZip = extractIcsFromZip;
 window.handleIcsFile = async function(file) {
   window.__importBusy = true; // v108: SW не перезагружает страницу посреди чтения/превью файла
   try {
-    // v107: импорт говорит на каждом шаге — первым делом подтверждаем, что файл дошёл
+    // v107: импорт говорит на каждом шаге — первым делом подтверждаем, что файл дошёл.
+    // v109: в тосте версия — если юзер пришлёт скрин, сразу видно, на какой он сборке.
     const kb = file.size >= 1024 ? Math.round(file.size / 1024) + ' КБ' : file.size + ' Б';
     const fname = file.name || 'файл';
-    showToast('📖 Читаю «' + fname + '» (' + kb + ')…', 2200);
+    showToast('📖 Читаю «' + fname + '» (' + kb + ') · v109', 2200);
     // v107: JSON-бэкап выбрали в календарной модалке — молча переношу в импорт записей
     if (/\.json$/i.test(fname)) { showToast('Это файл записей (JSON) — открываю импорт записей', 2600); await window.handleJsonImportFile(file); return; }
     // v106: ZIP-детект по сигнатуре PK (гугловский экспорт календаря — архив, а не голый .ics)
@@ -14283,9 +14287,15 @@ window.handleIcsFile = async function(file) {
     if (cand.length > MAX_IMPORT) { cand.length = MAX_IMPORT; showToast('Событий больше ' + MAX_IMPORT + ' — беру первые ' + MAX_IMPORT, 3200); }
     importCandidates = cand;
     window._icsDupes = dupes;
+    // v109: страховка от любых будущих убийц страницы — превью можно восстановить после перезагрузки
+    try { sessionStorage.setItem('hz3ImportRescue', JSON.stringify({ ts: Date.now(), fname: fname, dupes: dupes, candidates: cand })); } catch(e) {}
     renderImportModal();
-    document.getElementById('import-modal').classList.add('open');
-    closeCalFilesModal();
+    // v109: главное — УВЕДОМЛЕНИЕ о прочтении (его ждал юзер) + атомарная замена модалки
+    // (см. __hzSwapModal: открытие+закрытие по отдельности убивалось popstate-ом)
+    showToast('✅ Файл прочитан: новых ' + cand.length + (dupes ? ' · дубликатов: ' + dupes : ''), 2600);
+    const importModalEl = document.getElementById('import-modal');
+    if (window.__hzSwapModal) window.__hzSwapModal(document.getElementById('cal-files-modal'), importModalEl);
+    else { importModalEl.classList.add('open'); closeCalFilesModal(); }
     if (!cand.length) showToast('Новых событий нет — всё уже в календаре', 4000);
   } catch(e) { showToast('Не получилось прочитать файл: ' + e.message, 3200); }
   finally { window.__importBusy = false; }
@@ -14319,6 +14329,57 @@ window.renderImportModal = renderImportModal;
 window.parseImportFile = parseImportFile;
 window.getImportCandidates = () => importCandidates; // тестам: let-переменная не видна в window напрямую
 window.setImportCandidates = arr => { importCandidates = arr || []; }; // тестам: управляемый импорт
+
+// v109: страховка «тишины» — любая необработанная ошибка/промис называет себя тостом.
+// Урок v104–v108: молчать может не только импорт, и каждый такой баг стоит недели переписки.
+(function() {
+  let lastMsg = '', lastTs = 0;
+  const announce = function(msg) {
+    const now = Date.now();
+    if (msg === lastMsg && now - lastTs < 4000) return; // не спамим сериями одинаковых
+    lastMsg = msg; lastTs = now;
+    try { showToast('⚠️ ' + msg, 4200); } catch(e) { try { console.warn('[hz3]', msg); } catch(_e) {} }
+  };
+  window.addEventListener('error', function(ev) {
+    try {
+      const m = (ev && ev.message) || 'ошибка скрипта';
+      if (m.indexOf('Script error') === 0) return; // кросс-доменный шум без деталей не показываем
+      announce('Ошибка: ' + m);
+    } catch(e) {}
+  });
+  window.addEventListener('unhandledrejection', function(ev) {
+    try {
+      const r = ev && ev.reason;
+      const m = (r && (r.message || r.code)) ? (r.message || r.code) : String(r || 'неизвестная ошибка');
+      announce('Ошибка: ' + m);
+    } catch(e) {}
+  });
+})();
+
+// v109: спасение прерванного импорта — если страница перезагрузилась посреди превью
+// (релоад обновления, закрытие приложения, системный «назад»), при следующем запуске
+// возвращаем модалку с теми же кандидатами. Чистится при «Отмене»/успехе (closeImportModal).
+(function() {
+  if (new URLSearchParams(location.search).get('hz3test') === '1') return; // тестам — никаких самовольных модалок
+  const show = function() {
+    try {
+      if (document.getElementById('import-modal').classList.contains('open')) return;
+      const raw = sessionStorage.getItem('hz3ImportRescue');
+      if (!raw) return;
+      const r = JSON.parse(raw);
+      if (!r || !Array.isArray(r.candidates) || !r.candidates.length || Date.now() - (r.ts || 0) > 30 * 60 * 1000) {
+        sessionStorage.removeItem('hz3ImportRescue'); return;
+      }
+      importCandidates = r.candidates.map(n => Object.assign({}, n));
+      window._icsDupes = r.dupes || 0;
+      renderImportModal();
+      document.getElementById('import-modal').classList.add('open');
+      showToast('Восстановил прерванный импорт «' + (r.fname || 'файл') + '» — проверь и жми «Импортировать»', 5000);
+    } catch(e) { try { sessionStorage.removeItem('hz3ImportRescue'); } catch(_e) {} }
+  };
+  if (document.readyState === 'complete') setTimeout(show, 1500);
+  else window.addEventListener('load', function() { setTimeout(show, 1500); });
+})();
 
 // голос в чате — та же модель «нажал — говоришь — нажал — отправилось», что и на главном экране
 let chatActiveRecorder = null;
@@ -15424,6 +15485,23 @@ onAuthStateChanged(auth, async (user) => {
   const closeOpenModals = () => {
     document.querySelectorAll('.modal-overlay.open').forEach(m => m.classList.remove('open'));
     if (typeof editingId === 'string') editingId = null;
+  };
+
+  // v109: атомарная ЗАМЕНА одной модалки другой (импорт календаря: «Файлы» → превью импорта).
+  // Прежний путь «открыл новую (push) + закрыл старую (back из observer-а)» рождал popstate
+  // {modal:true}, и closeOpenModals() в popstate-е мгновенно убивал ТОЛЬКО ЧТО открытую модалку:
+  // юзер видел «читаю файл… и всё свернулось, обычный календарь» — импорт умирал без единой ошибки.
+  // Swap глотает обе мутации в observer-е и держит стек честным: замена = replaceState, открытие с нуля = push.
+  window.__hzSwapModal = function(closeEl, openEl) {
+    navPopBusy = true;
+    const wasOpen = !!(closeEl && closeEl.classList.contains('open'));
+    try { if (wasOpen) closeEl.classList.remove('open'); } catch(e) {}
+    try { if (openEl) openEl.classList.add('open'); } catch(e) {}
+    try {
+      if (wasOpen) history.replaceState({ hz: 1, modal: true }, '');
+      else history.pushState({ hz: 1, modal: true }, '');
+    } catch(e) {}
+    setTimeout(function() { navPopBusy = false; }, 0);
   };
 
   // 1) каждый переход между экранами — запись в историю (обёртка поверх graph-обёртки goTo)
