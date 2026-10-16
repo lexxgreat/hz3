@@ -1688,7 +1688,7 @@ body[data-theme="business"] .cap-mic.recording{box-shadow:0 0 10px rgba(140,176,
         <button onclick="migrateFindLinks()" style="width:100%;margin-top:8px;display:inline-flex;align-items:center;justify-content:center;gap:6px;background:rgba(255,180,0,0.08);border:0.5px solid rgba(255,180,0,0.3);border-radius:10px;padding:8px;color:rgba(255,200,50,0.9);font-size:11.5px;font-weight:500;cursor:pointer;font-family:'Inter',sans-serif;white-space:nowrap;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></svg>Найти связи между записями</button>
       </div>
     </div>
-    <input type="file" id="import-file-input" accept=".json,.txt,.csv" style="display:none;">
+    <input type="file" id="import-file-input" accept=".json,.txt,.csv,.ics,.ical,.zip,application/zip,application/octet-stream" style="display:none;">
     <!-- ── РАЗУМ БАЗЫ: области / типы записей / кластеры дел (второй мозг, v72) ── -->
     <div style="padding:12px 16px 0;">
       <div style="background:rgba(255,255,255,0.04);border:0.5px solid rgba(255,255,255,0.1);border-radius:12px;padding:12px 14px;">
@@ -1976,12 +1976,13 @@ service cloud.firestore {
       <div style="font-size:12px;color:rgba(255,255,255,0.6);line-height:1.55;margin-bottom:14px;font-family:Inter,sans-serif;">Скачай план в <b style="color:rgba(255,255,255,0.8);">.ics</b> и импортируй в свой календарь: <b style="color:rgba(255,255,255,0.8);">calendar.google.com</b> → ⚙ → Настройки → Импорт и экспорт (на телефоне — в браузере, включив «Версию для ПК»). Или загрузи <b style="color:rgba(255,255,255,0.8);">.ics</b> из чужого календаря — события станут задачами с датами (дубликаты пропустим). Понимаю и zip-архив из экспорта Google — сам достану .ics внутри.</div>
       <button onclick="exportCalendarIcs()" style="width:100%;background:rgba(108,71,255,0.12);border:0.5px solid rgba(108,71,255,0.45);border-radius:10px;padding:11px;color:rgba(159,132,255,0.95);font-size:13px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif;">📤 Скачать .ics</button>
       <button onclick="document.getElementById('ics-file-input').click()" style="width:100%;margin-top:8px;background:rgba(0,180,120,0.1);border:0.5px solid rgba(0,200,140,0.35);border-radius:10px;padding:11px;color:rgba(0,220,150,0.9);font-size:13px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif;">📥 Загрузить .ics</button>
+      <div style="font-size:10.5px;color:rgba(255,255,255,0.45);line-height:1.5;margin-top:6px;font-family:Inter,sans-serif;">Если файл в окне выбора не виден — открой там меню (☰) и выбери «Все файлы» / «Показать все файлы».</div>
       <div class="modal-btns" style="margin-top:14px;">
         <button class="modal-cancel" onclick="closeCalFilesModal()">Закрыть</button>
       </div>
     </div>
   </div>
-  <input type="file" id="ics-file-input" accept=".ics,.ical,text/calendar,.zip,application/zip" style="display:none;">
+  <input type="file" id="ics-file-input" accept=".ics,.ical,.vcs,text/calendar,.zip,application/zip,application/x-zip-compressed,application/octet-stream" style="display:none;">
 
   <!-- ── Напоминание о задаче (всплывает за N минут до старта) ── -->
   <div class="modal-overlay" id="reminder-popup">
@@ -13725,28 +13726,46 @@ function parseImportFile(text, filename) {
   return lines.map(l => ({ text: l, type: 'text', tag: null, createdAt: null, scheduledDate: null, scheduledTime: null, done: false, doneAt: null, inTodo: false }));
 }
 
-document.getElementById('import-file-input').addEventListener('change', async (e) => {
-  const file = e.target.files[0];
-  e.target.value = '';
-  if (!file) return;
+// v107: вынесено из слушателя — вызывается и из «Записи», и при переадресации из календарной модалки.
+// Все ответвления говорят вслух (тосты) — «ничего не происходит» больше не должно быть физически.
+window.handleJsonImportFile = async function(file) {
   try {
     const text = await file.text();
     const parsed = parseImportFile(text, file.name);
-    if (!parsed.length) { alert('В файле не найдено записей для импорта'); return; }
+    if (!parsed.length) { showToast('В файле не найдено записей для импорта', 3200); return; }
 
     const MAX_IMPORT = 500;
     // v106: выполненные по умолчанию НЕ выбраны — за них спросит отдельная галочка в превью
     importCandidates = parsed.slice(0, MAX_IMPORT).map(n => ({ ...n, selected: !n.done }));
     if (parsed.length > MAX_IMPORT) {
-      alert('В файле ' + parsed.length + ' записей. Импортируем первые ' + MAX_IMPORT + '.');
+      showToast('В файле ' + parsed.length + ' записей — импортирую первые ' + MAX_IMPORT, 3200);
     }
 
     window._icsDupes = 0; // v106: сброс — иначе дубликаты от прошлого .ics-импорта утекут в JSON-сводку
     renderImportModal();
     document.getElementById('import-modal').classList.add('open');
   } catch(e) {
-    alert('Ошибка чтения файла: ' + e.message);
+    showToast('Ошибка чтения файла: ' + e.message, 3200);
   }
+};
+
+document.getElementById('import-file-input').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  e.target.value = '';
+  if (!file) { showToast('Файл не выбран — попробуй ещё раз', 2500); return; }
+  // v107: сюда часто попадает файл календаря (.ics/.zip) — молча переношу в календарный импорт,
+  // а не превращаю VEVENT-строки в мусорные записи.
+  try {
+    const head = new Uint8Array(await file.slice(0, 4).arrayBuffer());
+    const isZip = head[0] === 0x50 && head[1] === 0x4b && (head[2] === 3 || head[2] === 5 || head[2] === 7);
+    const headTxt = isZip ? '' : await file.slice(0, 2048).text();
+    if (isZip || /\.(ics|ical|vcs)$/i.test(file.name || '') || /BEGIN:(VCALENDAR|VEVENT)/i.test(headTxt)) {
+      showToast('Это файл календаря — открываю импорт календаря', 2600);
+      await window.handleIcsFile(file);
+      return;
+    }
+  } catch (e2) { /* не страшно — дальше прочитаем как текст */ }
+  await window.handleJsonImportFile(file);
 });
 
 function renderImportModal() {
@@ -14097,10 +14116,29 @@ function expandRrule(ev, todayKey, horizonDays = 90, cap = 40) {
   return out;
 }
 
+// v107: QUOTED-PRINTABLE (=D0=9F, мягкий перенос =\n) — так выгружают некоторые сторонние календари и старые .vcs
+function icsDecodeQp(s) {
+  const bytes = [];
+  let out = '';
+  const flush = () => { if (bytes.length) { try { out += new TextDecoder('utf-8').decode(new Uint8Array(bytes)); } catch (e) { out += bytes.map(b => String.fromCharCode(b)).join(''); } bytes.length = 0; } };
+  s = String(s).replace(/=$/, ''); // одиночный «=» в конце — мягкий перенос
+  for (let i = 0; i < s.length; i++) {
+    if (s[i] === '=' && /^[0-9A-Fa-f]{2}$/.test(s.slice(i + 1, i + 3))) { bytes.push(parseInt(s.slice(i + 1, i + 3), 16)); i += 2; }
+    else { flush(); out += s[i]; }
+  }
+  flush();
+  return out;
+}
+
 // Парсер текста .ics → массив событий {summary, dtstart:{date,time}, rrule}
 function parseIcsText(text) {
   // unfold: продолжение строки начинается с пробела/таба (RFC 5545 §3.1)
-  const src = String(text).replace(/\r\n/g, '\n').replace(/\r/g, '\n').replace(/\n[ \t]/g, '');
+  // v107: BOM от «Блокнота»/чужих приложений; мягкий перенос QP («=» перед переносом строки —
+  // склеиваем, если следующая строка НЕ новое свойство); LF-концы строк тоже живут.
+  const src = String(text)
+    .replace(/^\uFEFF/, '')
+    .replace(/=\r?\n(?![A-Za-z][A-Za-z0-9-]*[;:])/g, '')
+    .replace(/\r\n/g, '\n').replace(/\r/g, '\n').replace(/\n[ \t]/g, '');
   const lines = src.split('\n');
   const events = [];
   let cur = null, depth = 0;
@@ -14119,7 +14157,7 @@ function parseIcsText(text) {
     const name = (left.split(';')[0] || '').toUpperCase();
     const params = {};
     left.split(';').slice(1).forEach(p => { const eq = p.indexOf('='); if (eq > 0) params[p.slice(0, eq).toUpperCase()] = p.slice(eq + 1); });
-    if (name === 'SUMMARY') cur.summary = icsUnescape(val);
+    if (name === 'SUMMARY') cur.summary = icsUnescape(params.ENCODING === 'QUOTED-PRINTABLE' ? icsDecodeQp(val) : val);
     else if (name === 'DTSTART') cur.dtstart = parseIcsDateTime(val, params);
     else if (name === 'RRULE') cur.rrule = parseIcsRrule(val);
   }
@@ -14171,6 +14209,12 @@ window.extractIcsFromZip = extractIcsFromZip;
 // Файл .ics (или .zip от Google) → кандидаты импорта (с дедупликацией) → общая превью-модалка
 window.handleIcsFile = async function(file) {
   try {
+    // v107: импорт говорит на каждом шаге — первым делом подтверждаем, что файл дошёл
+    const kb = file.size >= 1024 ? Math.round(file.size / 1024) + ' КБ' : file.size + ' Б';
+    const fname = file.name || 'файл';
+    showToast('📖 Читаю «' + fname + '» (' + kb + ')…', 2200);
+    // v107: JSON-бэкап выбрали в календарной модалке — молча переношу в импорт записей
+    if (/\.json$/i.test(fname)) { showToast('Это файл записей (JSON) — открываю импорт записей', 2600); await window.handleJsonImportFile(file); return; }
     // v106: ZIP-детект по сигнатуре PK (гугловский экспорт календаря — архив, а не голый .ics)
     const head = new Uint8Array(await file.slice(0, 4).arrayBuffer());
     const isZip = head[0] === 0x50 && head[1] === 0x4b && (head[2] === 3 || head[2] === 5 || head[2] === 7);
@@ -14183,7 +14227,15 @@ window.handleIcsFile = async function(file) {
       texts = [await file.text()];
     }
     const events = texts.flatMap(t => parseIcsText(t));
-    if (!events.length) { showToast('В файле не найдено событий календаря', 3000); return; }
+    // v107: пустой результат объясняем ПОДРОБНО — бинарник это, календарь без дат или не календарь вовсе
+    if (!events.length) {
+      const all = texts.join('\n');
+      const binary = /[\u0000-\u0008\u000e-\u001f]/.test(all.slice(0, 800));
+      if (binary) showToast('«' + fname + '» — бинарный файл, это не календарь. Нужен .ics или zip от Google', 5000);
+      else if (/BEGIN:(VCALENDAR|VEVENT)/i.test(all)) showToast('Нашёл календарь, но событий с датами в нём нет — пришли файл, посмотрю', 5000);
+      else showToast('В «' + fname + '» (' + kb + ') нет событий календаря — это точно .ics? Пришли файл, посмотрю', 5000);
+      return;
+    }
     const todayKey = formatDateKey(new Date());
     // разворот RRULE + плоский список
     const flat = [];
@@ -14230,13 +14282,14 @@ window.closeCalFilesModal = closeCalFilesModal;
 document.getElementById('ics-file-input').addEventListener('change', async (e) => {
   const file = e.target.files[0];
   e.target.value = '';
-  if (!file) return;
+  if (!file) { showToast('Файл не выбран — попробуй ещё раз', 2500); return; } // v107: молча не выходим
   await window.handleIcsFile(file);
 });
 
 // экспортируем для e2e-тестов (чистые функции без Firestore)
 window.buildCalendarIcs = buildCalendarIcs;
 window.parseIcsText = parseIcsText;
+window.icsDecodeQp = icsDecodeQp; // v107: QP-декодер — для тестов
 window.expandRrule = expandRrule;
 window.parseIcsDateTime = parseIcsDateTime;
 window.buildImportedNotePatch = buildImportedNotePatch;
