@@ -5037,14 +5037,19 @@ function packWordCloud(items, canvasWidth, canvasHeight, ctx, scale) { // v112: 
 function drawWordCloud(layout, canvas) {
   const ctx = canvas.getContext('2d');
   ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.lineJoin = 'round'; // v116: без острых «шипов» на углах букв
   layout.forEach(w => {
     ctx.save();
     ctx.translate(w.x, w.y);
     if (w.rotate) ctx.rotate(w.rotate * Math.PI / 180);
     ctx.font = `${w.bold ? '800' : '600'} ${w.fontSize}px Inter, Arial, sans-serif`;
-    ctx.fillStyle = w.color;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
+    // v116: чёрная обводка-контур — слова читаются как «стикеры», отделяются от фона и друг от друга
+    ctx.lineWidth = Math.max(1.5, Math.round(w.fontSize * 0.12));
+    ctx.strokeStyle = '#000';
+    ctx.strokeText(w.text, 0, 0);
+    ctx.fillStyle = w.color;
     ctx.fillText(w.text, 0, 0);
     // v113: подчёркивание тегов убрано — области отличают размером и цветом
     ctx.restore();
@@ -14591,7 +14596,7 @@ window.handleIcsFile = async function(file) {
     // v109: в тосте версия — если юзер пришлёт скрин, сразу видно, на какой он сборке.
     const kb = file.size >= 1024 ? Math.round(file.size / 1024) + ' КБ' : file.size + ' Б';
     const fname = file.name || 'файл';
-    showToast('📖 Читаю «' + fname + '» (' + kb + ') · v115', 2200);
+    showToast('📖 Читаю «' + fname + '» (' + kb + ') · v116', 2200);
     // v107: JSON-бэкап выбрали в календарной модалке — молча переношу в импорт записей
     if (/\.json$/i.test(fname)) { showToast('Это файл записей (JSON) — открываю импорт записей', 2600); await window.handleJsonImportFile(file); return; }
     // v106: ZIP-детект по сигнатуре PK (гугловский экспорт календаря — архив, а не голый .ics)
