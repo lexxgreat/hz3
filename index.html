@@ -10241,6 +10241,68 @@ function todoHiddenSet() {
   }
   return hidden;
 }
+
+// ── v119: БЛОКИ ЦЕПОЧЕК ДЛЯ ПЕРЕТАСКИВАНИЯ ──
+// Схлопывание (v118) прячет матерей и не-первые шаги: видимая тудушка ≠ полной очереди.
+// Перетаскиваемая карточка — «первый шаг» своей цепочки, и тащить надо ВСЮ цепочку разом
+// (как с желаниями), иначе шаги перепрыгивают друг друга и карточки начинают «пропадать».
+// Блок = верхний предок → … → мать → сама карточка → её бездетные «сайд»-шаги (по порядку).
+// Шаги со своими подзадачами принадлежат блокам своих «первый шагов» — их не трогаем.
+function todoBlockDfsOrder(R, hSet) {
+  let top = R, guard = 0;
+  while (top && top.parentId && guard++ < 10) {
+    const p = notes.find(x => x.id === top.parentId);
+    if (!p || p.inTodo !== true || p.done) break;
+    top = p;
+  }
+  const out = [];
+  (function dfs(n, g) {
+    if (!n || g > 12) return;
+    out.push(n);
+    const kids = childrenOf(n.id).filter(todoLiveKid);
+    kids.forEach((k, i) => {
+      if (i === 0) dfs(k, g + 1); // первый шаг — вся ветка в этот блок
+      else if (!childrenOf(k.id).some(todoLiveKid)) out.push(k); // бездетный «сайд» — тоже сюда
+    });
+  })(top, 0);
+  return out;
+}
+// все карточки очереди, чей блок «держит» repId (для границ вставки чужих блоков)
+function todoBlockMembers(repId, hSet) {
+  const members = [];
+  for (const n of notes) {
+    if (n.inTodo !== true || n.done) continue;
+    if (n.id === repId) { members.push(n); continue; }
+    if (!hSet.has(n.id)) continue; // другая видимая карточка — свой блок
+    // спуск по первым живым детям до листа
+    let cur = n, guard = 0;
+    while (guard++ < 12) {
+      const kids = childrenOf(cur.id).filter(todoLiveKid);
+      if (!kids.length) break;
+      cur = kids[0];
+    }
+    let rep = null;
+    if (!hSet.has(cur.id)) rep = cur.id;
+    else {
+      // скрытый бездетный «сайд» — поднимаемся к верхнему предку и спускаемся по первым шагам
+      let top = cur, g2 = 0;
+      while (top.parentId && g2++ < 10) {
+        const p = notes.find(x => x.id === top.parentId);
+        if (!p || p.inTodo !== true || p.done) break;
+        top = p;
+      }
+      let c2 = top, g3 = 0;
+      while (g3++ < 12) {
+        const kids = childrenOf(c2.id).filter(todoLiveKid);
+        if (!kids.length) break;
+        c2 = kids[0];
+      }
+      if (!hSet.has(c2.id)) rep = c2.id;
+    }
+    if (rep === repId) members.push(n);
+  }
+  return members;
+}
 // бейджи для карточек (тудушка/история): у матери — прогресс, у ребёнка — ссылка на мать
 function subtaskBadgesHtml(n) {
   const parts = [];
@@ -10575,7 +10637,10 @@ function initTodoDrag() {
     for (let i = 0; i < others.length; i++) {
       // v87: граница тиров А/«на потом» — стена. Драг не перелистывает через неё:
       // первый чужой тир = стоп ровно на этой позиции (карточка остаётся в своём тире).
-      if (others[i].fut !== dragFut) { targetIndex = i; break; }
+      if (others[i].fut !== dragFut) {
+        if (!dragFut) { targetIndex = i; break; }
+        continue; // v119: тащим «на потом» — тир А выше стены не сдвигаем визуально
+      }
       // v86: честная СИММЕТРИЯ по КРАЯМ перетаскиваемой карточки, а не по пальцу:
       // своп только когда ведущий край (вниз — нижний, вверх — верхний) дойдёт до
       // ПОЛОВИНЫ соседней карточки. Раньше порог считался по пальцу — где схватишь
@@ -10698,7 +10763,7 @@ function initTodoDrag() {
     // renderTodo заменит DOM целиком — карточка остаётся там, куда утащили.
     todoDragState = null;
     window.__todoDragEndTs = Date.now(); // тап сразу после драга не должен открыть редактор
-    reorderTodo(draggedId, finalIndex);
+    reorderTodo(draggedId, finalIndex, true); // v119: индекс по ВИДИМЫМ карточкам (на экране)
   }
 
   listEl.addEventListener('touchend', () => {
@@ -10789,23 +10854,69 @@ document.addEventListener('visibilitychange', () => {
   if (document.hidden && _todoPersistTimer) persistTodoOrderNow();
 });
 
-async function reorderTodo(id, newIndex) {
+async function reorderTodo(id, newIndex, byVisible) {
   // Оптимистичный порядок: карточка мгновенно остаётся там, куда её утащили.
   // Локальный state мутируется ДО любых await, рендер синхронный — сеть вообще
   // не участвует в мгновенной перестановке карточек.
+  // v119: newIndex — позиция среди ВИДИМЫХ карточек (то, что на экране), а не полной
+  // очереди: схлопывание v118 скрывает матерей/шаги, старый индекс «уезжал» мимо,
+  // шаги цепочек перепрыгивали друг друга и карточки при драге «пропадали».
+  // byVisible=false (скип, ▲, старые вызовы) — индекс по полной очереди, как раньше.
   const { urgent, main, tomorrow, future } = splitTodoQueue();
   const visual = urgent.concat(main, tomorrow, future); // v89: работаем в визуальном порядке (срочные → тир A → завтра → тир B)
   const dragged = visual.find(n => n.id === id);
   if (!dragged) return;
   const dragFut = isFutureTodo(dragged);
-  // v87: страховка границы тиров — карточка не может выйти за пределы своего тира
-  // (стена в updateLiveShift уже не пускает, но reorder вызывается и из других мест)
-  const mainRestCount = main.filter(n => n.id !== id).length;
-  if (dragFut) { if (newIndex < mainRestCount) newIndex = mainRestCount; }
-  else if (newIndex > mainRestCount) newIndex = mainRestCount;
-  const rest = visual.filter(n => n.id !== id);
-  rest.splice(newIndex, 0, dragged);
-  rest.forEach((n, i) => {
+  const hSet = todoHiddenSet();
+
+  // v119: БЛОК перетаскиваемой — вся её цепочка (предки + бездетные «сайд»-шаги).
+  // Цепочка переезжает ЦЕЛИКОМ, порядок шагов внутри не меняется — иначе соседи-шаги
+  // перепрыгивали друг друга, «первый шаг» переключался и карточки исчезали/появлялись.
+  const dragBlock = todoBlockDfsOrder(dragged, hSet);
+  const dragIds = new Set(dragBlock.map(c => c.id));
+  const remaining = visual.filter(n => !dragIds.has(n.id));
+
+  const visibleOthers = () => visual.filter(n => !hSet.has(n.id) && n.id !== id && (!activeTodoTag || (n.tag || '') === activeTodoTag));
+
+  // якорь: ПЕРЕД какой карточкой встаёт перетаскиваемая (null — в самый конец)
+  let anchor = null, insertAt = remaining.length;
+  if (byVisible) {
+    const others = visibleOthers();
+    if (others.length) {
+      // v87: стена тиров — драг не перелистывает через границу «сегодня/на потом»
+      let firstFut = -1;
+      for (let i = 0; i < others.length; i++) if (isFutureTodo(others[i])) { firstFut = i; break; }
+      let idx = Math.max(0, Math.min(others.length, newIndex));
+      if (dragFut) idx = Math.max(idx, firstFut === -1 ? others.length : firstFut);
+      else idx = Math.min(idx, firstFut === -1 ? others.length : firstFut);
+      anchor = others[idx] || null;
+    }
+  } else {
+    const othersFull = visual.filter(n => n.id !== id);
+    anchor = othersFull[Math.max(0, Math.min(othersFull.length, newIndex))] || null;
+  }
+
+  // позиция вставки блока: перед САМЫМ РАННИМ членом блока якоря (не разрывать цепочку)
+  // или сразу после ПОСЛЕДНЕГО члена блока последней карточки
+  if (anchor) {
+    const aBlock = todoBlockMembers(anchor.id, hSet);
+    for (const m of aBlock) {
+      const p = remaining.findIndex(x => x.id === m.id);
+      if (p !== -1 && p < insertAt) insertAt = p;
+    }
+  } else if (byVisible) {
+    const others = visibleOthers();
+    if (others.length) {
+      const lBlock = todoBlockMembers(others[others.length - 1].id, hSet);
+      for (const m of lBlock) {
+        const p = remaining.findIndex(x => x.id === m.id);
+        if (p !== -1 && p + 1 > insertAt) insertAt = p + 1;
+      }
+    }
+  }
+
+  const seq = remaining.slice(0, insertAt).concat(dragBlock, remaining.slice(insertAt));
+  seq.forEach((n, i) => {
     n.todoOrder = i + 1; // getTodoQueue() возвращает те же ссылки — порядок уже новый
   });
   renderTodo();      // синхронный рендер — до первого await, без «мигания» старым порядком
@@ -11182,6 +11293,7 @@ window.setTodoTag = function(tag) {
 function renderTodo() {
   const el = document.getElementById('todo-list');
   if (!el) return;
+  if (todoDragState) return; // v119: перерисовка посреди драга убивает летящую карточку (DOM заменяется, transform теряется) — отложим до отпускания
   let { urgent, main, tomorrow, future } = splitTodoQueue();
   // v89 Н6: наступившее «завтра» улетает наверх — одноразовый бамп при переходе даты
   try {
@@ -14564,11 +14676,13 @@ window.clearChatHistory = async function() {
 };
 
 // экспорт заметок
+// v119: ПОЛНЫЙ экспорт — в файл идёт вся запись целиком (+ id: без него подзадачи
+// при импорте в другой аккаунт не могут привязаться к матерям — id в файле нет).
 window.exportNotes = async function() {
   try {
     const q = query(notesCol(), orderBy('createdAt','asc'));
     const snap = await getDocs(q);
-    const data = snap.docs.map(d => d.data());
+    const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
     const blob = new Blob([JSON.stringify(data, null, 2)], {type:'application/json'});
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -14591,6 +14705,10 @@ function parseImportFile(text, filename) {
       const data = JSON.parse(text);
       const arr = Array.isArray(data) ? data : [data];
       // Валидные записи — только объекты с полем text
+      // v119: ПОЛНЫЙ импорт — переносим ВСЕ поля записи, а не только базовые девятку.
+      // Фидбек: «нужно проверить чтоб экспорт был полный, импорт полный — например
+      // сейчас у заметок детали заметок не импортировались». parentId и id нужны,
+      // чтобы подзадачи после импорта снова привязались к своим матерям (ремап в confirmImport).
       return arr
         .filter(o => o && typeof o === 'object' && typeof o.text === 'string' && o.text.trim().length > 0)
         .map(o => ({
@@ -14603,6 +14721,17 @@ function parseImportFile(text, filename) {
           done: o.done === true,
           doneAt: typeof o.doneAt === 'string' ? o.doneAt : null,
           inTodo: o.inTodo === true,
+          // v119: расширенные поля
+          _id: typeof o.id === 'string' && o.id ? o.id : null,
+          parentId: typeof o.parentId === 'string' && o.parentId ? o.parentId : null,
+          details: typeof o.details === 'string' && o.details.trim() ? o.details : null,
+          importance: Number.isInteger(o.importance) && o.importance >= 1 && o.importance <= 5 ? o.importance : null,
+          effort: (o.effort === 'S' || o.effort === 'M' || o.effort === 'L') ? o.effort : null,
+          urgent: o.urgent === true,
+          skipCount: Number.isFinite(o.skipCount) ? o.skipCount : null,
+          remember: o.remember === true,
+          rememberOn: typeof o.rememberOn === 'string' ? o.rememberOn : null,
+          todoOrder: typeof o.todoOrder === 'number' && isFinite(o.todoOrder) ? o.todoOrder : null
         }));
     } catch (e) {
       // не JSON — ниже обработаем как текст
@@ -14610,7 +14739,7 @@ function parseImportFile(text, filename) {
   }
   // 2) Текстовый файл — каждая непустая строка = запись
   const lines = text.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0);
-  return lines.map(l => ({ text: l, type: 'text', tag: null, createdAt: null, scheduledDate: null, scheduledTime: null, done: false, doneAt: null, inTodo: false }));
+  return lines.map(l => ({ text: l, type: 'text', tag: null, createdAt: null, scheduledDate: null, scheduledTime: null, done: false, doneAt: null, inTodo: false, _id: null, parentId: null, details: null, importance: null, effort: null, urgent: false, skipCount: null, remember: false, rememberOn: null, todoOrder: null }));
 }
 
 // v107: вынесено из слушателя — вызывается и из «Записи», и при переадресации из календарной модалки.
@@ -14771,6 +14900,7 @@ function renderImportModal() {
     }
     if (n.done) meta.push('✓ выполнено');
     else if (n.tag) meta.push('#' + n.tag);
+    if (n.details) meta.push('📝'); // v119: в записи есть детали — видно прямо в превью
     if (!n.scheduledDate && n.createdAt) meta.push(new Date(n.createdAt).toLocaleString('ru-RU'));
     const tagEl = document.createElement('div');
     tagEl.style.cssText = 'font-size:11px;color:rgba(139,92,246,0.7);margin-top:3px;';
@@ -14806,8 +14936,16 @@ function closeImportModal() {
 // v104: сборка документа для импортированной записи — чистая функция (тестируется без Firestore).
 // Запись с датой (.ics или JSON-бэкап) становится задачей: inTodo + scheduledDate/Time + порядок по умному скору;
 // запись с inTodo из JSON-бэкапа возвращается в тудушку; обычная запись — как раньше.
-function buildImportedNotePatch(n, createdAt) {
+// v119: полный импорт — переносятся details/importance/effort/urgent/skipCount/remember(+On);
+// orderHint (опционально) — готовый todoOrder от симулятора confirmImport (иначе старое поведение).
+function buildImportedNotePatch(n, createdAt, orderHint) {
   const patch = { text: n.text, type: n.type || 'text', tag: n.tag || null, createdAt };
+  if (n.details) patch.details = n.details;               // v119: тело заметки больше не теряется
+  if (n.importance) patch.importance = n.importance;       // v119: важность 1–5
+  if (n.effort) patch.effort = n.effort;                   // v119: объём S/M/L
+  if (n.urgent === true) patch.urgent = true;              // v119: «срочно»
+  if (n.skipCount != null) patch.skipCount = n.skipCount;  // v119: счётчик пропусков
+  if (n.remember === true) { patch.remember = true; if (n.rememberOn) patch.rememberOn = n.rememberOn; } // v93: «помнить всегда»
   const hasDate = !!n.scheduledDate;
   if (hasDate || n.inTodo === true) {
     patch.inTodo = true;
@@ -14815,9 +14953,9 @@ function buildImportedNotePatch(n, createdAt) {
       patch.scheduledDate = n.scheduledDate;
       if (n.scheduledTime) patch.scheduledTime = n.scheduledTime;
       if (n.done) { patch.done = true; patch.doneAt = n.doneAt || new Date().toISOString(); }
-      patch.todoOrder = n.done ? null : computeSmartOrder(smartScoreForFields({ scheduledDate: n.scheduledDate }));
+      patch.todoOrder = n.done ? null : (orderHint != null ? orderHint : computeSmartOrder(smartScoreForFields({ scheduledDate: n.scheduledDate })));
     } else {
-      patch.todoOrder = computeSmartOrder(smartScoreForFields({}));
+      patch.todoOrder = orderHint != null ? orderHint : computeSmartOrder(smartScoreForFields({}));
     }
   }
   return patch;
@@ -14844,6 +14982,28 @@ async function confirmImport() {
     const baseTime = Date.now();
     let imported = 0, scheduled = 0, failed = 0;
     const total = selected.length;
+    // v119: ЛОКАЛЬНЫЙ СИМУЛЯТОР умной вставки. Раньше todoOrder считался через computeSmartOrder
+    // против НЕизменной базы (loadNotes только после цикла) — все бездатные задачи получали
+    // ОДИНАКОВЫЙ порядок и вставали непредсказуемо. Симулятор вставляет в растущий список:
+    // каждая следующая задача видит предыдущие (математика та же, что в computeSmartOrder).
+    const sim = getTodoMainQueue().map(n => ({ order: (typeof n.todoOrder === 'number' ? n.todoOrder : 0), score: smartScore(n) }));
+    const simInsert = (score) => {
+      const idx = sim.findIndex(q => q.score < score);
+      let order;
+      if (idx === -1) {
+        order = sim.length ? Math.max(...sim.map(q => q.order)) + 1 : Date.now() - 1;
+      } else {
+        const prev = idx > 0 ? sim[idx - 1].order : sim[idx].order - 2;
+        const next = sim[idx].order;
+        order = Math.abs(next - prev) < 1e-6 ? sim[idx].order - 1 : (prev + next) / 2;
+      }
+      sim.splice(idx === -1 ? sim.length : idx, 0, { order, score });
+      return order;
+    };
+    // v119: ремап parentId — id матери из файла не существует в этом аккаунте, после
+    // вставки всех записей связываем детей с НОВЫМИ id матерей (id теперь есть в экспорте).
+    const idMap = new Map(); // старый id → { newId }
+    const pendingKids = [];  // кандидаты с parentId — второй проход
     for (let i = 0; i < total; i++) {
       setImportProgress(i + 1, total); // v106: живой прогресс вместо молчащей кнопки
       const n = selected[i];
@@ -14852,13 +15012,28 @@ async function confirmImport() {
       // v108: одна упавшая запись (сеть моргнула) больше не убивает остальные 56 —
       // пишем дальше, в конце честный счёт
       try {
-        await addDoc(notesCol(), buildImportedNotePatch(n, createdAt));
+        let orderHint;
+        if ((n.scheduledDate || n.inTodo === true) && !n.done) {
+          const score = n.scheduledDate ? smartScoreForFields({ scheduledDate: n.scheduledDate }) : smartScoreForFields({});
+          orderHint = simInsert(score);
+        }
+        const patch = buildImportedNotePatch(n, createdAt, orderHint);
+        const ref = await addDoc(notesCol(), patch);
         imported++;
         if (n.scheduledDate) scheduled++;
+        if (n._id) idMap.set(n._id, { newId: ref.id });
+        if (n.parentId) pendingKids.push({ cand: n, newId: ref.id });
       } catch (e) {
         failed++;
         try { console.warn('[hz3 import] запись не сохранилась:', (n.text || '').slice(0, 40), e); } catch (_e) {}
       }
+    }
+    // v119: второй проход — подзадачи привязываются к импортированным матерям.
+    // Мать не нашлась в файле/не выбрана → ребёнок остаётся самостоятельной записью.
+    for (const { cand, newId } of pendingKids) {
+      const m = idMap.get(cand.parentId);
+      if (!m) continue;
+      try { await updateDoc(uDocRef('notes', newId), { parentId: m.newId }); } catch (e) {}
     }
     if (imported > 0) {
       closeImportModal();
@@ -15144,7 +15319,7 @@ window.handleIcsFile = async function(file) {
     // v109: в тосте версия — если юзер пришлёт скрин, сразу видно, на какой он сборке.
     const kb = file.size >= 1024 ? Math.round(file.size / 1024) + ' КБ' : file.size + ' Б';
     const fname = file.name || 'файл';
-    showToast('📖 Читаю «' + fname + '» (' + kb + ') · v118', 2200);
+    showToast('📖 Читаю «' + fname + '» (' + kb + ') · v119', 2200);
     // v107: JSON-бэкап выбрали в календарной модалке — молча переношу в импорт записей
     if (/\.json$/i.test(fname)) { showToast('Это файл записей (JSON) — открываю импорт записей', 2600); await window.handleJsonImportFile(file); return; }
     // v106: ZIP-детект по сигнатуре PK (гугловский экспорт календаря — архив, а не голый .ics)
@@ -15980,6 +16155,12 @@ window.__t = {
   findDuplicateGroups,
   pickDupKeeper,
   todoHiddenSet,
+  // v119: полный импорт + блочное перетаскивание
+  parseImportFile,
+  buildImportedNotePatch,
+  todoBlockDfsOrder,
+  todoBlockMembers,
+  reorderTodo,
   getBaseInstructions,
   detailsFsOpen,
   subsDoneModalOpen,
