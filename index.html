@@ -1704,6 +1704,8 @@ body[data-theme="business"] .cap-mic.recording{box-shadow:0 0 10px rgba(140,176,
           <button onclick="exportNotes()" style="flex:1;display:inline-flex;align-items:center;justify-content:center;gap:5px;background:rgba(108,71,255,0.1);border:0.5px solid rgba(108,71,255,0.4);border-radius:10px;padding:8px 6px;color:rgba(139,92,246,0.9);font-size:11.5px;font-weight:500;cursor:pointer;font-family:'Inter',sans-serif;white-space:nowrap;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>Экспорт</button>
         </div>
         <button onclick="migrateFindLinks()" style="width:100%;margin-top:8px;display:inline-flex;align-items:center;justify-content:center;gap:6px;background:rgba(255,180,0,0.08);border:0.5px solid rgba(255,180,0,0.3);border-radius:10px;padding:8px;color:rgba(255,200,50,0.9);font-size:11.5px;font-weight:500;cursor:pointer;font-family:'Inter',sans-serif;white-space:nowrap;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></svg>Найти связи между записями</button>
+        <!-- v118: уборка дублей — после импортов одного и того же бэкапа в разных аккаунтах -->
+        <button onclick="openDedupModal()" style="width:100%;margin-top:7px;display:inline-flex;align-items:center;justify-content:center;gap:6px;background:rgba(255,120,80,0.07);border:0.5px solid rgba(255,120,80,0.3);border-radius:10px;padding:8px;color:rgba(255,160,120,0.9);font-size:11.5px;font-weight:500;cursor:pointer;font-family:'Inter',sans-serif;white-space:nowrap;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>Убрать дубли записей</button>
       </div>
     </div>
     <input type="file" id="import-file-input" accept=".json,.txt,.csv,.ics,.ical,.zip,application/zip,application/octet-stream" style="display:none;">
@@ -1934,7 +1936,8 @@ service cloud.firestore {
         <textarea class="modal-textarea" id="modal-text"></textarea>
         <button class="modal-copy-btn" title="Скопировать текст" onclick="modalCopyText();event.stopPropagation();"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
       </div>
-      <textarea class="modal-textarea" id="modal-details" placeholder="📝 Детали — списки, цифры, расшифровка, продолжение мысли" style="min-height:70px;font-size:12.5px;margin-top:6px;"></textarea>
+      <!-- v118: тап по полю открывает полноэкранный редактор деталей (#details-fs), само поле растёт по содержимому -->
+      <textarea class="modal-textarea" id="modal-details" placeholder="📝 Детали — списки, цифры, расшифровка, продолжение мысли" title="Нажми — откроется на весь экран" readonly style="min-height:70px;font-size:12.5px;margin-top:6px;cursor:pointer;"></textarea>
       <div id="modal-schedule-row" style="display:flex;gap:6px;margin:10px 0 6px;align-items:flex-end;">
         <div style="flex:1.4;">
           <div style="font-size:9.5px;color:rgba(255,255,255,0.45);margin-bottom:4px;text-transform:uppercase;letter-spacing:1px;font-family:Inter,sans-serif;">📅 Срок (в календарь)</div>
@@ -1991,6 +1994,47 @@ service cloud.firestore {
         <button class="modal-cancel" onclick="closeSplitModal()" style="flex-shrink:0;">Отмена</button>
         <button onclick="splitAddAsOne()" style="flex-shrink:0;background:rgba(255,255,255,0.04);border:0.5px solid rgba(255,255,255,0.15);border-radius:10px;padding:10px 12px;color:rgba(255,255,255,0.7);font-size:12px;cursor:pointer;font-family:Inter,sans-serif;">Одним списком</button>
         <button class="modal-save" id="split-add" onclick="confirmSplitAdd()" style="flex:1;">Добавить</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- v118: полноэкранный редактор деталей заметки — как «Заметки» на телефоне.
+       НЕ .modal-overlay: это продолжение модалки записи (#modal остаётся открытым под ним),
+       отдельная запись истории не пушится — «назад» закрывает его вместе с модалкой (closeOpenModals) -->
+  <div id="details-fs" style="display:none;position:fixed;inset:0;z-index:60;background:#0F1228;flex-direction:column;">
+    <div style="display:flex;align-items:center;gap:10px;padding:14px 16px 8px;flex-shrink:0;border-bottom:0.5px solid rgba(255,255,255,0.08);">
+      <div style="flex:1;font-size:15px;font-weight:600;color:rgba(255,255,255,0.9);font-family:Inter,sans-serif;">📝 Детали записи</div>
+      <button onclick="closeDetailsFs(false)" title="Закрыть без сохранения" style="background:rgba(255,255,255,0.05);border:0.5px solid rgba(255,255,255,0.14);border-radius:99px;width:32px;height:32px;color:rgba(255,255,255,0.65);font-size:14px;cursor:pointer;font-family:Inter,sans-serif;line-height:1;">✕</button>
+    </div>
+    <textarea id="details-fs-text" placeholder="Пиши сюда — списки, цифры, расшифровка, продолжение мысли…" style="flex:1;width:100%;background:transparent;border:none;outline:none;resize:none;color:rgba(255,255,255,0.88);font-size:15px;line-height:1.7;padding:16px;font-family:'Inter',sans-serif;-webkit-overflow-scrolling:touch;"></textarea>
+    <div style="display:flex;gap:8px;padding:12px 16px calc(14px + env(safe-area-inset-bottom));flex-shrink:0;border-top:0.5px solid rgba(255,255,255,0.08);">
+      <button class="modal-cancel" onclick="closeDetailsFs(false)" style="flex:1;padding:12px;">Отмена</button>
+      <button class="modal-save" onclick="closeDetailsFs(true)" style="flex:1;padding:12px;">Сохранить</button>
+    </div>
+  </div>
+
+  <!-- v118: уборка дублей записей — превью групп перед удалением -->
+  <div class="modal-overlay" id="dedup-modal">
+    <div class="modal" style="max-width:460px;max-height:84vh;display:flex;flex-direction:column;">
+      <div class="modal-title">🧹 Дубли записей</div>
+      <div id="dedup-sub" style="font-size:12px;color:rgba(255,255,255,0.6);line-height:1.5;margin-bottom:10px;font-family:Inter,sans-serif;">Одинаковые тексты (без учёта регистра, «ё» и знаков) считаются дублями. Из каждой группы остаётся самая ранняя копия.</div>
+      <div id="dedup-body" style="flex:1;overflow-y:auto;padding:4px 6px;background:rgba(255,255,255,0.02);border-radius:8px;"></div>
+      <div class="modal-btns" style="margin-top:12px;">
+        <button class="modal-cancel" onclick="closeDedupModal()">Оставить как есть</button>
+        <button class="modal-save" id="dedup-go" onclick="confirmDedupCleanup()" style="background:rgba(255,90,90,0.16);border-color:rgba(255,90,90,0.4);color:rgba(255,130,130,0.95);">Удалить</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- v118: все подзадачи выполнены — что делать с материнской задачей -->
+  <div class="modal-overlay" id="subs-done-modal">
+    <div class="modal" style="max-width:400px;">
+      <div class="modal-title">🎉 Все подзадачи выполнены</div>
+      <div id="subs-done-text" style="font-size:12.5px;color:rgba(255,255,255,0.7);line-height:1.55;margin-bottom:14px;font-family:Inter,sans-serif;"></div>
+      <div style="display:flex;flex-direction:column;gap:8px;">
+        <button class="modal-save" style="width:100%;" onclick="subsDoneFinish()">✅ Считать задачу выполненной</button>
+        <button onclick="subsDoneAddMore()" style="width:100%;background:rgba(108,71,255,0.1);border:0.5px solid rgba(108,71,255,0.4);border-radius:12px;padding:10px;color:rgba(159,132,255,0.95);font-size:13px;font-weight:500;cursor:pointer;font-family:Inter,sans-serif;">➕ Добавить ещё подзадачи</button>
+        <button class="modal-cancel" style="width:100%;" onclick="closeSubsDoneModal()">📋 Оставить в тудушке как есть</button>
       </div>
     </div>
   </div>
@@ -3447,6 +3491,199 @@ function splitAddAsOne() {
   closeSplitModal();
   saveNote(st.text, st.type, { skipSplit: true });
 }
+
+// ═══════════ v118: ПОЛНОЭКРАННЫЙ РЕДАКТОР ДЕТАЛЕЙ ═══════════
+// Фидбек: «поле комментария должно расширяться… нажимаем на него — открывается в полный экран,
+// это типа как на телефоне в заметках. Прокручивается, если текст большой, внизу — сохранить и отмена».
+// #details-fs — НЕ .modal-overlay: это продолжение модалки записи (#modal остаётся открытым
+// под ним), поэтому отдельную запись истории не пушим; физическая «назад» закрывает его
+// вместе с модалкой через closeOpenModals() (см. initNavHistory).
+let detailsFsOrig = ''; // значение поля на момент открытия — для «Отмены»
+
+function detailsFsOpen() {
+  const fs = document.getElementById('details-fs');
+  return !!fs && fs.style.display !== 'none' && !!fs.style.display;
+}
+
+function openDetailsFs() {
+  const fs = document.getElementById('details-fs');
+  const ta = document.getElementById('modal-details');
+  const fta = document.getElementById('details-fs-text');
+  if (!fs || !ta || !fta || detailsFsOpen()) return; // идемпотентно: focus+click стреляют вместе
+  detailsFsOrig = ta.value;
+  fta.value = ta.value;
+  fs.style.display = 'flex';
+  // курсор в конец текста, клавиатура сразу — как в «Заметках»
+  requestAnimationFrame(() => {
+    try { fta.focus(); fta.setSelectionRange(fta.value.length, fta.value.length); } catch (e) {}
+  });
+}
+
+function closeDetailsFs(save) {
+  const fs = document.getElementById('details-fs');
+  const fta = document.getElementById('details-fs-text');
+  const ta = document.getElementById('modal-details');
+  if (!fs || !fta || !detailsFsOpen()) return;
+  if (save && ta) {
+    ta.value = fta.value; // применяем к полю модалки — запись сохранит юзер кнопкой «Сохранить» модалки
+    growModalDetails();
+  }
+  fs.style.display = 'none';
+  if (!save) { /* отмена — просто возвращаемся в модалку с прежним текстом */ }
+  detailsFsOrig = '';
+}
+window.openDetailsFs = openDetailsFs;
+window.closeDetailsFs = closeDetailsFs;
+
+// авто-рост компактного поля по содержимому (тап всегда открывает полный экран,
+// но в модалке после сохранения длинного текста поле должно показать суть)
+function growModalDetails() {
+  const ta = document.getElementById('modal-details');
+  if (!ta) return;
+  ta.style.height = 'auto';
+  ta.style.height = Math.min(ta.scrollHeight + 2, 220) + 'px';
+}
+
+(function initDetailsFs() {
+  const ta = document.getElementById('modal-details');
+  const fta = document.getElementById('details-fs-text');
+  if (!ta) return;
+  ta.addEventListener('click', openDetailsFs);
+  ta.addEventListener('focus', openDetailsFs); // на телефоне тап = фокус → сразу полный экран
+  ta.addEventListener('input', growModalDetails); // страховка (поле readonly, но пусть живёт)
+  if (fta) fta.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeDetailsFs(false); }); // десктоп-удобство
+})();
+
+// ═══════════ v118: ДУБЛИ ЗАПИСЕЙ ═══════════
+// Фидбек: «при импорте не видит дубли — экспорт, дополнил в другом аккаунте, снова импорт —
+// и всё задублировалось. Добавь кнопку убрать дубли и при импорте проверяй всегда».
+// Ключ = нормализованный текст: без регистра, «ё→е», знаков и лишних пробелов.
+function dupKeyOf(s) {
+  return String(s || '')
+    .toLowerCase()
+    .replace(/ё/g, 'е')
+    .replace(/[^a-zа-я0-9\s]/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+// группы дублей: [ [копии одного текста], ... ] — только группы из 2+
+function findDuplicateGroups() {
+  const groups = new Map();
+  for (const n of notes) {
+    const k = dupKeyOf(n.text);
+    if (!k) continue;
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(n);
+  }
+  return [...groups.values()].filter(g => g.length > 1);
+}
+
+// кого оставляем: самую раннюю копию; при равном createdAt (типично после импорта)
+// — неотмеченную выполненной; финальный тай-брейк по id — стабильно между прогонами
+function pickDupKeeper(group) {
+  return [...group].sort((a, b) => {
+    const da = a.done === true, db = b.done === true;
+    if (da !== db) return da ? 1 : -1;
+    const ca = a.createdAt || '', cb = b.createdAt || '';
+    if (ca !== cb) return ca < cb ? -1 : 1;
+    return String(a.id || '').localeCompare(String(b.id || ''));
+  })[0];
+}
+
+function openDedupModal() {
+  const ov = document.getElementById('dedup-modal');
+  if (!ov) return;
+  const groups = findDuplicateGroups();
+  const body = document.getElementById('dedup-body');
+  const go = document.getElementById('dedup-go');
+  const fmtDate = iso => { try { return new Date(iso).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' }); } catch (e) { return ''; } };
+  if (!groups.length) {
+    body.innerHTML = '<div style="padding:16px 10px;font-size:12.5px;color:rgba(255,255,255,0.65);line-height:1.55;text-align:center;">Дублей нет — все записи уникальны. ✨</div>';
+    if (go) { go.style.display = 'none'; }
+  } else {
+    const total = groups.reduce((s, g) => s + g.length - 1, 0);
+    body.innerHTML = groups.map(g => {
+      const keeper = pickDupKeeper(g);
+      const rest = g.filter(n => n.id !== keeper.id);
+      const short = (keeper.text || '').length > 70 ? keeper.text.slice(0, 70) + '…' : (keeper.text || '');
+      const bits = rest.map(n => {
+        const marks = [];
+        if (n.done === true) marks.push('выполнена');
+        if (n.inTodo === true) marks.push('тудушка');
+        if (n.scheduledDate) marks.push('📅 ' + fmtDate(n.scheduledDate));
+        return marks.length ? marks.join(', ') : fmtDate(n.createdAt) || 'копия';
+      });
+      return `<div style="padding:9px 10px;border-radius:9px;border:0.5px solid rgba(255,120,80,0.25);background:rgba(255,120,80,0.05);margin-bottom:6px;">
+        <div style="font-size:12.5px;color:rgba(255,255,255,0.85);line-height:1.45;word-break:break-word;">${escHtml(short)}</div>
+        <div style="font-size:10.5px;color:rgba(255,160,120,0.85);margin-top:4px;line-height:1.5;">Оставляю: ${keeper.done === true ? 'выполненная' : 'активная'}${keeper.createdAt ? ' · ' + fmtDate(keeper.createdAt) : ''} · удалю: ${rest.length} (${bits.join(' | ')})</div>
+      </div>`;
+    }).join('');
+    if (go) { go.style.display = ''; go.textContent = 'Удалить ' + total; }
+  }
+  ov.classList.add('open'); // nav-машина: открытие = push, «назад» закроет
+}
+window.openDedupModal = openDedupModal;
+
+function closeDedupModal() {
+  const ov = document.getElementById('dedup-modal');
+  if (ov && ov.classList.contains('open')) ov.classList.remove('open'); // observer → history.back()
+}
+window.closeDedupModal = closeDedupModal;
+
+// само удаление: у каждой жертвы дети переезжают под хранителя (структура сохраняется),
+// хранитель забирает недостающие детали/тег/срок, потом запись удаляется
+async function confirmDedupCleanup() {
+  const groups = findDuplicateGroups();
+  const jobs = [];
+  for (const g of groups) {
+    const keeper = pickDupKeeper(g);
+    for (const n of g) if (n.id !== keeper.id) jobs.push({ victim: n, keeper });
+  }
+  if (!jobs.length) { closeDedupModal(); return; }
+  const btn = document.getElementById('dedup-go');
+  const sub = document.getElementById('dedup-sub');
+  if (btn) { btn.disabled = true; btn.textContent = 'Удаляю…'; }
+  if (sub) sub.textContent = 'Убираю дубли, это пара секунд…';
+  window.__importBusy = true; // SW не перезагружает страницу посреди удаления
+  let removed = 0, failed = 0;
+  try {
+    for (let i = 0; i < jobs.length; i++) {
+      const { victim, keeper } = jobs[i];
+      if (btn) btn.textContent = 'Удаляю ' + (i + 1) + ' из ' + jobs.length + '…';
+      try {
+        const kids = notes.filter(n => n.parentId === victim.id);
+        for (const k of kids) {
+          try { await updateDoc(uDocRef('notes', k.id), { parentId: keeper.id }); } catch (e) {}
+        }
+        const patch = {};
+        if (!keeper.details && victim.details) patch.details = victim.details;
+        if (!keeper.tag && victim.tag) patch.tag = victim.tag;
+        if (!keeper.scheduledDate && victim.scheduledDate && keeper.done !== true) {
+          patch.scheduledDate = victim.scheduledDate;
+          if (victim.scheduledTime) patch.scheduledTime = victim.scheduledTime;
+        }
+        if (Object.keys(patch).length) { try { await updateDoc(uDocRef('notes', keeper.id), patch); } catch (e) {} }
+        await deleteDoc(uDocRef('notes', victim.id));
+        removed++;
+      } catch (e) {
+        failed++;
+        try { console.warn('[hz3 dedup] дубль не удалился:', (victim.text || '').slice(0, 40), e); } catch (_e) {}
+      }
+    }
+    await loadNotes();
+    renderCalendar();
+    closeDedupModal();
+    showToast('🧹 Убрал дубли: ' + removed + (failed ? ' · не получилось: ' + failed + ' (попробуй ещё раз)' : ''), 3800);
+  } catch (e) {
+    showToast('Ошибка уборки дублей: ' + e.message, 3200);
+  } finally {
+    window.__importBusy = false;
+    if (btn) { btn.disabled = false; btn.textContent = 'Удалить'; }
+    if (sub) sub.textContent = 'Одинаковые тексты (без учёта регистра, «ё» и знаков) считаются дублями. Из каждой группы остаётся самая ранняя копия.';
+  }
+}
+window.confirmDedupCleanup = confirmDedupCleanup;
 window.confirmSplitAdd = confirmSplitAdd;
 window.splitAddAsOne = splitAddAsOne;
 window.closeSplitModal = closeSplitModal;
@@ -4561,7 +4798,7 @@ function openEdit(id) {
   if (!n) return;
   document.getElementById('modal-text').value = n.text;
   const detInp = document.getElementById('modal-details');
-  if (detInp) detInp.value = n.details || ''; // v76: расширенное тело заметки (списки, детали)
+  if (detInp) { detInp.value = n.details || ''; if (typeof growModalDetails === 'function') growModalDetails(); } // v76: расширенное тело заметки (списки, детали); v118: авто-рост поля
   editingSelectedTag = n.tag || null;
   renderModalTagPicker();
   // срок — универсальное редактирование из любого раздела (история/тудушка/календарь/фокус)
@@ -4999,7 +5236,12 @@ async function toggleDone(id, currentDone) {
       const p = notes.find(x => x.id === subNote.parentId);
       if (p) {
         const pr = subProgressOf(p.id);
-        if (willBeDone && pr.total && pr.done === pr.total) showToast(`🎉 Все ${pr.total} подзадач в «${p.text.length > 26 ? p.text.slice(0, 26) + '…' : p.text}» выполнены`, 3200);
+        if (willBeDone && pr.total && pr.done === pr.total) {
+          // v118: закрыли ПОСЛЕДНЮЮ подзадачу — спрашиваем, что делать с материнской задачей:
+          // считать выполненной / добавить ещё подзадачи / оставить висеть как обычная задача
+          const opened = maybeOpenSubsDoneModal(p.id);
+          if (!opened) showToast(`🎉 Все ${pr.total} подзадач в «${p.text.length > 26 ? p.text.slice(0, 26) + '…' : p.text}» выполнены`, 3200);
+        }
         else showToast(willBeDone ? `↳ Подзадача отмечена в «${p.text.length > 26 ? p.text.slice(0, 26) + '…' : p.text}» (${pr.done}/${pr.total})` : `↳ Подзадача вернулась в работу (${pr.done}/${pr.total})`, 2800);
       }
     }
@@ -5032,6 +5274,65 @@ async function toggleDone(id, currentDone) {
   } catch(e) { alert('Ошибка: ' + e.message); }
 }
 window.toggleDone = toggleDone;
+
+// ── v118: все подзадачи закрыты — вопрос про материнскую задачу ──
+// «когда все подзадачи выполнены из главной задачи, уточнить: можно ли считать задачу
+// выполненной, или добавить ещё подзадачи, или просто оставить в тудушке как она и висела»
+let subsDoneParentId = null;
+
+function subsDoneModalOpen() {
+  const ov = document.getElementById('subs-done-modal');
+  return !!ov && ov.classList.contains('open');
+}
+
+function maybeOpenSubsDoneModal(parentId) {
+  const ov = document.getElementById('subs-done-modal');
+  if (!ov) return false;
+  const p = notes.find(n => n.id === parentId);
+  if (!p || p.done || !p.inTodo) return false; // матери нет/закрыта/вне тудушки — вопрос не нужен
+  subsDoneParentId = parentId;
+  const short = p.text.length > 70 ? p.text.slice(0, 70) + '…' : p.text;
+  const txt = document.getElementById('subs-done-text');
+  if (txt) txt.textContent = 'Все подзадачи в «' + short + '» закрыты. Что делаем с самой задачей?';
+  // если открыт редактор/другая модалка — атомарно меняем её на вопрос (стек истории остаётся честным)
+  const openEl = document.querySelector('.modal-overlay.open');
+  if (window.__hzSwapModal) window.__hzSwapModal(openEl && openEl !== ov ? openEl : null, ov);
+  else ov.classList.add('open');
+  return true;
+}
+
+function closeSubsDoneModal() {
+  const ov = document.getElementById('subs-done-modal');
+  if (ov && ov.classList.contains('open')) ov.classList.remove('open'); // observer → history.back()
+  subsDoneParentId = null;
+}
+
+// «Считать выполненной» — маму тоже закрываем (для цепочек каскадом всплывёт вопрос про бабушку)
+async function subsDoneFinish() {
+  const pid = subsDoneParentId;
+  closeSubsDoneModal();
+  if (pid) { try { await toggleDone(pid, false); } catch (e) {} }
+}
+
+// «Добавить ещё подзадачи» — открываем редактор матери: там секция подзадач и строка добавления.
+// ВАЖНО: редактор открывается АТОМАРНОЙ ЗАМЕНОЙ вопроса (как v109 cal-files → импорт):
+// обычное «закрыл вопрос → открыл редактор» рождало гонку — history.back() от закрытия
+// прилетал ПОСЛЕ открытия редактора, и popstate-closeOpenModals убивал только что открытый редактор.
+function subsDoneAddMore() {
+  const pid = subsDoneParentId;
+  const ov = document.getElementById('subs-done-modal');
+  subsDoneParentId = null;
+  const m = document.getElementById('modal');
+  if (ov && ov.classList.contains('open') && m && window.__hzSwapModal) {
+    window.__hzSwapModal(ov, m); // вопрос → редактор: одна запись истории, observer заглушён
+  } else if (ov && ov.classList.contains('open')) {
+    ov.classList.remove('open'); // старые браузеры без __hzSwapModal — прежний путь
+  }
+  if (pid) openEdit(pid); // модалка уже показана — classList.add('open') станет no-op
+}
+window.subsDoneFinish = subsDoneFinish;
+window.subsDoneAddMore = subsDoneAddMore;
+window.closeSubsDoneModal = closeSubsDoneModal;
 
 function celebrateTaskDone() {
   const phone = document.getElementById('phone');
@@ -9908,6 +10209,38 @@ function subProgressOf(id) {
   const kids = childrenOf(id);
   return { total: kids.length, done: kids.filter(k => k.done === true).length };
 }
+
+// ── v118: СХЛОПЫВАНИЕ ЦЕПОЧЕК ПОДЗАДАЧ В ТУДУШКЕ ──
+// Фидбек: «если задачу разбиваем на более мелкие — не надо показывать материнскую в тудушке,
+// нужно показывать первый шаг — первую задачу из подзадач, типа как с желаниями. Не надо всё
+// показывать и не надо главную задачу». Мать с незакрытыми подзадачами скрыта, из детей виден
+// ТОЛЬКО первый незакрытый (по порядку) — когда его закрыли, виден следующий. Когда закрыты все —
+// мать снова видна как обычная задача (и открывается вопрос «что делать дальше», см. toggleDone).
+function todoLiveKid(n) { return n && n.inTodo === true && !n.done; }
+function todoHiddenSet() {
+  const hidden = new Set();
+  // 1) спускаемся от каждой живой задачи по цепочке детей: все узлы с незакрытыми детьми скрыты,
+  //    виден только самый глубокий «первый шаг» (лист без открытых детей)
+  for (const n of notes) {
+    if (!todoLiveKid(n)) continue;
+    let cur = n, guard = 0;
+    while (guard++ < 10) {
+      const kids = childrenOf(cur.id).filter(todoLiveKid);
+      if (!kids.length) break;
+      hidden.add(cur.id); // у cur есть незакрытые дети — сама карточка не нужна
+      cur = kids[0];
+    }
+  }
+  // 2) не-первые незакрытые дети живой матери тоже скрыты (виден только первый шаг)
+  for (const n of notes) {
+    if (!todoLiveKid(n) || !n.parentId) continue;
+    const p = notes.find(x => x.id === n.parentId);
+    if (!p || !p.inTodo || p.done) continue; // мать удалена/закрыта — дети самостоятельные
+    const kids = childrenOf(p.id).filter(todoLiveKid);
+    if (kids.length && kids[0].id !== n.id) hidden.add(n.id);
+  }
+  return hidden;
+}
 // бейджи для карточек (тудушка/история): у матери — прогресс, у ребёнка — ссылка на мать
 function subtaskBadgesHtml(n) {
   const parts = [];
@@ -9920,6 +10253,15 @@ function subtaskBadgesHtml(n) {
   if (n.parentId) {
     const p = notes.find(x => x.id === n.parentId);
     if (p) {
+      // v118: у видимого «первого шага» — ещё и прогресс всей цепочки (☑ d/t),
+      // чтобы было понятно, сколько всего шагов и сколько уже закрыто
+      if (p.inTodo === true && !p.done) {
+        const pr = subProgressOf(p.id);
+        if (pr.total) {
+          const all = pr.done === pr.total;
+          parts.push(`<span class="sub-progress${all ? ' all-done' : ''}" title="Шагов всего: ${pr.total}, закрыто: ${pr.done}">☑ ${pr.done}/${pr.total}</span>`);
+        }
+      }
       const short = p.text.length > 34 ? p.text.slice(0, 34) + '…' : p.text;
       parts.push(`<span class="sub-badge" title="Подзадача задачи «${escHtml(short)}» — нажми, чтобы открыть" onclick="openEdit('${p.id}');event.stopPropagation();">↳ ${escHtml(short)}</span>`);
     }
@@ -9932,7 +10274,8 @@ function renderFocusCard() {
   if (!el) return;
   let html = '';
 
-  const queue = getTodoMainQueue(); // v87: фокус — только «сегодняшний» тир, задачи на потом не звонят в фокусе
+  const _hSet118 = todoHiddenSet(); // v118: матери с подзадачами скрыты — фокус показывает первый шаг
+  const queue = getTodoMainQueue().filter(n => !_hSet118.has(n.id)); // v87: фокус — только «сегодняшний» тир, задачи на потом не звонят в фокусе
   queue.sort((a, b) => (b.urgent === true) - (a.urgent === true)); // v89 Н6: срочное — в фокусе первым
   if (queue.length) {
     const top = queue[0];
@@ -10860,6 +11203,13 @@ function renderTodo() {
   if (activeTodoTag) {
     const f = n => (n.tag || '') === activeTodoTag;
     urgent = urgent.filter(f); main = main.filter(f); tomorrow = tomorrow.filter(f); future = future.filter(f);
+  }
+  // v118: цепочки подзадач схлопываются — мать скрыта, виден только первый шаг;
+  // фильтр ДО счётчиков, чтобы «N в очереди» совпадало с реально видимыми карточками
+  const _hSet118 = todoHiddenSet();
+  if (_hSet118.size) {
+    const vis = arr => arr.filter(n => !_hSet118.has(n.id));
+    urgent = vis(urgent); main = vis(main); tomorrow = vis(tomorrow); future = vis(future);
   }
   try {
     const tagsBox = document.getElementById('todo-tags');
@@ -13169,6 +13519,8 @@ function getBaseInstructions() {
 
 О СЕБЕ: если спросят, какая ты модель/на чём основан — отвечай точно: «Claude Haiku 4.5 (Anthropic), подключена через Polza AI». Не угадывай и не называй другие модели (GPT, версии 3.5 и т.п.) — это неверно.
 
+ДЛИНА ОТВЕТОВ: по умолчанию отвечай КОРОТКО — 1–3 предложения по существу, без вступлений («Отличный вопрос!»), без извинений, без пересказа вопроса и без лишних подробностей. Подтверждение добавленной/выполненной задачи — одна короткая строка. Развёрнутый ответ (список, план, пошаговое объяснение) — ТОЛЬКО когда тема реально этого требует: пользователь явно попросил подробно/объяснить/составить план, вопрос сложный или без деталей ответ неполный. Сомневаешься, коротко или длинно, — отвечай коротко.
+
 ЕДИНСТВЕННЫЙ способ совершить действие — вызвать соответствующую функцию (tool call). Обычный текст ничего не сохраняет и не изменяет.
 
 ЗАПРЕЩЕНО:
@@ -14270,16 +14622,36 @@ window.handleJsonImportFile = async function(file) {
     const parsed = parseImportFile(text, file.name);
     if (!parsed.length) { showToast('В файле не найдено записей для импорта', 3200); return; }
 
-    const MAX_IMPORT = 500;
-    // v106: выполненные по умолчанию НЕ выбраны — за них спросит отдельная галочка в превью
-    importCandidates = parsed.slice(0, MAX_IMPORT).map(n => ({ ...n, selected: !n.done }));
-    if (parsed.length > MAX_IMPORT) {
-      showToast('В файле ' + parsed.length + ' записей — импортирую первые ' + MAX_IMPORT, 3200);
+    // v118: ПРОВЕРКА НА ДУБЛИ ВСЕГДА — нормализованный текст уже есть в базе
+    // или повторяется в самом файле. Фидбек: «экспортировал, дополнял в другом аккаунте,
+    // снова импортировал — всё задублировалось».
+    const existKeys = new Set(notes.map(n => dupKeyOf(n.text)).filter(Boolean));
+    const seenInFile = new Set();
+    let dupes = 0;
+    const fresh = [];
+    for (const p of parsed) {
+      const k = dupKeyOf(p.text);
+      if (k && (existKeys.has(k) || seenInFile.has(k))) { dupes++; continue; }
+      if (k) seenInFile.add(k);
+      fresh.push(p);
+    }
+    if (!fresh.length) {
+      showToast('Все ' + dupes + ' записей из файла уже есть — дубли не добавляю', 4200);
+    } else if (dupes > 0) {
+      showToast('✅ Файл прочитан: новых ' + fresh.length + ' · дубликатов пропущено: ' + dupes, 3200);
     }
 
-    window._icsDupes = 0; // v106: сброс — иначе дубликаты от прошлого .ics-импорта утекут в JSON-сводку
+    const MAX_IMPORT = 500;
+    // v106: выполненные по умолчанию НЕ выбраны — за них спросит отдельная галочка в превью
+    importCandidates = fresh.slice(0, MAX_IMPORT).map(n => ({ ...n, selected: !n.done }));
+    if (fresh.length > MAX_IMPORT) {
+      showToast('В файле ' + fresh.length + ' записей — импортирую первые ' + MAX_IMPORT, 3200);
+    }
+
+    window._importKind = 'json'; // v118: пустое состояние превью говорит языком записей, а не календаря
+    window._icsDupes = dupes; // v106: сводка честно показывает, сколько пропущено (был сброс в 0)
     // v109: страховка восстановления превью после перезагрузки страницы
-    try { sessionStorage.setItem('hz3ImportRescue', JSON.stringify({ ts: Date.now(), fname: file.name || 'файл', dupes: 0, candidates: importCandidates })); } catch(e) {}
+    try { sessionStorage.setItem('hz3ImportRescue', JSON.stringify({ ts: Date.now(), fname: file.name || 'файл', dupes: dupes, kind: 'json', candidates: importCandidates })); } catch(e) {}
     renderImportModal();
     document.getElementById('import-modal').classList.add('open');
   } catch(e) {
@@ -14317,11 +14689,15 @@ function renderImportModal() {
   const isCal = importCandidates.length > 0 && importCandidates.every(n => !!n.scheduledDate);
   if (titleEl) titleEl.textContent = isCal ? 'Импорт событий календаря' : 'Импорт записей';
 
-  // v106: пустой результат (.ics-импорт, всё ушло в дубликаты) — честное объяснение вместо пустого списка
+  // v106: пустой результат (всё ушло в дубликаты) — честное объяснение вместо пустого списка.
+  // v118: язык сообщения зависит от источника (_importKind: json записи / cal календарь)
   if (!importCandidates.length && dupes > 0) {
-    if (titleEl) titleEl.textContent = 'Импорт событий календаря';
-    summary.textContent = `Новых событий нет · дубликатов пропущено: ${dupes}`;
-    list.innerHTML = '<div style="padding:14px 10px;font-size:12.5px;color:rgba(255,255,255,0.6);line-height:1.55;text-align:center;">Все события из файла уже есть в календаре — дубликаты не добавляю, чтобы не было двойников.</div>';
+    const isCalKind = (window._importKind || 'cal') === 'cal';
+    if (titleEl) titleEl.textContent = isCalKind ? 'Импорт событий календаря' : 'Импорт записей';
+    summary.textContent = (isCalKind ? 'Новых событий нет' : 'Новых записей нет') + ` · дубликатов пропущено: ${dupes}`;
+    list.innerHTML = isCalKind
+      ? '<div style="padding:14px 10px;font-size:12.5px;color:rgba(255,255,255,0.6);line-height:1.55;text-align:center;">Все события из файла уже есть в календаре — дубликаты не добавляю, чтобы не было двойников.</div>'
+      : '<div style="padding:14px 10px;font-size:12.5px;color:rgba(255,255,255,0.6);line-height:1.55;text-align:center;">Все записи из файла уже есть в базе — дубликаты не добавляю, чтобы не было двойников.</div>';
     updateImportCount();
     return;
   }
@@ -14341,7 +14717,8 @@ function renderImportModal() {
       if (n.tag) tags[n.tag] = (tags[n.tag] || 0) + 1;
     }
     const tagList = Object.keys(tags).length ? Object.entries(tags).map(([t,c]) => `#${t} (${c})`).join(', ') : 'нет тегов';
-    summary.textContent = `Всего: ${importCandidates.length} · Теги: ${tagList}`;
+    // v118: JSON-импорт тоже честно показывает пропущенные дубликаты (cal-путь показывал и раньше)
+    summary.textContent = `Всего: ${importCandidates.length} · Теги: ${tagList}` + (dupes ? ` · дубликатов пропущено: ${dupes}` : '');
   }
 
   // Список с чекбоксами
@@ -14767,7 +15144,7 @@ window.handleIcsFile = async function(file) {
     // v109: в тосте версия — если юзер пришлёт скрин, сразу видно, на какой он сборке.
     const kb = file.size >= 1024 ? Math.round(file.size / 1024) + ' КБ' : file.size + ' Б';
     const fname = file.name || 'файл';
-    showToast('📖 Читаю «' + fname + '» (' + kb + ') · v117', 2200);
+    showToast('📖 Читаю «' + fname + '» (' + kb + ') · v118', 2200);
     // v107: JSON-бэкап выбрали в календарной модалке — молча переношу в импорт записей
     if (/\.json$/i.test(fname)) { showToast('Это файл записей (JSON) — открываю импорт записей', 2600); await window.handleJsonImportFile(file); return; }
     // v106: ZIP-детект по сигнатуре PK (гугловский экспорт календаря — архив, а не голый .ics)
@@ -14821,9 +15198,10 @@ window.handleIcsFile = async function(file) {
     const MAX_IMPORT = 500;
     if (cand.length > MAX_IMPORT) { cand.length = MAX_IMPORT; showToast('Событий больше ' + MAX_IMPORT + ' — беру первые ' + MAX_IMPORT, 3200); }
     importCandidates = cand;
+    window._importKind = 'cal'; // v118: пустое состояние говорит языком календаря
     window._icsDupes = dupes;
     // v109: страховка от любых будущих убийц страницы — превью можно восстановить после перезагрузки
-    try { sessionStorage.setItem('hz3ImportRescue', JSON.stringify({ ts: Date.now(), fname: fname, dupes: dupes, candidates: cand })); } catch(e) {}
+    try { sessionStorage.setItem('hz3ImportRescue', JSON.stringify({ ts: Date.now(), fname: fname, dupes: dupes, kind: 'cal', candidates: cand })); } catch(e) {}
     renderImportModal();
     // v109: главное — УВЕДОМЛЕНИЕ о прочтении (его ждал юзер) + атомарная замена модалки
     // (см. __hzSwapModal: открытие+закрытие по отдельности убивалось popstate-ом)
@@ -14907,6 +15285,7 @@ window.setImportCandidates = arr => { importCandidates = arr || []; }; // тес
       }
       importCandidates = r.candidates.map(n => Object.assign({}, n));
       window._icsDupes = r.dupes || 0;
+      window._importKind = r.kind || 'cal'; // v118: язык пустого состояния после восстановления
       renderImportModal();
       document.getElementById('import-modal').classList.add('open');
       showToast('Восстановил прерванный импорт «' + (r.fname || 'файл') + '» — проверь и жми «Импортировать»', 5000);
@@ -15596,6 +15975,14 @@ window.__t = {
   normalizeSplitParts,
   aiSplitParts,
   splitModalOpen: () => !!document.getElementById('split-modal') && document.getElementById('split-modal').classList.contains('open'),
+  // v118: дубли, схлопывание подзадач, полноэкранные детали, краткость ИИ
+  dupKeyOf,
+  findDuplicateGroups,
+  pickDupKeeper,
+  todoHiddenSet,
+  getBaseInstructions,
+  detailsFsOpen,
+  subsDoneModalOpen,
   calendar: () => ({ offset: calendarMonthOffset, sel: calendarSelectedKey }),
   setCalendarSel: (k) => { calendarSelectedKey = k; },
   addNoteFromChat,
@@ -16058,6 +16445,8 @@ onAuthStateChanged(auth, async (user) => {
   const isModalEl = (el) => el && el.classList && el.classList.contains('modal-overlay');
   const closeOpenModals = () => {
     document.querySelectorAll('.modal-overlay.open').forEach(m => m.classList.remove('open'));
+    const dfs = document.getElementById('details-fs'); // v118: полноэкранные детали — часть модалки записи
+    if (dfs) dfs.style.display = 'none';
     if (typeof editingId === 'string') editingId = null;
   };
 
