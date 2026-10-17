@@ -1378,12 +1378,16 @@ body[data-theme="business"] .cap-mic.recording{box-shadow:0 0 10px rgba(140,176,
         <button onclick="goTo('hist')" style="background:none;border:none;color:rgba(255,255,255,0.4);font-size:22px;cursor:pointer;">←</button>
       </div>
     </div>
-    <div class="hist-filters" style="display:flex;gap:6px;padding:0 16px 10px;align-items:center;">
+    <!-- v114: «Поделиться» больше НЕ в этом ряду — на узком экране ряд переполнялся и кнопка уезжала за правый край -->
+    <div class="hist-filters" style="display:flex;flex-wrap:wrap;gap:6px;row-gap:6px;padding:0 16px 8px;align-items:center;">
       <button class="hist-filter-btn" data-cloudperiod="7" onclick="setCloudPeriod(7)">7 дней</button>
       <button class="hist-filter-btn active" data-cloudperiod="30" onclick="setCloudPeriod(30)">30 дней</button>
       <button class="hist-filter-btn" data-cloudperiod="all" onclick="setCloudPeriod('all')">Всё время</button>
       <button onclick="regenerateWordCloud()" style="margin-left:auto;background:rgba(108,71,255,0.12);border:0.5px solid rgba(139,92,246,0.4);border-radius:99px;padding:5px 12px;color:rgba(139,92,246,0.95);font-size:12px;cursor:pointer;font-family:'Inter',sans-serif;">🔄 Обновить</button>
-      <button onclick="shareCloud()" style="background:rgba(6,214,160,0.12);border:0.5px solid rgba(6,214,160,0.45);border-radius:99px;padding:5px 12px;color:rgba(6,214,160,0.95);font-size:12px;cursor:pointer;font-family:'Inter',sans-serif;">📤 Поделиться</button>
+    </div>
+    <!-- v114: «📤 Поделиться» — отдельная строка на всю ширину: видна на любом экране (телефон/планшет) -->
+    <div style="padding:0 16px 6px;">
+      <button onclick="shareCloud()" style="width:100%;display:flex;align-items:center;justify-content:center;gap:7px;background:rgba(6,214,160,0.13);border:0.5px solid rgba(6,214,160,0.5);border-radius:12px;padding:9px 12px;color:rgba(6,214,160,0.97);font-size:13px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif;">📤 Поделиться — в Телегу, Ватсап, Max, VK</button>
     </div>
     <div id="cloud-generated-at" style="text-align:center;font-size:10.5px;color:rgba(255,255,255,0.3);padding-bottom:4px;"></div>
     <div id="cloud-hint" style="padding:0 16px 4px;"></div>
@@ -9530,7 +9534,7 @@ function showOrdinaryHints(screen) {
       ['first_wish', 'Тапни на карточку желания — откроются детали: mood-image, milestones, AI-наставники.', 'wishes-hint', () => wishes.length >= 1 && hintsShown.has('wishes_intro')]
     ]);
   } else if (screen === 'cloud') {
-    showHintOnce('cloud_intro', '☁️ Облако показывает твои теги (с решёткой и подчёркиванием) и частые слова. Чем больше записей с тегом — тем он крупнее.', 'cloud-hint', () => notes.length >= 10);
+    showHintOnce('cloud_intro', '☁️ Облако показывает твои области жизни (теги) и частые слова — без решёток и слов-шума. Чем больше записей с областью — тем она крупнее.', 'cloud-hint', () => notes.length >= 10);
   } else if (screen === 'graph') {
     showHintOnce('graph_intro', '🌌 Тапни по узлу-сфере — увидишь записи внутри. Линии — связи между записями и желаниями.', 'graph-hint', () => true);
   } else if (screen === 'prompt') {
@@ -14583,7 +14587,7 @@ window.handleIcsFile = async function(file) {
     // v109: в тосте версия — если юзер пришлёт скрин, сразу видно, на какой он сборке.
     const kb = file.size >= 1024 ? Math.round(file.size / 1024) + ' КБ' : file.size + ' Б';
     const fname = file.name || 'файл';
-    showToast('📖 Читаю «' + fname + '» (' + kb + ') · v113', 2200);
+    showToast('📖 Читаю «' + fname + '» (' + kb + ') · v114', 2200);
     // v107: JSON-бэкап выбрали в календарной модалке — молча переношу в импорт записей
     if (/\.json$/i.test(fname)) { showToast('Это файл записей (JSON) — открываю импорт записей', 2600); await window.handleJsonImportFile(file); return; }
     // v106: ZIP-детект по сигнатуре PK (гугловский экспорт календаря — архив, а не голый .ics)
