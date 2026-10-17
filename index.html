@@ -1233,6 +1233,7 @@ body[data-theme="business"] .cap-mic.recording{box-shadow:0 0 10px rgba(140,176,
       <div id="auth-error" style="color:rgba(255,90,90,0.9);font-size:12.5px;min-height:16px;text-align:center;"></div>
       <button id="auth-submit-btn" style="background:linear-gradient(135deg,#6C47FF,#8B5CF6);border:none;border-radius:12px;padding:13px;color:#fff;font-size:14.5px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif;margin-top:4px;">Войти</button>
       <button id="auth-toggle-btn" style="background:none;border:none;color:rgba(255,255,255,0.4);font-size:13px;cursor:pointer;font-family:'Inter',sans-serif;padding:8px;">Нет аккаунта? Зарегистрироваться</button>
+      <button id="auth-back-btn" onclick="authBack()" style="display:none;background:none;border:none;color:rgba(255,255,255,0.35);font-size:12.5px;cursor:pointer;font-family:'Inter',sans-serif;padding:8px;margin-top:2px;">← Вернуться в приложение</button>
     </div>
   </div>
 
@@ -1671,7 +1672,15 @@ body[data-theme="business"] .cap-mic.recording{box-shadow:0 0 10px rgba(140,176,
       </div>
     </div>
     <div style="padding:12px 16px 0;">
-      <button onclick="goTo('tags')" style="width:100%;display:inline-flex;align-items:center;justify-content:center;gap:7px;background:rgba(255,255,255,0.04);border:0.5px solid rgba(255,255,255,0.1);border-radius:12px;padding:9px;color:rgba(255,255,255,0.7);font-size:12.5px;font-weight:500;cursor:pointer;font-family:'Inter',sans-serif;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12.6 2.9a2 2 0 0 0-1.4-.6H4a2 2 0 0 0-2 2v7.2a2 2 0 0 0 .6 1.4l7.6 7.6a2 2 0 0 0 2.8 0l6.4-6.4a2 2 0 0 0 0-2.8z"/><circle cx="7.5" cy="7.5" r="1.3"/></svg>Управление тегами</button>
+      <button onclick="goTo('tags')" style="width:100%;background:rgba(255,255,255,0.04);border:0.5px solid rgba(255,255,255,0.1);border-radius:12px;padding:10px 12px;color:rgba(255,255,255,0.75);cursor:pointer;font-family:'Inter',sans-serif;display:flex;align-items:center;gap:9px;text-align:left;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><path d="M12.6 2.9a2 2 0 0 0-1.4-.6H4a2 2 0 0 0-2 2v7.2a2 2 0 0 0 .6 1.4l7.6 7.6a2 2 0 0 0 2.8 0l6.4-6.4a2 2 0 0 0 0-2.8z"/><circle cx="7.5" cy="7.5" r="1.3"/></svg><span style="flex:1;display:flex;flex-direction:column;gap:1px;"><span style="font-size:12.5px;font-weight:500;">Управление тегами</span><span style="font-size:10.5px;color:rgba(255,255,255,0.4);">слить дубли, переименовать, удалить лишние</span></span><span style="color:rgba(255,255,255,0.3);font-size:14px;">→</span></button>
+    </div>
+    <!-- Account status / Register button (v111: поднят выше — был в самом низу настроек, юзер его не находил) -->
+    <div id="account-widget" style="display:none;padding:12px 16px 0;">
+      <button onclick="showAccountModal()" style="width:100%;background:rgba(108,71,255,0.08);border:0.5px solid rgba(108,71,255,0.35);border-radius:12px;padding:11px;color:#fff;font-size:12.5px;font-weight:600;cursor:pointer;font-family:Inter,sans-serif;display:flex;align-items:center;justify-content:space-between;">
+        <span id="account-status-text" style="display:inline-flex;align-items:center;gap:7px;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg><span id="account-status-label">Сохранить данные</span></span>
+        <span style="color:rgba(255,255,255,0.4);">→</span>
+      </button>
+      <div id="account-hint" style="font-size:10.5px;color:rgba(255,255,255,0.4);margin-top:6px;text-align:center;line-height:1.5;font-family:Inter,sans-serif;"></div>
     </div>
     <!-- ── v102: ОТКРЫТЬ НА ТЕЛЕФОНЕ — QR-код приложения + карточка Хэзи ── -->
     <div style="padding:12px 16px 0;">
@@ -1734,13 +1743,7 @@ body[data-theme="business"] .cap-mic.recording{box-shadow:0 0 10px rgba(140,176,
         <a href="https://wa.me/79167404343" target="_blank" rel="noopener" style="flex:1;text-decoration:none;background:rgba(0,200,120,0.07);border:0.5px solid rgba(0,200,120,0.3);border-radius:10px;padding:8px;color:rgba(120,230,180,0.92);font-size:12px;font-weight:600;text-align:center;font-family:'Inter',sans-serif;">WhatsApp</a>
       </div>
     </div>
-    <!-- Account status / Register button -->
-    <div id="account-widget" style="display:none;padding:12px 16px 0;">
-      <button onclick="showAccountModal()" style="width:100%;background:rgba(108,71,255,0.08);border:0.5px solid rgba(108,71,255,0.35);border-radius:12px;padding:11px;color:#fff;font-size:12.5px;font-weight:600;cursor:pointer;font-family:Inter,sans-serif;display:flex;align-items:center;justify-content:space-between;">
-        <span id="account-status-text" style="display:inline-flex;align-items:center;gap:7px;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg><span id="account-status-label">Сохранить данные</span></span>
-        <span style="color:rgba(255,255,255,0.4);">→</span>
-      </button>
-    </div>
+    <!-- Account widget перенесён выше (v111) — здесь остался только выход (для залогиненных) -->
     <div id="balance-widget" style="display:none;align-items:center;justify-content:space-between;padding:10px 16px;margin:12px 16px 0;background:rgba(255,255,255,0.04);border:0.5px solid rgba(255,255,255,0.1);border-radius:12px;">
       <span style="display:inline-flex;align-items:center;gap:6px;font-size:12.5px;color:rgba(255,255,255,0.55);"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="rgba(139,92,246,0.8)" stroke-width="1.7" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M14.5 9.2a2.6 2.6 0 0 0-2.5-1.4c-1.4 0-2.5.9-2.5 2.1s1.1 1.7 2.5 2.1 2.5.9 2.5 2.1-1.1 2.1-2.5 2.1a2.6 2.6 0 0 1-2.5-1.4M12 6v12"/></svg>Баланс Polza: <span id="balance-amount" style="color:rgba(139,92,246,0.95);font-weight:600;">—</span></span>
       <button onclick="loadBalance()" style="background:none;border:none;color:rgba(255,255,255,0.35);font-size:14px;cursor:pointer;padding:4px;">↻</button>
@@ -2203,7 +2206,8 @@ async function deleteTag(id) {
   // v110: подтверждение — кнопка рядом с «⇄ Слить», случайно стереть область обидно
   const t = tags.find(x => x.id === id);
   if (t && !confirm('Удалить область «' + t.label + '»?\nСами записи останутся, но потеряют эту область-тег. Если записи нужны в другой области — лучше «⇄ Слить».')) return;
-  try {
+  if (t) { const r = await deleteTagCore(t.label); if (!r.ok) console.error('tag delete error', r); return; }
+  try { // id устарел (тега уже нет) — удаляем документ напрямую
     await deleteDoc(uDocRef('tags', id));
     tags = tags.filter(t => t.id !== id);
     renderQuickTags();
@@ -2212,6 +2216,123 @@ async function deleteTag(id) {
 }
 window.deleteTag = deleteTag;
 window.addTag = addTag; // тесты: посев областей
+
+// ── ЯДРА ОПЕРАЦИЙ С ОБЛАСТЯМИ (v111): общие для рук (экран Теги) и ИИ-чата (merge_tags/rename_tag/delete_tag).
+// Соответствие регистронезависимое (normDim), как везде; тестам можно подменить запись хуком __mergePutHook.
+function findTagByLabel(label) {
+  const k = normDim(String(label || '').trim());
+  if (!k) return null;
+  return tags.find(t => normDim(t.label) === k) || null;
+}
+window.findTagByLabel = findTagByLabel; // тесты
+
+// Слияние: записи источника (по tag ИЛИ area, нормализованно) переезжают в цель (tag+area), тег-дубль удаляется.
+// Источник может быть «призраком» (тег-док удалён, а строка в записях осталась) — тогда просто переносим записи.
+async function mergeTagCore(srcLabel, dstLabel) {
+  const s = String(srcLabel || '').trim(), d = String(dstLabel || '').trim();
+  if (!s || !d) return { ok: false, reason: 'empty' };
+  if (normDim(s) === normDim(d)) return { ok: false, reason: 'same' };
+  const src = findTagByLabel(s);
+  const dst = findTagByLabel(d);
+  if (!src && !notes.some(n => normDim((n.tag || '').trim()) === normDim(s) || normDim((n.area || '').trim()) === normDim(s))) return { ok: false, reason: 'no-src' };
+  if (!dst) return { ok: false, reason: 'no-dst' };
+  try {
+    const putDoc = window.__mergePutHook || (async (id, patch) => { await updateDoc(uDocRef('notes', id), patch); });
+    const delTagDoc = window.__mergeDelHook || (async id => { await deleteDoc(uDocRef('tags', id)); });
+    const matched = notes.filter(n => normDim((n.tag || '').trim()) === normDim(s) || normDim((n.area || '').trim()) === normDim(s));
+    for (const n of matched) {
+      try { await putDoc(n.id, { tag: dst.label, area: dst.label }); } catch (e) { console.warn('[MergeTag] запись не записалась', n.id, e); }
+      n.tag = dst.label; n.area = dst.label;
+    }
+    if (src) {
+      try { await delTagDoc(src.id); } catch (e) { console.warn('[MergeTag] тег не удалился', src.id, e); }
+      tags = tags.filter(t => t.id !== src.id);
+    }
+    renderQuickTags();
+    renderTagsScreen();
+    updateBrainStats();
+    return { ok: true, count: matched.length, src, dst };
+  } catch (e) {
+    console.warn('[MergeTag] merge failed', e);
+    return { ok: false, reason: 'fail', message: e.message || 'неизвестная ошибка' };
+  }
+}
+window.mergeTagCore = mergeTagCore; // тесты и ИИ-чат
+
+// Переименование: новое имя получает и тег, и все его записи (tag+area). Цель не должна совпадать с другой областью.
+async function renameTagCore(oldLabel, newLabel) {
+  const o = String(oldLabel || '').trim(), nw = String(newLabel || '').trim();
+  if (!o || !nw) return { ok: false, reason: 'empty' };
+  if (normDim(o) === normDim(nw)) return { ok: false, reason: 'same' };
+  const t = findTagByLabel(o);
+  const clash = findTagByLabel(nw);
+  if (clash && (!t || clash.id !== t.id)) return { ok: false, reason: 'dup' };
+  try {
+    const putDoc = window.__mergePutHook || (async (id, patch) => { await updateDoc(uDocRef('notes', id), patch); });
+    if (t) await updateDoc(uDocRef('tags', t.id), { label: nw });
+    const k = normDim(o);
+    const matched = notes.filter(n => normDim((n.tag || '').trim()) === k || normDim((n.area || '').trim()) === k);
+    for (const n of matched) {
+      try { await putDoc(n.id, { tag: nw, area: nw }); } catch (e) { console.warn('[RenameTag] запись не записалась', n.id, e); }
+      n.tag = nw; n.area = nw;
+    }
+    if (t) t.label = nw;
+    renderQuickTags();
+    renderTagsScreen();
+    updateBrainStats();
+    return { ok: true, count: matched.length };
+  } catch (e) {
+    console.warn('[RenameTag] rename failed', e);
+    return { ok: false, reason: 'fail', message: e.message || 'неизвестная ошибка' };
+  }
+}
+window.renameTagCore = renameTagCore; // тесты и ИИ-чат
+
+// Удаление области: записи остаются, но теряют эту область (без строк-призраков в tag/area).
+async function deleteTagCore(label) {
+  const s = String(label || '').trim();
+  if (!s) return { ok: false, reason: 'empty' };
+  const t = findTagByLabel(s);
+  const k = normDim(s);
+  const refs = notes.some(n => normDim((n.tag || '').trim()) === k || normDim((n.area || '').trim()) === k);
+  if (!t && !refs) return { ok: false, reason: 'no-src' };
+  try {
+    const putDoc = window.__mergePutHook || (async (id, patch) => { await updateDoc(uDocRef('notes', id), patch); });
+    const matched = notes.filter(n => normDim((n.tag || '').trim()) === k || normDim((n.area || '').trim()) === k);
+    for (const n of matched) {
+      try { await putDoc(n.id, { tag: null, area: null }); } catch (e) { console.warn('[DeleteTag] запись не очистилась', n.id, e); }
+      n.tag = null; n.area = null;
+    }
+    if (t) {
+      await deleteDoc(uDocRef('tags', t.id));
+      tags = tags.filter(x => x.id !== t.id);
+    }
+    renderQuickTags();
+    renderTagsScreen();
+    updateBrainStats();
+    return { ok: true, count: matched.length };
+  } catch (e) {
+    console.warn('[DeleteTag] delete failed', e);
+    return { ok: false, reason: 'fail', message: e.message || 'неизвестная ошибка' };
+  }
+}
+window.deleteTagCore = deleteTagCore; // тесты и ИИ-чат
+
+// Ручное переименование (кнопка «✎» на экране Теги)
+async function renameTagPrompt(id) {
+  const t = tags.find(x => x.id === id);
+  if (!t) return;
+  const nn = prompt('Переименовать область «' + t.label + '» в:', t.label);
+  if (nn === null) return; // отмена
+  const v = nn.trim();
+  if (!v || v === t.label) return;
+  const old = t.label;
+  const r = await renameTagCore(old, v);
+  if (r.ok) showToast('✎ Переименовал «' + old + '» → «' + v + '»' + (r.count ? ' · записей: ' + r.count : ''));
+  else if (r.reason === 'dup') alert('Область «' + v + '» уже есть — вместо переименования слей их (кнопка «⇄» у лишней).');
+  else alert('Не удалось переименовать: ' + (r.message || 'неизвестная ошибка'));
+}
+window.renameTagPrompt = renameTagPrompt; // тесты
 
 // ── СЛИТЬ ОБЛАСТИ ВРУЧНУЮ (v110): ИИ-«Сжать области» ищет только ЯВНЫЕ дубли («Документы»/«документы»),
 // а смысловые для конкретного человека («Приложение» и «Хэзэнштейн» — оба про это приложение) он сливать не имеет права.
@@ -2283,23 +2404,9 @@ async function pickMergeTag(sourceId, targetId) {
   if (!src || !dst || src.id === dst.id) return;
   const matched = notes.filter(n => normDim((n.tag || '').trim()) === normDim(src.label) || normDim((n.area || '').trim()) === normDim(src.label));
   if (!confirm('Слить «' + src.label + '» → «' + dst.label + '»?\n' + (matched.length ? 'Перенесётся записей: ' + matched.length + '.' : 'У области записей нет — просто удалю пустой тег.'))) return;
-  try {
-    const putDoc = window.__mergePutHook || (async (id, patch) => { await updateDoc(uDocRef('notes', id), patch); });
-    const delTagDoc = window.__mergeDelHook || (async id => { await deleteDoc(uDocRef('tags', id)); });
-    for (const n of matched) {
-      try { await putDoc(n.id, { tag: dst.label, area: dst.label }); } catch (e) { console.warn('[MergeTag] запись не записалась', n.id, e); }
-      n.tag = dst.label; n.area = dst.label;
-    }
-    try { await delTagDoc(src.id); } catch (e) { console.warn('[MergeTag] тег не удалился', src.id, e); }
-    tags = tags.filter(t => t.id !== src.id);
-    renderQuickTags();
-    renderTagsScreen();
-    updateBrainStats();
-    showToast('⇄ Слил «' + src.label + '» → «' + dst.label + '»' + (matched.length ? ' · записей: ' + matched.length : ''));
-  } catch (e) {
-    console.warn('[MergeTag] merge failed', e);
-    alert('Не удалось слить: ' + (e.message || 'неизвестная ошибка'));
-  }
+  const r = await mergeTagCore(src.label, dst.label);
+  if (r.ok) showToast('⇄ Слил «' + src.label + '» → «' + dst.label + '»' + (r.count ? ' · записей: ' + r.count : ''));
+  else alert('Не удалось слить: ' + (r.message || 'неизвестная ошибка'));
 }
 window.openMergeTag = openMergeTag; // тесты
 window.pickMergeTag = pickMergeTag; // тесты
@@ -2418,14 +2525,15 @@ function renderTagsScreen() {
     return;
   }
   // v110: у каждой области — счётчик записей (tag или area, нормализованный) и кнопка «⇄ Слить» —
-  // ручное объединение областей (ИИ-«Сжать» видит только явные дубли, смысловые пары типа
-  // «Приложение»/«Хэзэнштейн» должен решать сам человек)
-  el.innerHTML = tags.map(t => `
+  // ручное объединение областей (ИИ-«Сжать» видит только явные дубли, смысловые пары решает сам человек).
+  // v111: подсказка сверху (фидбек: «не нашёл где слить») + кнопка «✎ Переименовать» у каждой области.
+  el.innerHTML = '<div style="font-size:11.5px;color:rgba(255,255,255,0.5);line-height:1.55;background:rgba(255,255,255,0.03);border:0.5px solid rgba(255,255,255,0.08);border-radius:12px;padding:10px 12px;margin-bottom:14px;font-family:Inter,sans-serif;">Управление областями: кнопка ⇄ у лишней переносит её записи в другую область (объединение дублей), ✎ — переименовать, ✕ — удалить (записи останутся, но потеряют область).</div>' + tags.map(t => `
     <div class="note-card">
       <div class="note-text" style="font-size:15px;">${t.icon} ${t.label}</div>
       <div style="font-size:11px;color:rgba(255,255,255,0.4);margin-top:2px;">${ruNotesCount(mergeTagNoteCount(t.label))}</div>
       <div class="note-actions">
         <button class="note-btn note-undone" onclick="openMergeTag('${t.id}')">⇄ Слить</button>
+        <button class="note-btn note-undone" onclick="renameTagPrompt('${t.id}')">✎ Переименовать</button>
         <button class="note-btn note-undone" onclick="deleteTag('${t.id}')">✕ Удалить</button>
       </div>
     </div>
@@ -11072,6 +11180,65 @@ function buildChatTools() {
         required: ['days']
       }
     }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'merge_tags',
+      description: 'Слить две области-тега в одну: все записи первой переносятся во вторую, первая удаляется. Вызывай, когда пользователь сказал, что две области — одно и то же (старое и новое название одного дела, синонимы), или явно просит объединить/слить области. source — лишняя область, target — которая остаётся. Имена — ТОЧНО из списка текущих областей (enum поля tag функции propose_note). После вызова тебе придёт отчёт — перескажи его пользователю.',
+      parameters: {
+        type: 'object',
+        properties: {
+          source: { type: 'string', description: 'Область, которую сливаем (её записи переедут, сама удалится)' },
+          target: { type: 'string', description: 'Область, в которую переносим (останется)' }
+        },
+        required: ['source', 'target']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'rename_tag',
+      description: 'Переименовать область-тег: новое имя получит и сам тег, и все его записи. old_name — точное текущее имя из списка областей; new_name не должно совпадать с другой существующей областью (совпадёт — придёт отказ, значит нужен merge_tags).',
+      parameters: {
+        type: 'object',
+        properties: {
+          old_name: { type: 'string', description: 'Точное текущее имя области' },
+          new_name: { type: 'string', description: 'Новое имя (короткое, как у остальных областей)' }
+        },
+        required: ['old_name', 'new_name']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'delete_tag',
+      description: 'Удалить область-тег: записи останутся, но потеряют эту область. Вызывай ТОЛЬКО по явной просьбе пользователя удалить область.',
+      parameters: {
+        type: 'object',
+        properties: {
+          name: { type: 'string', description: 'Точное имя области из списка' }
+        },
+        required: ['name']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'create_tag',
+      description: 'Создать новую область-тег (когда пользователю нужен тег, которого нет в списке, и он просит его добавить). name — короткое существительное 1–2 слова, icon — один подходящий эмодзи.',
+      parameters: {
+        type: 'object',
+        properties: {
+          name: { type: 'string', description: 'Имя новой области (короткое существительное)' },
+          icon: { type: 'string', description: 'Один эмодзи-иконка' }
+        },
+        required: ['name']
+      }
+    }
   }
   ];
 }
@@ -12314,7 +12481,7 @@ async function compressAreas() {
     return;
   }
   if (btn) { btn.textContent = '🧹 Сжать области'; btn.style.opacity = '1'; }
-  if (!Array.isArray(groups) || !groups.length) { alert('Дубликатов не нашлось — все области разные 🎉\n\nЕсли две области для тебя по смыслу одна (например «Приложение» и «Хэзэнштейн») — слей их вручную: экран «Теги» → кнопка «⇄ Слить» у лишней. Записи перенесутся, дубль удалится.'); return; }
+  if (!Array.isArray(groups) || !groups.length) { alert('Дубликатов не нашлось — все области разные 🎉\n\nЕсли две области для тебя по смыслу одна (например «Кино» и «Фильмы») — слей их вручную: экран «Теги» → кнопка «⇄ Слить» у лишней. Записи перенесутся, дубль удалится.'); return; }
   let mergedAny = 0;
   for (const g of groups) {
     if (!g || !g.keep || !Array.isArray(g.merge) || !g.merge.length) continue;
@@ -12821,6 +12988,14 @@ function getBaseInstructions() {
 КОГДА ВЫЗЫВАТЬ update_prompt:
 - Только после явного подтверждения пользователя в диалоге (например он написал «да» в ответ на твой вопрос про изменение инструкций)
 - rule должен быть краткой самостоятельной формулировкой (одна мысль/факт/правило) — он добавится отдельной строкой в список инструкций, который пользователь видит и может редактировать в приложении на экране «Промпт»
+
+ОБЛАСТИ-ТЕГИ (функции merge_tags / rename_tag / delete_tag / create_tag):
+- Текущие области пользователя — в enum поля tag функции propose_note. Не выдумывай имена — бери точь-в-точь из списка
+- Пользователь говорит, что две области — одно и то же (старое и новое название одного дела, синонимы, опечатка), или просит объединить — вызови merge_tags: source — лишняя, target — та, что остаётся. Записи перенесутся автоматически
+- «Переименуй область» — rename_tag; если новое имя совпадает с другой существующей областью — это слияние, вызывай merge_tags
+- «Удали область» — delete_tag: записи останутся, но потеряют эту область
+- Нужной области нет в списке, и она действительно нужна — create_tag (короткое имя-существительное + один эмодзи)
+- Не меняй области молча, без просьбы пользователя в разговоре
 
 КОГДА СПРАШИВАТЬ «ТЫ СДЕЛАЛ X?»:
 - Только если в базе есть записи, похожие на конкретное невыполненное дело (без done:true), и прошло разумное время
@@ -13635,6 +13810,7 @@ async function sendChatMessage(userText) {
     let proposedNote = null;
     let doneTarget = null;
     let promptRule = null;
+    const tagOpResults = []; // v111: честные отчёты операций с областями (merge/rename/delete/create)
 
     for (const call of toolCalls) {
       let args = {};
@@ -13645,6 +13821,26 @@ async function sendChatMessage(userText) {
         doneTarget = args.task_text;
       } else if (call.function.name === 'update_prompt' && !promptRule) {
         promptRule = args.rule;
+      } else if (call.function.name === 'merge_tags') {
+        const r = await mergeTagCore(args.source, args.target);
+        tagOpResults.push(r.ok
+          ? '⇄ Слил «' + args.source + '» → «' + args.target + '»' + (r.count ? ' · записей: ' + r.count + '.' : ' · записей у неё не было.')
+          : '✗ Не слил: ' + ({ empty: 'пустое имя области', same: 'это одна и та же область', 'no-src': 'области «' + (args.source || '') + '» нет в списке', 'no-dst': 'области «' + (args.target || '') + '» нет — попроси пользователя выбрать существующую или создать новую', fail: (r.message || 'ошибка') }[r.reason] || 'ошибка'));
+      } else if (call.function.name === 'rename_tag') {
+        const r = await renameTagCore(args.old_name, args.new_name);
+        tagOpResults.push(r.ok
+          ? '✎ Переименовал «' + args.old_name + '» → «' + args.new_name + '»' + (r.count ? ' · записей: ' + r.count + '.' : '')
+          : '✗ Не переименовал: ' + ({ empty: 'пустое имя', same: 'имя не изменилось', 'dup': 'область «' + (args.new_name || '') + '» уже есть — это слияние, нужен merge_tags', fail: (r.message || 'ошибка') }[r.reason] || 'ошибка'));
+      } else if (call.function.name === 'delete_tag') {
+        const r = await deleteTagCore(args.name);
+        tagOpResults.push(r.ok
+          ? '🗑 Удалил область «' + args.name + '»' + (r.count ? ' · записи остались, но потеряли её (' + r.count + ' шт.)' : ' — она была пустой')
+          : '✗ Не удалил: ' + ({ 'no-src': 'области «' + (args.name || '') + '» нет в списке', fail: (r.message || 'ошибка') }[r.reason] || 'ошибка'));
+      } else if (call.function.name === 'create_tag') {
+        const nm = String(args.name || '').trim();
+        if (!nm) tagOpResults.push('✗ Не создал: пустое имя области');
+        else if (findTagByLabel(nm)) tagOpResults.push('Область «' + nm + '» уже есть — новая не нужна');
+        else { await addTag(nm, args.icon || '🏷️'); tagOpResults.push('🏷 Создал область «' + nm + '»'); }
       }
     }
 
@@ -13662,7 +13858,10 @@ async function sendChatMessage(userText) {
       await addPromptRule(promptRule, 'chat');
     }
 
-    const replyText = (message.content || '').trim();
+    let replyText = (message.content || '').trim();
+    // v111: операции с областями исполняются реально — их честный итог добавляется к ответу,
+    // чтобы «слил/переименовал» в тексте ИИ никогда не расходился с тем, что произошло на самом деле
+    if (tagOpResults.length) replyText = (replyText ? replyText + '\n\n' : '') + tagOpResults.join('\n');
 
     if (proposedNote && proposedNote.text) {
       const validTags = tags.map(t => t.label);
@@ -14336,7 +14535,7 @@ window.handleIcsFile = async function(file) {
     // v109: в тосте версия — если юзер пришлёт скрин, сразу видно, на какой он сборке.
     const kb = file.size >= 1024 ? Math.round(file.size / 1024) + ' КБ' : file.size + ' Б';
     const fname = file.name || 'файл';
-    showToast('📖 Читаю «' + fname + '» (' + kb + ') · v110', 2200);
+    showToast('📖 Читаю «' + fname + '» (' + kb + ') · v111', 2200);
     // v107: JSON-бэкап выбрали в календарной модалке — молча переношу в импорт записей
     if (/\.json$/i.test(fname)) { showToast('Это файл записей (JSON) — открываю импорт записей', 2600); await window.handleJsonImportFile(file); return; }
     // v106: ZIP-детект по сигнатуре PK (гугловский экспорт календаря — архив, а не голый .ics)
@@ -14687,10 +14886,50 @@ initFocusCardGestures();
 
 // ── АВТОРИЗАЦИЯ ──
 let authMode = 'login'; // 'login' | 'register'
+let authReturnScreen = null; // v111: куда возвращаться по «← Вернуться в приложение»
 
 function setAuthError(msg) {
   document.getElementById('auth-error').textContent = msg || '';
 }
+
+// v111: открытие экрана входа/регистрации ПОВЕРХ приложения (из Настроек/подсказок).
+// Раньше openRegisterFromPrompt просто добавлял .active к screen-auth, не снимая его с текущего
+// экрана — активными становились ДВА экрана, и настройки (позже в DOM) лежали сверху:
+// тап «Создать аккаунт» выглядел как «ничего не произошло» — поэтому юзер «не видел регистрацию».
+function openAuthScreen(mode) {
+  authMode = mode === 'login' ? 'login' : 'register';
+  document.getElementById('auth-title').textContent = authMode === 'login' ? 'Вход' : 'Регистрация';
+  document.getElementById('auth-submit-btn').textContent = authMode === 'login' ? 'Войти' : 'Зарегистрироваться';
+  document.getElementById('auth-toggle-btn').textContent = authMode === 'login' ? 'Нет аккаунта? Зарегистрироваться' : 'Уже есть аккаунт? Войти';
+  document.getElementById('auth-password2').style.display = authMode === 'register' ? '' : 'none';
+  document.getElementById('auth-password2').value = '';
+  document.getElementById('auth-email').value = '';
+  document.getElementById('auth-password').value = '';
+  setAuthError('');
+  const prev = document.querySelector('.screen.active');
+  authReturnScreen = prev ? prev.id : null;
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.dock-item').forEach(b => b.classList.remove('active'));
+  const dockEl = document.querySelector('.dock');
+  const statusEl = document.querySelector('.status');
+  if (dockEl) dockEl.style.display = 'none';
+  if (statusEl) statusEl.style.display = 'none';
+  document.getElementById('auth-back-btn').style.display = authReturnScreen && authReturnScreen !== 'screen-splash' ? '' : 'none';
+  document.getElementById('screen-auth').classList.add('active');
+}
+window.openAuthScreen = openAuthScreen;
+
+function authBack() {
+  document.getElementById('auth-back-btn').style.display = 'none';
+  const dockEl = document.querySelector('.dock');
+  const statusEl = document.querySelector('.status');
+  if (dockEl) dockEl.style.display = '';
+  if (statusEl) statusEl.style.display = '';
+  const dest = authReturnScreen === 'screen-prompt' ? 'prompt' : 'main'; // вернём туда, откуда пришли
+  authReturnScreen = null;
+  goTo(dest);
+}
+window.authBack = authBack;
 
 function friendlyAuthError(code) {
   const map = {
@@ -15405,9 +15644,9 @@ window.dismissRegisterPrompt = dismissRegisterPrompt;
 
 // Показать модалку аккаунта (кнопка в Настройках)
 function showAccountModal() {
-  // Если уже залогинен (не аноним) — показываем профиль
+  // Если уже залогинен (не аноним) — профиль + выход
   if (!isAnonymousUser && currentUid) {
-    alert('Вы уже вошли: ' + (auth.currentUser?.email || 'пользователь'));
+    if (confirm('Ты вошёл как ' + (auth.currentUser?.email || 'пользователь') + '.\n\nВыйти из аккаунта? (Данные останутся в облаке — вернёшься по логину)')) logout();
     return;
   }
   // Иначе — показываем стандартный prompt modal
@@ -15421,16 +15660,19 @@ window.showAccountModal = showAccountModal;
 function updateAccountWidget() {
   const widget = document.getElementById('account-widget');
   const text = document.getElementById('account-status-label') || document.getElementById('account-status-text');
+  const hint = document.getElementById('account-hint');
   if (!widget || !text) return;
   // Кнопка logout (скрываем для анонимов)
   const logoutBtn = document.querySelector('[onclick="logout()"]');
   if (isAnonymousUser) {
     widget.style.display = 'block';
-    text.textContent = 'Сохранить данные (создать аккаунт)';
+    text.textContent = 'Создать логин и пароль';
+    if (hint) hint.textContent = 'Сейчас данные живут только в этом браузере — логин защитит их и откроет с любого устройства';
     if (logoutBtn) logoutBtn.style.display = 'none';  // анониму некуда выходить
   } else if (currentUid) {
     widget.style.display = 'block';
     text.textContent = 'Аккаунт: ' + (auth.currentUser?.email || 'пользователь');
+    if (hint) hint.textContent = 'Данные синхронизируются с аккаунтом — откроются на любом устройстве по логину';
     if (logoutBtn) logoutBtn.style.display = 'block';  // показать для залогиненных
   } else {
     widget.style.display = 'none';
@@ -15442,33 +15684,14 @@ window.updateAccountWidget = updateAccountWidget;
 function openRegisterFromPrompt() {
   const modal = document.getElementById('register-prompt-modal');
   if (modal) modal.classList.remove('open');
-  // Переключаемся в режим регистрации и показываем auth экран
-  authMode = 'register';
-  document.getElementById('auth-title').textContent = 'Регистрация';
-  document.getElementById('auth-submit-btn').textContent = 'Зарегистрироваться';
-  document.getElementById('auth-toggle-btn').textContent = 'Уже есть аккаунт? Войти';
-  document.getElementById('auth-password2').style.display = '';
-  document.getElementById('auth-password2').value = '';
-  document.getElementById('auth-email').value = '';
-  document.getElementById('auth-password').value = '';
-  setAuthError('');
-  // Показываем auth screen как модалку (поверх текущего экрана)
-  document.getElementById('screen-auth').classList.add('active');
+  openAuthScreen('register');
 }
 window.openRegisterFromPrompt = openRegisterFromPrompt;
 
 function openLoginFromPrompt() {
   const modal = document.getElementById('register-prompt-modal');
   if (modal) modal.classList.remove('open');
-  authMode = 'login';
-  document.getElementById('auth-title').textContent = 'Вход';
-  document.getElementById('auth-submit-btn').textContent = 'Войти';
-  document.getElementById('auth-toggle-btn').textContent = 'Нет аккаунта? Зарегистрироваться';
-  document.getElementById('auth-password2').style.display = 'none';
-  document.getElementById('auth-email').value = '';
-  document.getElementById('auth-password').value = '';
-  setAuthError('');
-  document.getElementById('screen-auth').classList.add('active');
+  openAuthScreen('login');
 }
 window.openLoginFromPrompt = openLoginFromPrompt;
 
@@ -15499,6 +15722,8 @@ onAuthStateChanged(auth, async (user) => {
     isAnonymousUser = user.isAnonymous;
     upsertProfileDoc(user); // профиль для счётчика пользователей (fire-and-forget, ошибки гасятся внутри)
     document.getElementById('screen-auth').classList.remove('active');
+    const _abtn = document.getElementById('auth-back-btn');
+    if (_abtn) _abtn.style.display = 'none';
     if (dockEl) dockEl.style.display = '';
     if (statusEl) statusEl.style.display = '';
     goTo('main'); // главный экран показываем сразу — ничего не ждём
@@ -15551,6 +15776,8 @@ onAuthStateChanged(auth, async (user) => {
       skipNextAutoAnonymous = false;
       document.getElementById('screen-splash').classList.remove('active');
       document.getElementById('screen-auth').classList.add('active');
+      const _abtn2 = document.getElementById('auth-back-btn');
+      if (_abtn2) _abtn2.style.display = 'none'; // вышли из аккаунта — возвращаться некуда
       document.getElementById('auth-email').value = '';
       document.getElementById('auth-password').value = '';
       document.getElementById('auth-password2').value = '';
