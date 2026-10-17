@@ -381,6 +381,9 @@ body{background:#060918;font-family:'Inter',sans-serif;display:flex;justify-cont
   cursor:pointer;font-family:'Inter',sans-serif;transition:all 0.2s;white-space:nowrap;
 }
 .hist-filter-btn.active{background:rgba(108,71,255,0.18);border-color:rgba(108,71,255,0.5);color:rgba(139,92,246,0.95)}
+/* v115: облако — «Обновить» в одном ряду с датами как обычный чип; чипы чуть компактнее,
+   чтобы 4 чипа влезали в один ряд на узких телефонах (360/352px) без переноса */
+#screen-cloud .hist-filter-btn{padding:5px 9px;font-size:11.5px}
 /* чипы тегов-фильтров в Истории */
 .hist-tag-btn{max-width:150px;overflow:hidden;text-overflow:ellipsis}
 
@@ -1378,12 +1381,13 @@ body[data-theme="business"] .cap-mic.recording{box-shadow:0 0 10px rgba(140,176,
         <button onclick="goTo('hist')" style="background:none;border:none;color:rgba(255,255,255,0.4);font-size:22px;cursor:pointer;">←</button>
       </div>
     </div>
-    <!-- v114: «Поделиться» больше НЕ в этом ряду — на узком экране ряд переполнялся и кнопка уезжала за правый край -->
+    <!-- v115: «Обновить» — обычный чип того же формата, что и периоды, в ОДНОМ ряду с датами
+         (v113–v114: фиолетовая пилюля 101px не влезала в ряд на ~352px и переносилась flex-wrap-ом) -->
     <div class="hist-filters" style="display:flex;flex-wrap:wrap;gap:6px;row-gap:6px;padding:0 16px 8px;align-items:center;">
       <button class="hist-filter-btn" data-cloudperiod="7" onclick="setCloudPeriod(7)">7 дней</button>
       <button class="hist-filter-btn active" data-cloudperiod="30" onclick="setCloudPeriod(30)">30 дней</button>
       <button class="hist-filter-btn" data-cloudperiod="all" onclick="setCloudPeriod('all')">Всё время</button>
-      <button onclick="regenerateWordCloud()" style="margin-left:auto;background:rgba(108,71,255,0.12);border:0.5px solid rgba(139,92,246,0.4);border-radius:99px;padding:5px 12px;color:rgba(139,92,246,0.95);font-size:12px;cursor:pointer;font-family:'Inter',sans-serif;">🔄 Обновить</button>
+      <button class="hist-filter-btn" onclick="regenerateWordCloud()" style="margin-left:auto;" title="Пересобрать облако заново">Обновить</button>
     </div>
     <!-- v114: «📤 Поделиться» — отдельная строка на всю ширину: видна на любом экране (телефон/планшет) -->
     <div style="padding:0 16px 6px;">
@@ -14587,7 +14591,7 @@ window.handleIcsFile = async function(file) {
     // v109: в тосте версия — если юзер пришлёт скрин, сразу видно, на какой он сборке.
     const kb = file.size >= 1024 ? Math.round(file.size / 1024) + ' КБ' : file.size + ' Б';
     const fname = file.name || 'файл';
-    showToast('📖 Читаю «' + fname + '» (' + kb + ') · v114', 2200);
+    showToast('📖 Читаю «' + fname + '» (' + kb + ') · v115', 2200);
     // v107: JSON-бэкап выбрали в календарной модалке — молча переношу в импорт записей
     if (/\.json$/i.test(fname)) { showToast('Это файл записей (JSON) — открываю импорт записей', 2600); await window.handleJsonImportFile(file); return; }
     // v106: ZIP-детект по сигнатуре PK (гугловский экспорт календаря — архив, а не голый .ics)
