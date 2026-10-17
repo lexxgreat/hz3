@@ -4904,13 +4904,15 @@ async function toggleTodo(id, currentInTodo) {
 window.toggleTodo = toggleTodo;
 
 // ── ОБЛАКО МЫСЛЕЙ (canvas, спиральная упаковка без пересечений, кэш — не пересчитывается на каждый визит) ──
-const RU_STOPWORDS = new Set(['и','в','не','на','я','что','с','как','это','он','она','они','оно','но','да','ты','к','у','же','вы','за','бы','по','только','из','ему','когда','если','уже','или','ни','был','до','вас','вам','ведь','там','себя','ничего','может','тут','где','есть','для','мы','тебя','их','чем','сам','без','раз','тоже','себе','под','будет','тогда','кто','этот','того','потому','этого','какой','ним','здесь','этом','один','мой','тем','чтобы','нее','её','сейчас','были','куда','всех','можно','при','об','другой','после','над','через','эти','нас','про','всего','них','какая','эту','моя','этой','перед','том','такой','им','более','всю','между','а','то','всё','все','его','меня','мне','тебе','нам','был','была','было','быть','ещё','еще','уж','ж','ну','вот','либо','пока','который','которая','которое','которые','мои','твои','наш','ваш','со','во','от']);
+const RU_STOPWORDS = new Set(['и','в','не','на','я','что','с','как','это','он','она','они','оно','но','да','ты','к','у','же','вы','за','бы','по','только','из','ему','когда','если','уже','или','ни','был','до','вас','вам','ведь','там','себя','ничего','может','тут','где','есть','для','мы','тебя','их','чем','сам','без','раз','тоже','себе','под','будет','тогда','кто','этот','того','потому','этого','какой','ним','здесь','этом','один','мой','тем','чтобы','нее','её','сейчас','были','куда','всех','можно','при','об','другой','после','над','через','эти','нас','про','всего','них','какая','эту','моя','этой','перед','том','такой','им','более','всю','между','а','то','всё','все','его','меня','мне','тебе','нам','был','была','было','быть','ещё','еще','уж','ж','ну','вот','либо','пока','который','которая','которое','которые','мои','твои','наш','ваш','со','во','от',
+  // v112: слова-шум из мыслей — модальность и болтовня, суть они не несут (фидбек юзера: «убрать надо, сделать и т.д.»)
+  'надо','нужно','нужен','нужна','нужны','нельзя','сделать','сделаю','сделал','делать','делаю','делал','буду','будешь','хочу','хотел','хотела','могу','должен','должна','должно','готово','готов','окей','просто','типа','короче','блин','вообще','конечно','наверное','возможно','действительно','сегодня','завтра','вчера','теперь','потом','снова','опять','почему','зачем','откуда','спасибо','пожалуйста','привет','ладно','хорошо','лучше','хуже','больше','меньше','самый','самая','самое','сами','весь','вся','вроде','кажется','получилось','получается','получить','получил','начать','начал','начала','закончить','закончил','хватит','стало','стать','вдруг','таки','даже','именно','обязательно','точно','всегда','никогда','почти','примерно']);
 
 const CLOUD_COLORS = ['#e63946','#2a9d8f','#e9c46a','#f4a261','#457b9d','#9d4edd','#06d6a0','#ffd60a','#ef476f','#118ab2','#a8dadc','#f77f00'];
 
 let cloudPeriod = 30; // 7 | 30 | 'all'
 let cloudCache = {}; // {7:{items,generatedAt}, 30:{...}, all:{...}} — грузится из Firestore при заходе
-const CLOUD_VERSION = 2; // v90 Н11: 1 — облако без тегов; версия сменилась — старый кэш пересобирается сам
+const CLOUD_VERSION = 3; // v112: 2 — облако с '#'-тегами, шумными словами и высотой до 1400px; смена версии пересобирает кэш
 
 // разбивает текст на слова, СОХРАНЯЯ исходный регистр (чтобы имена/бренды остались как в оригинале)
 function tokenizeForCloud(text) {
@@ -4919,6 +4921,17 @@ function tokenizeForCloud(text) {
     .split(/\s+/)
     .filter(w => w.length > 2 && !RU_STOPWORDS.has(w.toLowerCase()));
 }
+
+// v112: единые формулы облака (размер/текст) — рендер и оценка площади больше не могут разойтись
+function cloudRatioFor(item, maxCount, minCount) {
+  let r = maxCount === minCount ? 1 : (item.count - minCount) / (maxCount - minCount);
+  if (item.isTag) r = Math.min(1, Math.max(0.5, r + 0.35)); // области жизни всегда заметно крупнее обычных слов
+  return r;
+}
+function cloudDisplayText(item, ratio) {
+  return item.isTag ? item.text : (ratio > 0.38 ? item.text.toUpperCase() : item.text); // v112: теги БЕЗ решётки — просто названия областей жизни
+}
+function cloudFontAt(ratio, scale) { return Math.max(11, Math.round((14 + Math.pow(ratio, 0.7) * 62) * (scale || 1))); }
 
 function computeWordCloudItems(period) {
   let filtered = notes.filter(n => n.remember !== true); // v93: правила «Помнить всегда» — не мысли, в облаке не участвуют
@@ -4956,14 +4969,14 @@ function computeWordCloudItems(period) {
     return tc ? { text: tagDisplay[key], count: tc, isTag: true } : { text: v.display, count: v.count, isTag: false };
   });
   const tags = all.filter(v => v.isTag).sort((a, b) => b.count - a.count).slice(0, 20);
-  const words = all.filter(v => !v.isTag).sort((a, b) => b.count - a.count).slice(0, Math.max(10, 55 - tags.length));
+  const words = all.filter(v => !v.isTag).sort((a, b) => b.count - a.count).slice(0, Math.max(10, 34 - tags.length)); // v112: меньше слов — только суть, и облако влезает в экран
   const items = [...tags, ...words].sort((a, b) => b.count - a.count);
   return { items, noteCount: filtered.length, tagCount: tags.length };
 }
 
 // спиральная упаковка: крупные слова ближе к центру, каждое следующее ищет свободное место
 // расширяющейся спиралью — этим достигается плотное "облако" без пересечений текста
-function packWordCloud(items, canvasWidth, canvasHeight, ctx) {
+function packWordCloud(items, canvasWidth, canvasHeight, ctx, scale) { // v112: scale — единое сжатие шрифтов под экран
   if (!items.length) return [];
   const maxCount = items[0].count;
   const minCount = items[items.length - 1].count;
@@ -4976,12 +4989,12 @@ function packWordCloud(items, canvasWidth, canvasHeight, ctx) {
   }
 
   items.forEach((item, idx) => {
-    const ratio = maxCount === minCount ? 1 : (item.count - minCount) / (maxCount - minCount);
-    const fontSize = Math.round(13 + Math.pow(ratio, 0.7) * 62); // 13..75px, не строго линейно — крупные заметнее выделяются
-    const isTag = !!item.isTag; // v90 Н11: тег — с решёткой, без капса и без поворота, с подчёркиванием
+    const ratio = cloudRatioFor(item, maxCount, minCount); // v112: формулы общие с оценкой площади
+    const fontSize = cloudFontAt(ratio, scale); // 11..76px, не строго линейно — крупные заметнее выделяются; масштаб под экран
+    const isTag = !!item.isTag; // v90 Н11: тег — без капса и без поворота, с подчёркиванием
     const rotate = isTag ? 0 : (Math.random() < 0.12 ? 90 : 0); // немного вертикальных слов для живости, как в референсе
     const bold = ratio > 0.38;
-    const displayText = isTag ? '#' + item.text : (bold ? item.text.toUpperCase() : item.text);
+    const displayText = cloudDisplayText(item, ratio); // v112: теги без решётки
 
     ctx.font = `${bold ? '800' : '600'} ${fontSize}px Inter, Arial, sans-serif`;
     const metrics = ctx.measureText(displayText);
@@ -5083,22 +5096,26 @@ async function regenerateWordCloud() {
     return;
   }
 
-  // оцениваем реально нужную площадь под все слова и подбираем высоту холста под неё —
-  // без этого при большом числе разных слов часть просто не находила бы места и пропадала
+  // v112: облако влезает в ЭКРАН телефона — высота холста = видимая область, а не 1400px прокрутки
+  const height = Math.max(300, Math.min(640, Math.round((window.innerHeight || 720) * 0.58)));
+  // оцениваем площадь всех слов при базовых размерах и подбираем ЕДИНЫЙ масштаб шрифтов:
+  // (а) самое длинное слово обязано влезть по ширине холста; (б) суммарная площадь — в плотность спирали
   const measureCtx = canvas.getContext('2d');
   const maxCount = items[0].count, minCount = items[items.length - 1].count;
-  let estArea = 0;
+  let estArea = 0, maxW = 0;
   for (const item of items) {
-    const ratio = maxCount === minCount ? 1 : (item.count - minCount) / (maxCount - minCount);
-    const fontSize = Math.round(13 + Math.pow(ratio, 0.7) * 62);
-    const text = item.isTag ? '#' + item.text : (ratio > 0.38 ? item.text.toUpperCase() : item.text); // v90: теги с решёткой
-    measureCtx.font = `${ratio > 0.38 ? '800' : '600'} ${fontSize}px Inter, Arial, sans-serif`;
+    const ratio = cloudRatioFor(item, maxCount, minCount);
+    const base = 14 + Math.pow(ratio, 0.7) * 62;
+    const text = cloudDisplayText(item, ratio);
+    measureCtx.font = `${ratio > 0.38 ? '800' : '600'} ${Math.round(base)}px Inter, Arial, sans-serif`;
     const w = measureCtx.measureText(text).width + 10;
-    const h = fontSize * 1.2;
-    estArea += w * h;
+    estArea += w * base * 1.2;
+    if (w > maxW) maxW = w;
   }
-  const BUFFER = 1.8; // запас на неэффективность спиральной упаковки (свободные промежутки между словами)
-  const height = Math.max(320, Math.min(1400, Math.round(estArea * BUFFER / width)));
+  let scale = 1;
+  if (maxW > width - 12) scale = (width - 12) / maxW; // длинное слово: сжимаем все шрифты пропорционально
+  const usable = width * height * 0.55; // запас на неэффективность спиральной упаковки (промежутки между словами)
+  if (estArea * scale * scale > usable) scale = Math.max(0.4, scale * Math.sqrt(usable / (estArea * scale * scale))); // иначе сжимаем сильнее, но не мельче 0.4 — не влезут самые мелкие, просто пропустим
 
   canvas.width = width;
   canvas.height = height;
@@ -5106,7 +5123,7 @@ async function regenerateWordCloud() {
   canvas.style.height = height + 'px';
 
   const ctx = canvas.getContext('2d');
-  const layout = packWordCloud(items, width, height, ctx);
+  const layout = packWordCloud(items, width, height, ctx, scale); // v112: масштабированные шрифты
   drawWordCloud(layout, canvas);
 
   const generatedAt = new Date().toISOString();
@@ -14535,7 +14552,7 @@ window.handleIcsFile = async function(file) {
     // v109: в тосте версия — если юзер пришлёт скрин, сразу видно, на какой он сборке.
     const kb = file.size >= 1024 ? Math.round(file.size / 1024) + ' КБ' : file.size + ' Б';
     const fname = file.name || 'файл';
-    showToast('📖 Читаю «' + fname + '» (' + kb + ') · v111', 2200);
+    showToast('📖 Читаю «' + fname + '» (' + kb + ') · v112', 2200);
     // v107: JSON-бэкап выбрали в календарной модалке — молча переношу в импорт записей
     if (/\.json$/i.test(fname)) { showToast('Это файл записей (JSON) — открываю импорт записей', 2600); await window.handleJsonImportFile(file); return; }
     // v106: ZIP-детект по сигнатуре PK (гугловский экспорт календаря — архив, а не голый .ics)
@@ -15406,6 +15423,12 @@ window.__t = {
   computeWordCloudItems,
   cloudCacheGet: () => cloudCache,
   cloudVersion: CLOUD_VERSION,
+  // v112: стоп-слова и общие формулы облака (рендер и оценка площади)
+  tokenizeForCloud,
+  packWordCloud,
+  cloudRatioFor,
+  cloudDisplayText,
+  ruStops: RU_STOPWORDS,
   resetHintPacing: () => { _ordHintsSession = 0; },
   heuristicIsTask,
   normalizeAllWishTodos,
