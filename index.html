@@ -1383,6 +1383,7 @@ body[data-theme="business"] .cap-mic.recording{box-shadow:0 0 10px rgba(140,176,
       <button class="hist-filter-btn active" data-cloudperiod="30" onclick="setCloudPeriod(30)">30 дней</button>
       <button class="hist-filter-btn" data-cloudperiod="all" onclick="setCloudPeriod('all')">Всё время</button>
       <button onclick="regenerateWordCloud()" style="margin-left:auto;background:rgba(108,71,255,0.12);border:0.5px solid rgba(139,92,246,0.4);border-radius:99px;padding:5px 12px;color:rgba(139,92,246,0.95);font-size:12px;cursor:pointer;font-family:'Inter',sans-serif;">🔄 Обновить</button>
+      <button onclick="shareCloud()" style="background:rgba(6,214,160,0.12);border:0.5px solid rgba(6,214,160,0.45);border-radius:99px;padding:5px 12px;color:rgba(6,214,160,0.95);font-size:12px;cursor:pointer;font-family:'Inter',sans-serif;">📤 Поделиться</button>
     </div>
     <div id="cloud-generated-at" style="text-align:center;font-size:10.5px;color:rgba(255,255,255,0.3);padding-bottom:4px;"></div>
     <div id="cloud-hint" style="padding:0 16px 4px;"></div>
@@ -4991,7 +4992,7 @@ function packWordCloud(items, canvasWidth, canvasHeight, ctx, scale) { // v112: 
   items.forEach((item, idx) => {
     const ratio = cloudRatioFor(item, maxCount, minCount); // v112: формулы общие с оценкой площади
     const fontSize = cloudFontAt(ratio, scale); // 11..76px, не строго линейно — крупные заметнее выделяются; масштаб под экран
-    const isTag = !!item.isTag; // v90 Н11: тег — без капса и без поворота, с подчёркиванием
+    const isTag = !!item.isTag; // v113: тег — без капса и без поворота (подчёркивание убрано по фидбеку юзера)
     const rotate = isTag ? 0 : (Math.random() < 0.12 ? 90 : 0); // немного вертикальных слов для живости, как в референсе
     const bold = ratio > 0.38;
     const displayText = cloudDisplayText(item, ratio); // v112: теги без решётки
@@ -5037,11 +5038,7 @@ function drawWordCloud(layout, canvas) {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(w.text, 0, 0);
-    if (w.isTag && w.tw) { // v90 Н11: подчёркиваем теги — сразу видно сферы, а не просто слова
-      ctx.globalAlpha = 0.55;
-      ctx.fillRect(-w.tw / 2, w.fontSize * 0.68, w.tw, Math.max(1.5, Math.round(w.fontSize * 0.05)));
-      ctx.globalAlpha = 1;
-    }
+    // v113: подчёркивание тегов убрано — области отличают размером и цветом
     ctx.restore();
   });
 }
@@ -5141,6 +5138,40 @@ function setCloudPeriod(period) {
   renderWordCloud();
 }
 window.setCloudPeriod = setCloudPeriod;
+
+// v113: «Поделиться» облаком — PNG с тёмным фоном в системное меню (Telegram/WhatsApp/Max/VK),
+// фолбэк там, где шаринг файлов недоступен (десктоп-браузеры) — сохранить файл в загрузки
+async function shareCloud() {
+  const canvas = document.getElementById('cloud-canvas');
+  if (!canvas || !canvas.width) return;
+  try {
+    // голый прозрачный PNG в светлых чатах выглядит сломанным — рисуем на фоне приложения
+    const out = document.createElement('canvas');
+    out.width = canvas.width; out.height = canvas.height;
+    const octx = out.getContext('2d');
+    octx.fillStyle = '#07091A';
+    octx.fillRect(0, 0, out.width, out.height);
+    octx.drawImage(canvas, 0, 0);
+    const blob = await new Promise(r => out.toBlob(r, 'image/png'));
+    if (!blob) throw new Error('PNG не собрался');
+    const file = new File([blob], 'oblo-mysley.png', { type: 'image/png' });
+    const title = 'Облако мыслей — Hazenstein';
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({ files: [file], title, text: title }); // системное меню: Telegram, WhatsApp, Max, VK…
+      return;
+    }
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'oblo-mysley.png';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+    showToast('📥 Шаринг файлов здесь недоступен — сохранил картинку в загрузки', 3200);
+  } catch (e) {
+    if (e && e.name === 'AbortError') return; // юзер закрыл меню «Поделиться» — не ошибка
+    showToast('⚠️ Не удалось поделиться: ' + ((e && e.message) || 'ошибка'), 3200);
+  }
+}
+window.shareCloud = shareCloud;
 
 // ── CALENDAR — месячная сетка + режим «Раскидать» (конвейер) + drag&drop (дни и часы) ──
 let calendarMonthOffset = 0;     // 0 = текущий месяц
@@ -14552,7 +14583,7 @@ window.handleIcsFile = async function(file) {
     // v109: в тосте версия — если юзер пришлёт скрин, сразу видно, на какой он сборке.
     const kb = file.size >= 1024 ? Math.round(file.size / 1024) + ' КБ' : file.size + ' Б';
     const fname = file.name || 'файл';
-    showToast('📖 Читаю «' + fname + '» (' + kb + ') · v112', 2200);
+    showToast('📖 Читаю «' + fname + '» (' + kb + ') · v113', 2200);
     // v107: JSON-бэкап выбрали в календарной модалке — молча переношу в импорт записей
     if (/\.json$/i.test(fname)) { showToast('Это файл записей (JSON) — открываю импорт записей', 2600); await window.handleJsonImportFile(file); return; }
     // v106: ZIP-детект по сигнатуре PK (гугловский экспорт календаря — архив, а не голый .ics)
