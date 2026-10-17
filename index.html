@@ -10629,12 +10629,18 @@ function initTodoDrag() {
   // живой сдвиг соседей — расталкиваются, пока перетаскиваемая карточка "проходит" сквозь них
   function updateLiveShift(scrolled) {
     if (!todoDragState) return;
-    const { itemsSnapshot, id, startIndexAmongOthers, draggedHeight, grabOffset, cardH, dragFut } = todoDragState;
+    const { itemsSnapshot, id, startIndexAmongOthers, draggedHeight, grabOffset, cardH, dragFut, dragUrg } = todoDragState;
     const fingerY = todoDragState.lastClientY;
     const others = itemsSnapshot.filter(s => s.id !== id);
 
     let targetIndex = others.length;
     for (let i = 0; i < others.length; i++) {
+      // v120: СТЕНА СРОЧНЫХ — среди срочных цели НЕТ (они сплошным блоком сверху, splitTodoQueue
+      // всё равно держит их над всеми, v89). Пропускаем их в скане порогов: палец выше не-срочных
+      // даёт targetIndex = первая не-срочная карточка, т.е. дроп встаёт ПОД срочным блоком.
+      // Раньше палец выше срочных сдвигал их вниз (визуально «пускали наверх»), а splitTodoQueue
+      // возвращал как было — карточка телепортировалась, драг у верха списка выглядел сломанным.
+      if (!dragUrg && others[i].urg) continue;
       // v87: граница тиров А/«на потом» — стена. Драг не перелистывает через неё:
       // первый чужой тир = стоп ровно на этой позиции (карточка остаётся в своём тире).
       if (others[i].fut !== dragFut) {
@@ -10658,6 +10664,7 @@ function initTodoDrag() {
     todoDragState.currentTargetIndex = targetIndex;
 
     others.forEach((s, j) => {
+      if (!dragUrg && s.urg) return; // v120: срочные не расступаются перед обычной карточкой (стена)
       const el = listEl.querySelector(`.note-card[data-id="${s.id}"]`);
       if (!el || el === todoDragState.itemEl) return;
       let shift = 0;
@@ -10705,7 +10712,8 @@ function initTodoDrag() {
     const itemsSnapshot = items.map(elm => {
       const r = elm.getBoundingClientRect();
       const nn = noteById[elm.dataset.id];
-      return { id: elm.dataset.id, midY: r.top + r.height / 2, h: r.height, fut: isFutureTodo(nn) };
+      // v120: urg — карточка из срочного блока (вторая стена драга, см. updateLiveShift)
+      return { id: elm.dataset.id, midY: r.top + r.height / 2, h: r.height, fut: isFutureTodo(nn), urg: !!(nn && nn.urgent === true) };
     });
     const startFullIndex = itemsSnapshot.findIndex(s => s.id === card.dataset.id);
     const cardRect = card.getBoundingClientRect();
@@ -10722,6 +10730,7 @@ function initTodoDrag() {
       grabOffset: clientY - (draggedSnap.midY - draggedSnap.h / 2),
       cardH: draggedSnap.h,
       dragFut: draggedSnap.fut, // v87: тир перетаскиваемой карточки (стена между тирами)
+      dragUrg: !!draggedSnap.urg, // v120: тащим срочную? (ручка у срочных скрыта — страховка для кода)
       currentTargetIndex: startFullIndex
     };
     card.classList.add('todo-dragging');
@@ -10885,8 +10894,19 @@ async function reorderTodo(id, newIndex, byVisible) {
     if (others.length) {
       // v87: стена тиров — драг не перелистывает через границу «сегодня/на потом»
       let firstFut = -1;
-      for (let i = 0; i < others.length; i++) if (isFutureTodo(others[i])) { firstFut = i; break; }
+      for (let i = 0; i < others.length; i++) {
+        // v120: для не-срочной карточки срочные-«на завтра» (urg+fut, живут в срочном блоке
+        // сверху) не считаются стеной «на потом» — иначе min(idx, 0) тянул якорь НАД срочными
+        if (isFutureTodo(others[i]) && (dragged.urgent || !others[i].urgent)) { firstFut = i; break; }
+      }
       let idx = Math.max(0, Math.min(others.length, newIndex));
+      // v120: стена СРОЧНЫХ — обычная карточка не встаёт выше срочного блока. Раньше дроп
+      // «над срочными» менял todoOrder всем срочным, а splitTodoQueue при рендере возвращал
+      // их наверх — карточка телепортировалась обратно, драг у верха списка выглядел сломанным.
+      if (!dragged.urgent) {
+        const firstNonUrg = others.findIndex(o => !o.urgent); // срочные — сплошной префикс
+        if (firstNonUrg !== -1) idx = Math.max(idx, firstNonUrg);
+      }
       if (dragFut) idx = Math.max(idx, firstFut === -1 ? others.length : firstFut);
       else idx = Math.min(idx, firstFut === -1 ? others.length : firstFut);
       anchor = others[idx] || null;
@@ -15319,7 +15339,7 @@ window.handleIcsFile = async function(file) {
     // v109: в тосте версия — если юзер пришлёт скрин, сразу видно, на какой он сборке.
     const kb = file.size >= 1024 ? Math.round(file.size / 1024) + ' КБ' : file.size + ' Б';
     const fname = file.name || 'файл';
-    showToast('📖 Читаю «' + fname + '» (' + kb + ') · v119', 2200);
+    showToast('📖 Читаю «' + fname + '» (' + kb + ') · v120', 2200);
     // v107: JSON-бэкап выбрали в календарной модалке — молча переношу в импорт записей
     if (/\.json$/i.test(fname)) { showToast('Это файл записей (JSON) — открываю импорт записей', 2600); await window.handleJsonImportFile(file); return; }
     // v106: ZIP-детект по сигнатуре PK (гугловский экспорт календаря — архив, а не голый .ics)
