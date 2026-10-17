@@ -1981,6 +1981,20 @@ service cloud.firestore {
     </div>
   </div>
 
+  <!-- v117: разделение наговоренного сообщения на отдельные задачи — галочки + редактируемые формулировки -->
+  <div class="modal-overlay" id="split-modal" onclick="if(event.target===this)closeSplitModal()">
+    <div class="modal" style="max-width:460px;max-height:86vh;display:flex;flex-direction:column;">
+      <div class="modal-title">✂️ Вижу несколько задач</div>
+      <div id="split-sub" style="font-size:12px;color:rgba(255,255,255,0.6);line-height:1.5;margin-bottom:10px;font-family:Inter,sans-serif;"></div>
+      <div id="split-list" style="flex:1;overflow-y:auto;padding:4px 6px;background:rgba(255,255,255,0.02);border-radius:8px;"></div>
+      <div class="modal-btns" style="margin-top:12px;display:flex;gap:6px;">
+        <button class="modal-cancel" onclick="closeSplitModal()" style="flex-shrink:0;">Отмена</button>
+        <button onclick="splitAddAsOne()" style="flex-shrink:0;background:rgba(255,255,255,0.04);border:0.5px solid rgba(255,255,255,0.15);border-radius:10px;padding:10px 12px;color:rgba(255,255,255,0.7);font-size:12px;cursor:pointer;font-family:Inter,sans-serif;">Одним списком</button>
+        <button class="modal-save" id="split-add" onclick="confirmSplitAdd()" style="flex:1;">Добавить</button>
+      </div>
+    </div>
+  </div>
+
   <!-- v104: Календарь ⇄ файлы (.ics) — экспорт плана в чужой календарь / перенос событий оттуда -->
   <div class="modal-overlay" id="cal-files-modal">
     <div class="modal" style="max-width:340px;">
@@ -3237,7 +3251,7 @@ function setTag(tag) {
 window.setTag = setTag;
 
 // ── СОХРАНЕНИЕ ──
-async function saveNote(text, type) {
+async function saveNote(text, type, opts) {
   if (!text.trim()) return;
   try {
     // v97: «запомни всегда / надо постоянно …» → сразу в «Помнить всегда» (программно, без ИИ и токенов)
@@ -3248,6 +3262,22 @@ async function saveNote(text, type) {
       showClear();
       await createRememberRule(_remRule);
       return;
+    }
+    // v117: наговорил/вставил несколько дел одним сообщением → предложить разделение.
+    // Гейт локальный (0 токенов); решение за ИИ-сплиттером (вернул 1 часть — сохраняем как обычно).
+    // opts.skipSplit — внутренний флаг: части и «одним списком» добавляются БЕЗ повторного сплита.
+    if (!(opts && opts.skipSplit) && looksLikeMultiTask(text)) {
+      if (window.__hzSplitBusy) { showToast('Уже разбираю сообщение — выбери задачи в окне', 2500); return; }
+      window.__hzSplitBusy = true;
+      try {
+        setStatus('✂️ Смотрю, не несколько ли задач…', 6000);
+        const parts = await aiSplitParts(text);
+        if (parts && parts.length > 1) {
+          openSplitModal(text, parts, type || 'text');
+          return; // решение за юзером в модалке: галочки/правки → добавляем выбранное
+        }
+      } catch (e) { console.warn('[Split] gate error', e); }
+      finally { window.__hzSplitBusy = false; }
     }
     const docRef = await addDoc(notesCol(), {
       text: text.trim(),
@@ -3280,6 +3310,147 @@ async function saveNote(text, type) {
   }
 }
 
+// ── v117: РАЗДЕЛЕНИЕ НАГОВОРЕННОГО СООБЩЕНИЯ НА ОТДЕЛЬНЫЕ ЗАДАЧИ ──
+// Юзер диктует/вставляет махом: «позвонить маме, а ещё купить носки, и брату помыть машину».
+// Гейт (локально, 0 токенов) решает, СТОИТ ЛИ спрашивать ИИ-сплиттер; тот возвращает части,
+// юзеру показывается модалка с галочками и редактируемыми формулировками.
+
+// Гейт: дешёвая локальная проверка «похоже, тут несколько дел». Разделители перечислений:
+// ; | перенос строки | конец предложения | «, а ещё» | «, и» | «, потом» | «, также» | голое « и ».
+// Каждый сегмент проверяем task-эвристикой — перечисление предметов одного дела («мама и папа»,
+// «купить хлеб и молоко») гейт не проходит. Финальное решение всё равно за ИИ.
+function looksLikeMultiTask(text) {
+  const t = String(text || '').trim();
+  if (t.length < 14) return false;
+  if (aiPaused()) return false; // ИИ на паузе — сплиттер не ответит, не маячим
+  // маркер конца предложения \u0001 (lookbehind не используем — старые Safari падают на парсинге)
+  const norm = t.replace(/([.!?])\s+/g, '$1\u0001').replace(/[.!?]+\s*$/g, '');
+  const segs = norm.split(/;+|\u0001|\n+|,\s*(?:а\s+ещё|и\s+ещё|а\s+также|и\s+также|потом|также|ещё|и)\s+|\s+и\s+/i)
+    .map(s => s.trim()).filter(s => s.length > 2);
+  if (segs.length < 2) return false;
+  let n = 0;
+  for (const s of segs) {
+    if (heuristicIsTask(s) || startsLikeAction(s)) { n++; if (n >= 2) return true; }
+  }
+  return false;
+}
+
+// нормализация ответа сплиттера: только строки, без нумерации «1.», дедуп, кап 8 частей
+function normalizeSplitParts(raw) {
+  if (!Array.isArray(raw)) return null;
+  const seen = new Set();
+  const parts = [];
+  for (let p of raw) {
+    if (typeof p !== 'string') continue;
+    p = p.trim().replace(/^\d+[.)]\s*/, '').slice(0, 300);
+    if (p.length < 2) continue;
+    const k = p.toLowerCase();
+    if (seen.has(k)) continue;
+    seen.add(k);
+    parts.push(p);
+    if (parts.length >= 8) break;
+  }
+  return parts.length >= 2 ? parts : null; // 0-1 часть = единый текст, модалка не нужна
+}
+
+// ИИ-сплиттер: ≥2 самостоятельных частей или null (ИИ недоступен / считает текст единым целым).
+// Тихий фолбэк: null → сохраняем одним сообщением как раньше, ничего не ломаем.
+async function aiSplitParts(text) {
+  try {
+    if (window.__hzSplitOverride) return normalizeSplitParts(window.__hzSplitOverride(text)); // тест-хук
+    if (aiPaused()) return null;
+    const resp = await Promise.race([
+      callBrainAI([
+        { role: 'system', content: 'Ты — сплиттер наговорённых сообщений. Пользователь надиктовал или вставил одним сообщением текст, в котором может быть несколько САМОСТОЯТЕЛЬНЫХ дел. Разбей его на отдельные части. Правила: каждая часть — самодостаточная задача или заметка, понятная без остального текста; формулировка — действие («Позвонить маме», «Купить носки», «Помыть брату машину»); БЕЗ слов-связок («а ещё», «и», «также», «потом»); сохраняй имена, числа, сроки и детали; обращения («брату помыть машину») превращай в действие. Если текст — единое целое (одна мысль, одна задача, перечисление предметов ОДНОГО дела вроде «купить хлеб и молоко») — верни ОДНУ часть. Максимум 8 частей. Ответь ТОЛЬКО валидным JSON без markdown: {"parts": ["часть 1", "часть 2"]}' },
+        { role: 'user', content: String(text).slice(0, 600) }
+      ], { max_tokens: 400, temperature: 0 }),
+      new Promise((_, rej) => setTimeout(() => rej(new Error('split-timeout')), 12000))
+    ]);
+    const m = resp && resp.match(/\{[\s\S]*\}/);
+    if (!m) return null;
+    const parsed = JSON.parse(m[0]);
+    return normalizeSplitParts(parsed && parsed.parts);
+  } catch (e) {
+    console.warn('[Split] aiSplitParts failed:', e);
+    return null;
+  }
+}
+
+let splitState = null; // { text, parts, type } — пока открыта модалка разделения
+
+function openSplitModal(originalText, parts, type) {
+  splitState = { text: originalText, parts: parts.slice(), type: type || 'text' };
+  const ov = document.getElementById('split-modal');
+  if (!ov) return;
+  document.getElementById('split-sub').textContent =
+    'Ты надиктовал несколько дел одним сообщением. Разбил на ' + parts.length + ' — отметь нужные, поправь формулировки и добавь.';
+  const list = document.getElementById('split-list');
+  list.innerHTML = '';
+  parts.forEach((p) => {
+    const row = document.createElement('div');
+    row.className = 'split-row';
+    row.style.cssText = 'display:flex;gap:9px;align-items:center;padding:8px 9px;border-radius:9px;border:0.5px solid rgba(108,71,255,0.25);background:rgba(108,71,255,0.06);margin-bottom:6px;';
+    const cb = document.createElement('input');
+    cb.type = 'checkbox'; cb.checked = true;
+    cb.style.cssText = 'accent-color:#6C47FF;cursor:pointer;flex-shrink:0;width:17px;height:17px;';
+    cb.onchange = () => { row.style.opacity = cb.checked ? '1' : '0.45'; updateSplitCount(); };
+    const inp = document.createElement('input');
+    inp.type = 'text'; inp.value = p;
+    inp.style.cssText = 'flex:1;min-width:0;background:transparent;border:none;outline:none;color:rgba(255,255,255,0.88);font-size:13px;line-height:1.4;font-family:Inter,sans-serif;';
+    row.appendChild(cb); row.appendChild(inp);
+    list.appendChild(row);
+  });
+  updateSplitCount();
+  if (window.__hzSwapModal) window.__hzSwapModal(null, ov); // nav-машина: «назад» закроет модалку
+  else ov.classList.add('open');
+}
+
+function updateSplitCount() {
+  const rows = [...document.querySelectorAll('#split-list .split-row')];
+  const n = rows.filter(r => r.querySelector('input[type=checkbox]').checked).length;
+  const btn = document.getElementById('split-add');
+  if (btn) {
+    btn.textContent = n ? 'Добавить (' + n + ')' : 'Добавить';
+    btn.disabled = !n;
+    btn.style.opacity = n ? '1' : '0.5';
+  }
+}
+
+function closeSplitModal() {
+  const ov = document.getElementById('split-modal');
+  if (ov && ov.classList.contains('open')) ov.classList.remove('open'); // observer → history.back()
+  splitState = null;
+}
+
+// «Добавить (N)»: каждое отмеченное — ОТДЕЛЬНОЙ записью через обычный saveNote
+// (skipSplit без рекурсии) — дальше сработает штатная ИИ-классификация каждой части.
+async function confirmSplitAdd() {
+  if (!splitState) return;
+  const st = splitState;
+  const rows = [...document.querySelectorAll('#split-list .split-row')];
+  const picked = rows
+    .filter(r => r.querySelector('input[type=checkbox]').checked)
+    .map(r => r.querySelector('input[type=text]').value.trim())
+    .filter(Boolean);
+  closeSplitModal();
+  if (!picked.length) { showToast('Галочек нет — ничего не добавил. Текст остался в поле', 3200); return; }
+  for (const p of picked) {
+    try { await saveNote(p, st.type, { skipSplit: true }); } catch (e) {}
+  }
+  showToast('✂️ Добавил по отдельности: ' + picked.length, 3200);
+}
+
+// «Одним списком»: сохранить как раньше — одной записью с полным текстом
+function splitAddAsOne() {
+  if (!splitState) return;
+  const st = splitState;
+  closeSplitModal();
+  saveNote(st.text, st.type, { skipSplit: true });
+}
+window.confirmSplitAdd = confirmSplitAdd;
+window.splitAddAsOne = splitAddAsOne;
+window.closeSplitModal = closeSplitModal;
+
 // ── ИИ-КЛАССИФИКАЦИЯ РУЧНОЙ ЗАМЕТКИ: задача → сразу в тудушку ──
 // Вызывается в фоне после saveNote (текст и голос). ИИ решает задача/заметка;
 // при недоступности ИИ — локальная эвристика heuristicIsTask.
@@ -3288,7 +3459,7 @@ function heuristicIsTask(text) {
   // (\b в JS не работает с кириллицей, поэтому границы — пробелы)
   const norm = ' ' + String(text || '').toLowerCase().replace(/[^а-яёa-z0-9]+/g, ' ') + ' ';
   // явные маркеры + инфинитивы/императивы «деловых» глаголов (в мыслях/дневнике почти не встречаются)
-  const explicit = / (надо|нужно|необходимо|не забыть|не забудь|напомни|напоминание|сделать|купить|позвонить|записаться|отправить|отослать|написать|оплатить|заплатить|перевести|забрать|сдать|починить|заказать|проверить|подготовить|доделать|закончить|встретиться|сходить|пойти|отвезти|привезти|выбросить|постирать|убраться|позвони|купи|сделай|проверь|отправь|запиши|закажи|оплати|забери) /.test(norm);
+  const explicit = / (надо|нужно|необходимо|не забыть|не забудь|напомни|напоминание|сделать|купить|позвонить|записаться|отправить|отослать|написать|оплатить|заплатить|перевести|забрать|сдать|починить|заказать|проверить|подготовить|доделать|закончить|встретиться|сходить|пойти|отвезти|привезти|выбросить|постирать|убраться|помыть|вымыть|позвони|купи|сделай|проверь|отправь|запиши|закажи|оплати|забери) /.test(norm);
   // v90 Н12: «должно где-то быть/стоять/лежать» — пользователь фиксирует желаемый порядок вещей =
   // это ЗАДАЧА («эта коробка должна стоять на балконе», «страховка должна лежать в папке»).
   // Отрицание («этого не должно быть») делом не считаем
@@ -14596,7 +14767,7 @@ window.handleIcsFile = async function(file) {
     // v109: в тосте версия — если юзер пришлёт скрин, сразу видно, на какой он сборке.
     const kb = file.size >= 1024 ? Math.round(file.size / 1024) + ' КБ' : file.size + ' Б';
     const fname = file.name || 'файл';
-    showToast('📖 Читаю «' + fname + '» (' + kb + ') · v116', 2200);
+    showToast('📖 Читаю «' + fname + '» (' + kb + ') · v117', 2200);
     // v107: JSON-бэкап выбрали в календарной модалке — молча переношу в импорт записей
     if (/\.json$/i.test(fname)) { showToast('Это файл записей (JSON) — открываю импорт записей', 2600); await window.handleJsonImportFile(file); return; }
     // v106: ZIP-детект по сигнатуре PK (гугловский экспорт календаря — архив, а не голый .ics)
@@ -15420,6 +15591,11 @@ window.__t = {
   polishTranscript,
   ensurePunctuation,
   notes: () => notes,
+  // v117: разделение наговоренного на задачи
+  looksLikeMultiTask,
+  normalizeSplitParts,
+  aiSplitParts,
+  splitModalOpen: () => !!document.getElementById('split-modal') && document.getElementById('split-modal').classList.contains('open'),
   calendar: () => ({ offset: calendarMonthOffset, sel: calendarSelectedKey }),
   setCalendarSel: (k) => { calendarSelectedKey = k; },
   addNoteFromChat,
