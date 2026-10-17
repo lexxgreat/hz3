@@ -553,9 +553,22 @@ body.todo-mouse-dragging *{cursor:grabbing !important}
 .wish-dragging{
   opacity:0.92;box-shadow:0 10px 28px rgba(0,0,0,0.5);z-index:20;transition:none !important;
 }
-.todo-dragging{
-  opacity:0.9;box-shadow:0 10px 28px rgba(0,0,0,0.5);z-index:20;transition:none !important;
+/* v121: селектор .swipe-wrap .note-card.todo-dragging нужен ПОВЕРХ базового z-index:1 —
+   иначе (0,2,0) перебивает (0,1,0) и летящая карточка рисуется по DOM-порядку:
+   накрывает верхних («верхняя пропадает») и прячется под нижними при драге вниз */
+.todo-dragging, .swipe-wrap .note-card.todo-dragging{
+  opacity:1;box-shadow:0 14px 40px rgba(0,0,0,0.65),0 0 0 1px rgba(139,92,246,0.4);z-index:60;transition:none !important;
+  will-change:transform;transform-origin:50% 0;
 }
+/* v121: во время перетаскивания обёртки свайпа НЕ РЕЖУТ карточки. Раньше overflow:hidden
+   каждой .swipe-wrap обрезал: 1) летящую карточку, как только она выезжала из своей
+   обёртки («карточку которую тащу не видно»), 2) расступающихся соседей — они сдвигаются
+   на высоту тащимой и уходят за пределы своих обёрток («тащу вверх — верхняя пропадает»),
+   3) соседи рисовались ПОВЕРХ летящей (карточки ниже по DOM). На время драга режем
+   только контейнером списка, не обёртками, а летящая карточка — z-index:60 поверх всех. */
+#todo-list.todo-drag-live .swipe-wrap{overflow:visible}
+/* v121: еле заметный ярлычок версии на главном экране — юзер всегда знает, на какой сборке он */
+#ver-chip{position:absolute;right:14px;bottom:7px;font-size:9px;font-weight:600;letter-spacing:0.6px;color:rgba(255,255,255,0.22);pointer-events:none;z-index:3;font-family:Inter,sans-serif;user-select:none;-webkit-user-select:none;line-height:1}
 .note-edit{background:rgba(108,71,255,0.15);color:rgba(139,92,246,0.9)}
 .note-edit:hover{background:rgba(108,71,255,0.3)}
 .note-done{background:rgba(255,255,255,0.05);color:rgba(255,255,255,0.72);border:0.5px solid rgba(255,255,255,0.16)}
@@ -1350,6 +1363,8 @@ body[data-theme="business"] .cap-mic.recording{box-shadow:0 0 10px rgba(140,176,
 
       <div class="save-flash" id="save-flash">✓ Сохранено</div>
     </div>
+
+    <div id="ver-chip" aria-hidden="true"></div>
   </div>
 
   <!-- ── TODO SCREEN ── -->
@@ -10620,9 +10635,31 @@ function initTodoDrag() {
 
   function updateDragVisual() {
     if (!todoDragState) return;
-    const scrolled = listEl.scrollTop - todoDragState.startScrollTop;
-    const deltaY = todoDragState.lastClientY - todoDragState.startY + scrolled;
-    todoDragState.itemEl.style.transform = `translateY(${deltaY}px)`;
+    const st = todoDragState;
+    const scrolled = listEl.scrollTop - st.startScrollTop;
+    // v85-модель: карточка следует за ПАЛЬЦЕМ (viewport-верх = startTop + дельта пальца,
+    // скролл компенсируется в transform). v121: поверх — ЗАЖИМ У СТЕН. Карточка физически
+    // не может наехать на срочный блок или перелететь границу тиров и «накрыть» их
+    // (фидбек: «тащу карточку вверх — верхняя пропадает»). Стены живут в viewport-
+    // координатах (rect читается живьём) — зажим корректен и при автоскролле.
+    let top = st.startTop + (st.lastClientY - st.startY);
+    const GAP = 8; // тот же шаг сетки, что в draggedHeight
+    const scaleH = st.cardH * 0.02; // scale(1.02) с origin top — низ карточки вырастает на 2%
+    try {
+      if (st.wallUrgEl) {
+        const lim = st.wallUrgEl.getBoundingClientRect().bottom + GAP;
+        if (top < lim) top = lim;
+      }
+      if (st.wallFutEl) {
+        const lim = st.wallFutEl.getBoundingClientRect().top - GAP - st.cardH - scaleH;
+        if (top > lim) top = lim;
+      }
+      if (st.wallNonFutEl) {
+        const lim = st.wallNonFutEl.getBoundingClientRect().bottom + GAP;
+        if (top < lim) top = lim;
+      }
+    } catch (e) {}
+    st.itemEl.style.transform = `translateY(${(top - st.startTop) + scrolled}px) scale(1.02)`;
     updateLiveShift(scrolled);
   }
 
@@ -10718,6 +10755,25 @@ function initTodoDrag() {
     const startFullIndex = itemsSnapshot.findIndex(s => s.id === card.dataset.id);
     const cardRect = card.getBoundingClientRect();
     const draggedSnap = itemsSnapshot[startFullIndex];
+    // v121: элементы СТЕН для зажима летящей карточки (rect читается живьём каждый кадр —
+    // работает и при автоскролле). Стены те же, что в updateLiveShift/reorderTodo:
+    // срочный блок сверху (для не-срочных), граница тиров A/«на потом» (в обе стороны).
+    let wallUrgEl = null, wallFutEl = null, wallNonFutEl = null;
+    const wallElById = (wid) => listEl.querySelector(`.note-card[data-id="${wid}"]`);
+    if (!draggedSnap.urg) {
+      for (let i = itemsSnapshot.length - 1; i >= 0; i--) {
+        if (itemsSnapshot[i].urg) { wallUrgEl = wallElById(itemsSnapshot[i].id); break; }
+      }
+    }
+    if (!draggedSnap.fut) {
+      for (let i = 0; i < itemsSnapshot.length; i++) {
+        if (itemsSnapshot[i].fut && !itemsSnapshot[i].urg) { wallFutEl = wallElById(itemsSnapshot[i].id); break; }
+      }
+    } else {
+      for (let i = itemsSnapshot.length - 1; i >= 0; i--) {
+        if (!itemsSnapshot[i].fut) { wallNonFutEl = wallElById(itemsSnapshot[i].id); break; }
+      }
+    }
     todoDragState = {
       id: card.dataset.id, startY: clientY, lastClientY: clientY,
       pointerType,
@@ -10731,8 +10787,13 @@ function initTodoDrag() {
       cardH: draggedSnap.h,
       dragFut: draggedSnap.fut, // v87: тир перетаскиваемой карточки (стена между тирами)
       dragUrg: !!draggedSnap.urg, // v120: тащим срочную? (ручка у срочных скрыта — страховка для кода)
+      startTop: cardRect.top, // v121: viewport-верх карточки без transform — база зажима у стен
+      wallUrgEl, wallFutEl, wallNonFutEl, // v121: элементы стен для зажима
       currentTargetIndex: startFullIndex
     };
+    // v121: на время драга обёртки свайпа не режут карточки (overflow:visible) —
+    // летящая карточка и расступающиеся соседи видны целиком в любом месте списка
+    listEl.classList.add('todo-drag-live');
     card.classList.add('todo-dragging');
     if (pointerType === 'mouse') {
       document.body.style.userSelect = 'none';
@@ -10772,6 +10833,7 @@ function initTodoDrag() {
     // renderTodo заменит DOM целиком — карточка остаётся там, куда утащили.
     todoDragState = null;
     window.__todoDragEndTs = Date.now(); // тап сразу после драга не должен открыть редактор
+    listEl.classList.remove('todo-drag-live'); // v121: обёртки свайпа снова режут содержимое
     reorderTodo(draggedId, finalIndex, true); // v119: индекс по ВИДИМЫМ карточкам (на экране)
   }
 
@@ -10785,6 +10847,7 @@ function initTodoDrag() {
     if (!todoDragState) return;
     cancelAnimationFrame(todoDragState.rafId);
     resetShifts();
+    listEl.classList.remove('todo-drag-live'); // v121: обёртки свайпа снова режут содержимое
     todoDragState.itemEl.style.transform = '';
     todoDragState.itemEl.classList.remove('todo-dragging');
     endMouseDragVisual();
@@ -10822,6 +10885,7 @@ function initTodoDrag() {
     if (!todoDragState || todoDragState.pointerType !== 'mouse') return;
     cancelAnimationFrame(todoDragState.rafId);
     resetShifts();
+    listEl.classList.remove('todo-drag-live'); // v121: обёртки свайпа снова режут содержимое
     todoDragState.itemEl.style.transform = '';
     todoDragState.itemEl.classList.remove('todo-dragging');
     endMouseDragVisual();
@@ -15332,6 +15396,9 @@ async function extractIcsFromZip(buf) {
 window.extractIcsFromZip = extractIcsFromZip;
 
 // Файл .ics (или .zip от Google) → кандидаты импорта (с дедупликацией) → общая превью-модалка
+const APP_VERSION = 'v121'; // v121: единый источник версии — тост чтения файла + ярлычок на главной
+window.APP_VERSION = APP_VERSION;
+try { const _vc = document.getElementById('ver-chip'); if (_vc) _vc.textContent = APP_VERSION; } catch(e) {}
 window.handleIcsFile = async function(file) {
   window.__importBusy = true; // v108: SW не перезагружает страницу посреди чтения/превью файла
   try {
@@ -15339,7 +15406,7 @@ window.handleIcsFile = async function(file) {
     // v109: в тосте версия — если юзер пришлёт скрин, сразу видно, на какой он сборке.
     const kb = file.size >= 1024 ? Math.round(file.size / 1024) + ' КБ' : file.size + ' Б';
     const fname = file.name || 'файл';
-    showToast('📖 Читаю «' + fname + '» (' + kb + ') · v120', 2200);
+    showToast('📖 Читаю «' + fname + '» (' + kb + ') · ' + APP_VERSION, 2200);
     // v107: JSON-бэкап выбрали в календарной модалке — молча переношу в импорт записей
     if (/\.json$/i.test(fname)) { showToast('Это файл записей (JSON) — открываю импорт записей', 2600); await window.handleJsonImportFile(file); return; }
     // v106: ZIP-детект по сигнатуре PK (гугловский экспорт календаря — архив, а не голый .ics)
