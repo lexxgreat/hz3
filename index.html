@@ -9051,18 +9051,34 @@ function hziAward(kind, id) {
   clearTimeout(_hziFlushTimer);
   _hziFlushTimer = setTimeout(() => { hziFlush().catch(() => {}); }, 1200);
 }
+// v122: чтение meta/activity. Три исхода: данные / документ подтверждённо отсутствует
+// (новый юзер — ретро-грант) / ЧТЕНИЕ СОРВАЛОСЬ (сеть) — раньше третий случай был
+// неотличим от второго и приводил к катастрофе: пустой ретро-стейт + setDoc ЗАТИРАЛИ
+// реальный документ (⚡/уровень/гардероб слетали), буфер переначислял те же баллы,
+// и «Уровень 4!» выскакивал при каждом кривом старте заново.
 async function hziLoad() {
+  let snapData = null, readFailed = false;
   try {
+    if (window.__hziReadFail === true) throw new Error('test: read fail'); // тест-перехват (как __aiHook)
     const snap = await getDoc(uDocRef('meta', 'activity'));
-    if (snap.exists()) {
-      _hzi = Object.assign(hziEmptyState(), snap.data());
-      // v94-миграция: ⚡ стал тратимым (гардероб) — уровень считается от xpMax (лучший результат)
-      if (!_hzi.xpMax) _hzi.xpMax = _hzi.xp || 0; // у v93-профилей xpMax нет (из empty-стейта приходит 0)
-      if (!Array.isArray(_hzi.wardrobe)) _hzi.wardrobe = [];
-      if (!Array.isArray(_hzi.worn)) _hzi.worn = [];
-      renderHaziBadge(); return;
-    }
-  } catch(e) { /* сеть — начнём с пустого, буфер сохранит баллы */ }
+    if (snap.exists()) snapData = snap.data();
+  } catch(e) { readFailed = true; }
+  if (snapData) {
+    _hzi = Object.assign(hziEmptyState(), snapData);
+    // v94-миграция: ⚡ стал тратимым (гардероб) — уровень считается от xpMax (лучший результат)
+    if (!_hzi.xpMax) _hzi.xpMax = _hzi.xp || 0; // у v93-профилей xpMax нет (из empty-стейта приходит 0)
+    if (!Array.isArray(_hzi.wardrobe)) _hzi.wardrobe = [];
+    if (!Array.isArray(_hzi.worn)) _hzi.worn = [];
+    if (_hzi.lastEvo == null) _hzi.lastEvo = hziLevelOf(_hzi.xpMax || _hzi.xp); // v122: уровни, достигнутые до lastEvo, модалку не повторяют
+    renderHaziBadge(); return;
+  }
+  if (readFailed) {
+    // v122: сеть недоступна — состояние НЕ трогаем. Если своего ещё нет — «временное»,
+    // без ретро-гранта и БЕЗ записи в облако (см. hziWritable): буфер ⚡ дождётся flush.
+    if (!_hzi) { _hzi = hziEmptyState(); _hzi._provisional = true; }
+    renderHaziBadge(); return;
+  }
+  // документ подтверждённо отсутствует — новый юзер: ретро-грант за уже сделанные дела
   _hzi = hziEmptyState();
   try { // ретро-грант: стартовый заряд за уже сделанные дела (одноразово — маркер retroDone)
     const doneN = (notes || []).filter(n => n.done && n.doneAt).length;
@@ -9078,12 +9094,26 @@ async function hziLoad() {
     }
     try { await setDoc(uDocRef('meta', 'activity'), _hzi); } catch(e) {}
   } catch(e) {}
+  _hzi.lastEvo = Math.max(hziLevelOf(_hzi.xpMax || _hzi.xp), hziLSEvo()); // v122
   renderHaziBadge();
+}
+// v122: писать в облако можно только подтверждённое состояние — «временное» (сеть сорвалась
+// при первом чтении) нельзя: записали бы пустышку поверх реального документа.
+function hziWritable() { return !!(_hzi && !_hzi._provisional); }
+// v122: на каком уровне модалка эволюции уже показывалась. Двойной дедуп — в доке
+// (синхрон между устройствами) и в localStorage (переживает затирание дока).
+function hziLSEvo() { try { return parseInt(localStorage.getItem('hz3_hzi_lastevo') || '0', 10) || 0; } catch(e) { return 0; } }
+function hziMarkEvo(level) {
+  if (!_hzi) return;
+  _hzi.lastEvo = Math.max(Number(_hzi.lastEvo) || 0, level);
+  try { localStorage.setItem('hz3_hzi_lastevo', String(hziLSEvo() > level ? hziLSEvo() : level)); } catch(e) {}
 }
 async function hziFlush(force) {
   const buf = hziBufGet();
   if (!buf.length && !force) return _hzi;
   if (!_hzi) await hziLoad();
+  if (_hzi._provisional) { try { await hziLoad(); } catch(e) {} } // v122: вторая попытка дожить до сети
+  if (_hzi._provisional) return _hzi; // сеть не поднялась — буфер ждёт следующего flush, переначислять в пустышку нельзя
   const today = hziDayStr();
   const prevLevel = hziLevelOf(_hzi.xpMax || _hzi.xp); // v94: уровень от лучшего результата
   const bornBefore = !!_hzi.born;
@@ -9141,12 +9171,18 @@ async function hziFlush(force) {
     const dayKeys = Object.keys(_hzi.days).sort();
     while (dayKeys.length > 400) delete _hzi.days[dayKeys.shift()];
   }
-  if (dirty) { try { await setDoc(uDocRef('meta', 'activity'), _hzi); hziBufSet([]); } catch(e) { /* буфер остаётся — досинхронится позже */ } }
+  if (dirty && hziWritable()) { try { await setDoc(uDocRef('meta', 'activity'), _hzi); hziBufSet([]); } catch(e) { /* буфер остаётся — досинхронится позже */ } }
+  else if (dirty) { /* v122: временное состояние — в облако не пишем, буфер дождётся сети */ }
   else if (buf.length) hziBufSet([]); // всё отброшено капами/дедупом — буфер пуст
   _hzi.xpMax = Math.max(_hzi.xpMax || 0, _hzi.xp); // v94: лучший результат — уровень никогда не падает от трат
   renderHaziBadge();
   const newLevel = hziLevelOf(_hzi.xpMax || _hzi.xp);
-  if (newLevel > prevLevel) { setTimeout(() => hziShowEvolution(newLevel), 500); }
+  // v122: показываем только уровень ВЫШЕ уже отпразднованного (lastEvo: док + localStorage).
+  // Раньше после сетевого сбоя (ретро-затирание дока) «Уровень N!» выскакивал заново.
+  if (newLevel > prevLevel && newLevel > Math.max(Number(_hzi.lastEvo) || 0, hziLSEvo())) {
+    hziMarkEvo(newLevel);
+    setTimeout(() => hziShowEvolution(newLevel), 500);
+  }
   else if (!bornBefore && _hzi.born && !_hzi._noBirth) { setTimeout(() => hziShowBirth(), 500); }
   if (gained > 0 && buf.length) hziPoke('+' + gained + '⚡');
   return _hzi;
@@ -9207,7 +9243,7 @@ function updateWardrobeLabels() {
   const xpEl = document.getElementById('wardrobe-hazi-xp');
   if (xpEl) xpEl.textContent = _hzi ? (_hzi.xp || 0) : 0;
 }
-async function hziSaveWardrobe() { try { await setDoc(uDocRef('meta', 'activity'), _hzi); } catch(e) { /* офлайн — поле уедет со следующим flush */ } }
+async function hziSaveWardrobe() { if (!hziWritable()) return; try { await setDoc(uDocRef('meta', 'activity'), _hzi); } catch(e) { /* офлайн — поле уедет со следующим flush */ } }
 function renderWardrobeHero() { // большой предпросмотр Хэзи в том, что надето сейчас
   const hero = document.getElementById('wardrobe-hero');
   if (!hero) return;
@@ -9580,7 +9616,7 @@ function hziRenderStats() {
   st.innerHTML = card('✅ ' + v.td, 'задач выполнено') + card('➕ ' + v.ta, 'задач добавлено') + card('📝 ' + v.n, 'заметок создано') + card('🌠 ' + v.ms, 'шагов желаний') + card('💬 ' + v.c, 'сообщений ИИ') + card('⚡ ' + v.xp, 'получено') + spentRow;
 }
 async function hziPersist() { // тесты/служебное: прямая запись состояния в облако
-  if (!_hzi) return;
+  if (!_hzi || !hziWritable()) return;
   try { await setDoc(uDocRef('meta', 'activity'), _hzi); } catch(e) {}
 }
 function hziReset() { // тесты
@@ -9878,11 +9914,19 @@ function maybeShowRememberPopup() {
   if (!remModalAllowed()) return;
   if (rememberShownToday()) return;
   if (document.getElementById('remember-daily-open')) return;
-  const items = rememberList().filter(n => n.rememberOn !== false).slice(0, REMEMBER_ACTIVE_MAX); // v97: только активные галочки — не перегружаем
+  // v122: ждём ЗАГРУЗКИ notes. Раньше попап вызывался по таймеру 3.6с после логина, и если
+  // сеть была медленной (утро, телефон только проснулся), rememberList() был ещё пуст —
+  // день помечался «показано», и карточка не выскочила ВЕСЬ день. Теперь пустой список ДО
+  // первой успешной загрузки заметок — повод подождать, а не закрывать вопрос.
+  if (!window.__notesLoadedOnce) {
+    if (_remPopupTries < 40) { _remPopupTries++; setTimeout(maybeShowRememberPopup, 1500); }
+    return;
+  }
+  const items = rememberList().filter(n => n.rememberOn !== false).slice(0, REMEMBER_ACTIVE_MAX);
   if (!items.length) { markRememberShown(); return; } // активных нет — не дёргаем, попробуем завтра
   // другие стартовые модалки (регистрация, итог дня, офферы) важнее — дождёмся тишины
   if (document.querySelector('.modal-overlay.open')) {
-    if (_remPopupTries < 24) { _remPopupTries++; setTimeout(maybeShowRememberPopup, 1500); }
+    if (_remPopupTries < 60) { _remPopupTries++; setTimeout(maybeShowRememberPopup, 1500); }
     return;
   }
   markRememberShown();
@@ -14216,6 +14260,7 @@ window.callPolzaAI = callPolzaAI;
 // 1. POST /v1/images/generations → returns {requestId}
 // 2. Poll GET /v1/images/{requestId} every 3s → {status:"COMPLETED", url, images}
 async function generatePolzaImage(prompt) {
+  if (window.__polzaImageHook) return window.__polzaImageHook(prompt); // тест-перехват (как __aiHook)
   const res = await fetch('https://api.polza.ai/api/v1/images/generations', {
     method: 'POST',
     headers: { 'Content-Type':'application/json', 'Authorization':'Bearer ' + POLZA_KEY },
@@ -14283,6 +14328,33 @@ async function runMoodQueue() {
   }
 }
 
+// v122: Polza отдаёт ссылку на файл в своём S3 (s3.polza.ai) — файлы там со временем
+// чистятся, и картинка желания «пропадает» (фон-градиент вместо фото, поле в базе цело).
+// Храним САМО изображение: скачиваем (CORS у s3.polza.ai открыт), сжимаем в JPEG ~720px
+// (~100–160КБ base64 — с запасом до лимита дока Firestore 1МБ) и пишем dataURL.
+async function wishImageToDataUrl(url) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error('mood fetch ' + res.status);
+  const blob = await res.blob();
+  const objUrl = URL.createObjectURL(blob);
+  try {
+    const img = await new Promise((ok, err) => { const i = new Image(); i.onload = () => ok(i); i.onerror = () => err(new Error('mood decode')); i.src = objUrl; });
+    const maxSide = Math.max(img.naturalWidth || 0, img.naturalHeight || 0) || 720;
+    const k = Math.min(1, 720 / maxSide);
+    const w = Math.max(1, Math.round((img.naturalWidth || 720) * k)), h = Math.max(1, Math.round((img.naturalHeight || 720) * k));
+    const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+    cv.getContext('2d').drawImage(img, 0, 0, w, h);
+    let out = cv.toDataURL('image/jpeg', 0.82);
+    if (out.length > 420000) out = cv.toDataURL('image/jpeg', 0.6); // страховка перед лимитом дока
+    if (out.length > 640000) throw new Error('mood too big');
+    return out;
+  } finally { URL.revokeObjectURL(objUrl); }
+}
+// v122: жива ли ссылка. true/false — решаем; null — сеть шалит, решение НЕ принимаем.
+async function wishUrlAlive(url) {
+  try { const r = await fetch(url, { method: 'HEAD', cache: 'no-store' }); return r.ok ? true : false; } catch(e) { return null; }
+}
+
 // Ядро: гарантирует промпт (для старых желаний добывает через AI) и генерирует картинку
 async function generateWishMoodImageCore(wishId, prompt) {
   const w = wishes.find(x => x.id === wishId);
@@ -14299,7 +14371,9 @@ async function generateWishMoodImageCore(wishId, prompt) {
     await loadWishes();
   }
   const url = await generatePolzaImage(p);
-  await updateDoc(uDocRef('wishes', wishId), { moodImage: url });
+  let stored = url;
+  try { stored = await wishImageToDataUrl(url); } catch(e) { console.warn('[Wish] dataURL convert failed, keeping URL:', e); } // v122: перманентное хранение, если вышло
+  await updateDoc(uDocRef('wishes', wishId), { moodImage: stored });
   await loadWishes();
   renderWishes();
   // Если открыта модалка этого желания — обновляем, чтобы картинка появилась сразу
@@ -14317,13 +14391,32 @@ function generateWishMoodImage(wishId, prompt) {
 window.generateWishMoodImage = generateWishMoodImage;
 
 // Самолечение: желания без картинки (сорвавшаяся генерация или созданные до фичи)
-// при старте приложения сами становятся в очередь генерации
-function healWishImages() {
+// при старте приложения сами становятся в очередь генерации.
+// v122: плюс миграция старых ссылок — живые оцифровываем в dataURL (пока файл ещё жив),
+// мёртвые (S3 Polza почистил) чистим и ставим в перегенерацию. Сеть шалит (null) — трогаем позже.
+async function healWishImages() {
   if (moodGen.healed) return;
   moodGen.healed = true;
   const need = wishes.filter(w => !w.moodImage);
   for (const w of need) queueWishImage(w.id, w.moodImagePrompt || '');
   if (need.length) console.log('[Wish] healing', need.length, 'wish image(s) in background');
+  const httpImg = wishes.filter(w => w.moodImage && String(w.moodImage).indexOf('http') === 0);
+  for (const w of httpImg) {
+    const alive = await wishUrlAlive(w.moodImage);
+    if (alive === false) {
+      await updateDoc(uDocRef('wishes', w.id), { moodImage: null }).catch(() => {});
+      const loc = wishes.find(x => x.id === w.id); if (loc) loc.moodImage = null;
+      queueWishImage(w.id, w.moodImagePrompt || '');
+      console.log('[Wish] dead mood image, regenerating:', w.id);
+    } else if (alive === true) {
+      try {
+        const du = await wishImageToDataUrl(w.moodImage);
+        await updateDoc(uDocRef('wishes', w.id), { moodImage: du });
+        const loc = wishes.find(x => x.id === w.id); if (loc) loc.moodImage = du;
+        console.log('[Wish] mood image preserved as dataURL:', w.id);
+      } catch(e) { /* не оцифровалась — ссылка остаётся, попробуем в следующий запуск */ }
+    }
+  }
 }
 
 // Повторная попытка из UI (клик по карточке с ошибкой)
@@ -15396,7 +15489,7 @@ async function extractIcsFromZip(buf) {
 window.extractIcsFromZip = extractIcsFromZip;
 
 // Файл .ics (или .zip от Google) → кандидаты импорта (с дедупликацией) → общая превью-модалка
-const APP_VERSION = 'v121'; // v121: единый источник версии — тост чтения файла + ярлычок на главной
+const APP_VERSION = 'v122'; // v121: единый источник версии — тост чтения файла + ярлычок на главной
 window.APP_VERSION = APP_VERSION;
 try { const _vc = document.getElementById('ver-chip'); if (_vc) _vc.textContent = APP_VERSION; } catch(e) {}
 window.handleIcsFile = async function(file) {
@@ -15882,6 +15975,7 @@ window.logout = logout;
 function clearLocalUserData() {
   notes = []; tags = []; promptRules = []; chatHistory = [];
   resetDevChatState();
+  try { localStorage.removeItem('hz3_hzi_lastevo'); } catch(e) {} // v122: смена аккаунта — дедуп эволюции нового аккаунта свой
 }
 
 // ── ЧАТ С РАЗРАБОТЧИКОМ ──────────────────────────────────────────────
@@ -16319,6 +16413,15 @@ window.__t = {
   hziStageOf,
   renderHaziScreen,
   hziRules: HZI_RULES,
+  hziLSEvo, // v122: дедуп модалки эволюции (localStorage)
+  hziMarkEvo,
+  hziWritable: () => hziWritable(),
+  rememberList, rememberActiveList, // v122: утренний попап «Помнить всегда»
+  maybeShowRememberPopup,
+  rememberShownToday, markRememberShown,
+  wishImageToDataUrl, wishUrlAlive, healWishImages, // v122: картинки желаний — dataURL + самолечение ссылок
+  moodGenPeek: () => ({ queue: moodGen.queue.map(j => j.wishId), runningId: moodGen.runningId, failed: [...moodGen.failed], healed: moodGen.healed }),
+  moodHealReset: () => { moodGen.healed = false; }, // v122: тесты перезапускают самолечение
   // v92: дашборд — периоды и метрики
   hziSetPeriod,
   hziRenderStats,
