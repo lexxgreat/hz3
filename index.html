@@ -321,10 +321,14 @@ body{background:#060918;font-family:'Inter',sans-serif;display:flex;justify-cont
   width:130px;height:130px;border-radius:50%;
   border:none;background:transparent;cursor:pointer;
   padding:0;position:relative;z-index:2;
+  flex-shrink:0; /* v125: главная кнопка никогда не сжимается — флекс её сплющивал при 3+ подсказках */
   transition:transform 0.18s cubic-bezier(0.34,1.56,0.64,1);
 }
 .chaos-btn:hover{transform:scale(1.06)}
 .chaos-btn:active{transform:scale(0.94)}
+
+/* v125: при тесной зоне кнопки подпись («Зажми и говори») прячется первой — сама подсказка */
+.chaos-zone.chaos-tight .chaos-hint{display:none}
 
 /* flower petals like reference */
 .chaos-petals{
@@ -8982,6 +8986,8 @@ const HINT_EL_SCREEN = { 'main-hint':'main','focus-hint':'main','todo-hint':'tod
 function hideActiveHint() {
   HINT_CONTAINERS.forEach(hid => { const el = document.getElementById(hid); if (el) el.innerHTML = ''; });
   activeHintId = null;
+  _activeHintArgs = null; // v125: аргументы карточки больше не на экране
+  scheduleMainSpaceCheck(); // v125: место освободилось — проверь возврат спрятанного
 }
 function hintNotInDom(id) { return activeHintId !== id; }
 
@@ -9013,14 +9019,20 @@ function buildHintCard(id, text, opts = {}) {
 // НИКАКОГО автоскрытия: карточка висит, пока не нажато «Понял»/кнопка.
 function showHintOnce(id, text, elId, condition = null, extraBtn = null, opts = {}) {
   if (!hintsLoaded || hintsShown.has(id) || activeHintId) return false;
-  if (_ordHintsSession >= 1) return false; // v90: одна обычная подсказка за вход в приложение — следующая при следующем открытии
+  const _force = !!(opts && opts.force); // force — возврат карточки после «спасателя» (v125)
+  if (_ordHintsSession >= 1 && !_force) return false; // v90: одна обычная подсказка за вход в приложение — следующая при следующем открытии
   if (condition && typeof condition === 'function' && !condition()) return false;
   const el = document.getElementById(elId);
   if (!el) return false;
   if (HINT_EL_SCREEN[elId] && _lastHintScreen !== HINT_EL_SCREEN[elId]) return false; // экран не активен — подождём
+  // v125: на главном не больше ДВУХ подсказочных блоков (hint-карточка/focus-soft/reg-полоска) —
+  // иначе зона главной кнопки сжимается. Опоздавший ждёт свободный слот.
+  if (HINT_EL_SCREEN[elId] === 'main' && !_force && mainHintBlocksCount(null) >= 2) return false;
+  _activeHintArgs = { id, text, elId, condition, extraBtn, opts }; // v125: для возврата после спасателя
   el.innerHTML = buildHintCard(id, text, Object.assign({ extraBtn }, opts));
   activeHintId = id;
-  if (!/^q\d/.test(String(id))) _ordHintsSession++; // квестовые шаги лимит не считают
+  if (!/^q\d/.test(String(id)) && !_force) _ordHintsSession++; // квестовые шаги лимит не считают
+  scheduleMainSpaceCheck(); // v125: могло стать тесно — проверь зону кнопки
   return true;
 }
 async function dismissHint(id) {
@@ -9040,6 +9052,93 @@ function hintChain(list) {
     if (showHintOnce(id, text, elId, cond, extraBtn || null, opts || null)) return;
   }
 }
+
+// ══════════ v125: ГЛАВНАЯ КНОПКА ВСЕГДА БОЛЬШАЯ ══════════
+// Фидбек: «нельзя показывать на экране больше двух подсказок — из-за этого уменьшается самая
+// главная кнопка. Она вообще всегда должна быть такой большой. Но кнопку всегда должно быть
+// хорошо видно». Кнопка = chaos-btn («Зажми и говори»): flex-элемент зоны, и при 3+ карточках
+// (фокус + hint-карточка + полоска регистрации + focus-soft) флекс сплющивал её до овала.
+// Три уровня защиты:
+//   1) CSS .chaos-btn{flex-shrink:0} — кнопку физически невозможно сжать;
+//   2) КАП: на главном не больше ДВУХ подсказочных блоков одновременно (hint-карточка /
+//      focus-soft с тегами / reg-полоска; фокус-карточка — не подсказка, это ядро).
+//      Кап проверяют showHintOnce / renderFocusCard / updateRegHintBar: кто опоздал — ждёт слот;
+//   3) СПАСАТЕЛЬ: если кнопке (130px) тесно даже со спрятанной подписью (<136px зоны) —
+//      карточки прячутся по приоритету (focus-soft → reg-полоска → обычная → квест) и
+//      возвращаются при зоне >300 (после возврата остаётся ≥205 — без осцилляции).
+//      Возврат hint — stash аргументов + opts.force.
+let _squeezeSoft = false;   // focus-soft спрятан спасателем
+let _squeezeReg = false;    // reg-полоска спрятана спасателем
+let _squeezeHint = null;    // аргументы hint-карточки, спрятанной спасателем
+let _activeHintArgs = null; // аргументы активной hint-карточки (для возврата)
+
+// сколько «подсказочных» блоков сейчас на главном (exclude: 'soft' | 'reg' | null)
+function mainHintBlocksCount(exclude) {
+  let n = 0;
+  if (exclude !== 'soft' && document.querySelector('#focus-card-wrap .focus-card.focus-soft')) n++;
+  if (activeHintId && document.querySelector('#main-hint .hint-card, #focus-hint .hint-card')) n++;
+  if (exclude !== 'reg') {
+    const bar = document.getElementById('reg-hint-bar');
+    if (bar && bar.style.display !== 'none' && bar.innerHTML.trim()) n++;
+  }
+  return n;
+}
+function chaosZoneH() {
+  const zone = document.querySelector('#screen-main .chaos-zone');
+  return zone ? zone.getBoundingClientRect().height : 999;
+}
+function mainScreenActive() {
+  const s = document.getElementById('screen-main');
+  return !!(s && s.classList.contains('active'));
+}
+let _mainSpaceTimer = null;
+function scheduleMainSpaceCheck() {
+  if (_mainSpaceTimer) clearTimeout(_mainSpaceTimer);
+  _mainSpaceTimer = setTimeout(() => { _mainSpaceTimer = null; enforceMainButtonSpace(); }, 90);
+}
+function enforceMainButtonSpace() {
+  if (!mainScreenActive()) return;
+  const zoneEl = document.querySelector('#screen-main .chaos-zone');
+  if (!zoneEl) return;
+  // уровень 0: подпись под кнопкой («Зажми и говори / Отпусти — отправится») — тоже подсказка:
+  // при тесной зоне прячется ПЕРВОЙ, освобождая ~46px, но кнопка остаётся на месте
+  zoneEl.classList.toggle('chaos-tight', chaosZoneH() < 176);
+  let guard = 0;
+  // кнопке (130px) тесно даже с спрятанной подписью (запас 6px на округление) —
+  // прячем карточки по приоритету, пока не освободится
+  while (chaosZoneH() < 136 && guard++ < 4) {
+    if (!_squeezeSoft && document.querySelector('#focus-card-wrap .focus-card.focus-soft')) {
+      _squeezeSoft = true; renderFocusCard(); continue;
+    }
+    if (!_squeezeReg && !_squeezeSoft) {
+      const bar = document.getElementById('reg-hint-bar');
+      if (bar && bar.style.display !== 'none' && bar.innerHTML.trim()) { _squeezeReg = true; updateRegHintBar(); continue; }
+    }
+    if (activeHintId && !_squeezeHint && document.querySelector('#main-hint .hint-card, #focus-hint .hint-card')) {
+      const isQuest = /^q\d/.test(String(activeHintId));
+      if (!isQuest || chaosZoneH() < 150) { // квест прячем последним и только при жёсткой тесноте
+        _squeezeHint = _activeHintArgs; hideActiveHint(); continue;
+      }
+    }
+    break; // прятать больше нечего — кнопка защищена flex-shrink:0
+  }
+  // просторно — возвращаем спрятанное. Единый порог 300: после возврата любого элемента
+  // (≤95px) зоне остаётся ≥205 — повторного прятания нет, осцилляция невозможна
+  const _z = chaosZoneH();
+  if (_z > 300) {
+    if (_squeezeHint && !activeHintId && mainHintBlocksCount(null) < 2) {
+      const a = _squeezeHint; _squeezeHint = null;
+      if (a && !hintsShown.has(a.id)) showHintOnce(a.id, a.text, a.elId, a.condition, a.extraBtn, Object.assign({}, a.opts, { force: true }));
+    } else if (_squeezeSoft && pendingTagSuggestions && pendingTagSuggestions.length && mainHintBlocksCount(null) < 2) {
+      _squeezeSoft = false; renderFocusCard();
+    } else if (_squeezeReg && !_squeezeSoft && mainHintBlocksCount(null) < 2) {
+      _squeezeReg = false; updateRegHintBar();
+    } else if (_squeezeSoft && !(pendingTagSuggestions && pendingTagSuggestions.length)) {
+      _squeezeSoft = false; // контент soft-карточки исчез — флаг больше не нужен
+    }
+  }
+}
+window.addEventListener('resize', scheduleMainSpaceCheck);
 
 // ══════════ HZI (v91): баллы активности «⚡ молнии», уровни, Хэзи ══════════
 // «Приправа, не блюдо»: тихий бейдж в шапке главного, эволюция на level-up,
@@ -10510,7 +10609,7 @@ function renderFocusCard() {
       </div>`;
   }
 
-  if (pendingTagSuggestions && pendingTagSuggestions.length) {
+  if (pendingTagSuggestions && pendingTagSuggestions.length && !_squeezeSoft && mainHintBlocksCount('soft') < 2) { // v125: мягкая подсказка считается в кап 2 и прячется спасателем
     html += `
       <div class="focus-card focus-soft" style="cursor:pointer;" onclick="goTo('tags')">
         <div class="focus-badge" aria-hidden="true">✨</div>
@@ -10523,6 +10622,7 @@ function renderFocusCard() {
   }
 
   el.innerHTML = html;
+  scheduleMainSpaceCheck(); // v125: состав блоков изменился — проверь зону кнопки (дебаунс)
 }
 
 // ── ЖЕСТ "Х" НА ГЛАВНОМ ЭКРАНЕ ──
@@ -11782,6 +11882,7 @@ function goTo(screen) {
   if (dockBtn) dockBtn.classList.add('active');
   // v89: единая точка подсказок (квест приоритетнее) + события квеста «визит в раздел»
   showScreenHints(screen);
+  if (screen === 'main') scheduleMainSpaceCheck(); // v125: вернулись на главный — проверь зону кнопки
   if (hintsLoaded) {
     if (screen === 'hist') window.__questEvent('visit-hist');
     else if (screen === 'todo') window.__questEvent('visit-todo');
@@ -15615,7 +15716,7 @@ async function extractIcsFromZip(buf) {
 window.extractIcsFromZip = extractIcsFromZip;
 
 // Файл .ics (или .zip от Google) → кандидаты импорта (с дедупликацией) → общая превью-модалка
-const APP_VERSION = 'v124'; // v124: «Помнить всегда» выскакивает и при возобновлении PWA; «срочно» — флаг, не слово в задаче; срочные можно пропустить до конца дня (см. sw.js)
+const APP_VERSION = 'v125'; // v125: главная кнопка всегда большая — кап 2 подсказок + flex-shrink:0 + спасатель зоны (см. sw.js)
 window.APP_VERSION = APP_VERSION;
 try { const _vc = document.getElementById('ver-chip'); if (_vc) _vc.textContent = APP_VERSION; } catch(e) {}
 window.handleIcsFile = async function(file) {
@@ -16528,6 +16629,18 @@ window.__t = {
   cloudDisplayText,
   ruStops: RU_STOPWORDS,
   resetHintPacing: () => { _ordHintsSession = 0; },
+  hintsLoaded: () => hintsLoaded, // v125: тесты ждут загрузку подсказок
+  // v125: главная кнопка всегда большая — кап подсказок + спасатель зоны
+  mainHintBlocksCount,
+  enforceMainButtonSpace,
+  chaosZoneH,
+  showHintOnce,
+  hideActiveHint,
+  forceSoftCard: (list) => { pendingTagSuggestions = list; renderFocusCard(); },
+  clearSoftCard: () => { pendingTagSuggestions = null; renderFocusCard(); },
+  squeezeState: () => ({ soft: _squeezeSoft, reg: _squeezeReg, hint: _squeezeHint ? _squeezeHint.id : null }),
+  updateRegHintBar,
+  regBarForce: null, // тесты: true — показать reg-полоску в тест-режиме (читает updateRegHintBar)
   heuristicIsTask,
   normalizeAllWishTodos,
   restorePunctuationAI,
@@ -16620,8 +16733,13 @@ function regHintHidden() {
 function updateRegHintBar() {
   const bar = document.getElementById('reg-hint-bar');
   if (!bar) return;
-  const show = !!(currentUid && isAnonymousUser) && !HZ3_TEST_RUN && !regHintHidden();
+  // v125: полоска — тоже подсказочный блок: живёт в капе 2 и прячется спасателем.
+  // regBarForce (тесты) обходит только тест-подавление/анонимность, но НЕ кап и спасателя.
+  const _forceReg = !!(window.__t && window.__t.regBarForce === true);
+  const show = (_forceReg || (!!(currentUid && isAnonymousUser) && !HZ3_TEST_RUN && !regHintHidden())) &&
+    !_squeezeReg && mainHintBlocksCount('reg') < 2;
   bar.style.display = show ? 'block' : 'none';
+  scheduleMainSpaceCheck(); // v125: состав блоков мог измениться — проверь зону кнопки
 }
 function dismissRegHint(ev) {
   if (ev && ev.stopPropagation) ev.stopPropagation();
