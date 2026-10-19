@@ -3918,6 +3918,39 @@ function stripSchedulingPhrases(text) {
   return t.charAt(0).toUpperCase() + t.slice(1);
 }
 
+// ── v124: «срочно» — ФЛАГ, а не слово в карточке ──
+// Фидбек юзера: «когда я говорю "срочно", не надо в самой задаче писать срочно.
+// И так понятно, что её нужно ставить на передний план». Срочность живёт флагом urgent
+// (прибивает к верху очереди и подсвечивает 🔥) — слово из текста задачи убираем.
+// Чистим ТОЛЬКО когда срочность реально распознана (isUrgent), иначе «срочная справка»
+// в обычной заметке останется как есть.
+function stripUrgencyWords(text) {
+  const src = String(text || '').trim();
+  if (!src) return src;
+  let t;
+  try {
+    // границы слов вручную: \b в JS не знает кириллицу (как в stripSchedulingPhrases)
+    const B = '(?<![а-яёa-zA-ZА-ЯЁ])', E = '(?![а-яёa-zA-ZА-ЯЁ])';
+    const patterns = [
+      new RegExp('\\s*' + B + '(?:очень\\s+)?срочн[а-яё]*' + E, 'gi'),          // срочно / срочного / очень срочно
+      new RegExp('\\s*' + B + 'прямо\\s+(?:сейчас|сейчас)' + E, 'gi'),          // прямо сейчас
+      new RegExp('\\s*' + B + 'как\\s+можно\\s+быстрее' + E, 'gi'),             // как можно быстрее
+      new RegExp('\\s*' + B + 'немедленно' + E, 'gi'),                          // немедленно
+      new RegExp('\\s*' + B + 'не\\s+откладывая(?:\\s+на\\s+завтра)?' + E, 'gi'), // не откладывая (на завтра)
+    ];
+    t = src;
+    for (const re of patterns) t = t.replace(re, ' ');
+  } catch(e) { return src; } // старый WebView без lookbehind — текст как есть
+  t = t
+    .replace(/\s{2,}/g, ' ')
+    .replace(/\s+([,.!?;:])/g, '$1')
+    .replace(/[\s,;:!-]+$/g, '')
+    .replace(/^[\s,;:!-]+/, '')
+    .trim();
+  if (!t || t.length < 2 || t === src) return src; // почти всё вычистили — оставим оригинал
+  return t.charAt(0).toUpperCase() + t.slice(1);
+}
+
 // ── v97: «ДОБАВЬ В КАЛЕНДАРЬ: …» — команда, а не текст задачи ──
 // Фидбек: «Добавь в календарь: "Леха мне 15 ноября должен 10 000 вернуть"» — добавилась заметка со всей просьбой.
 // Должно быть: задача «Леха мне должен 10 000 вернуть» на 15 ноября. Команда, кавычки и фраза даты — мимо текста.
@@ -4255,6 +4288,12 @@ async function classifyAndRouteNote(note) {
       const cleaned = stripSchedulingPhrases(note.text);
       if (cleaned && cleaned !== note.text) patch.text = cleaned;
     }
+    // v124: «срочно» — флаг, слово из текста задачи убираем («срочно оплатить хостинг» → «Оплатить хостинг»)
+    if (isUrgent) {
+      const base = patch.text || note.text;
+      const noUrg = stripUrgencyWords(base);
+      if (noUrg && noUrg !== base) patch.text = noUrg;
+    }
     await updateDoc(uDocRef('notes', note.id), patch);
     try { hziAward('taskadd', note.id); } catch(e) {} // v92: метрика «задача добавлена» (классификатор)
     await loadNotes();
@@ -4426,6 +4465,7 @@ async function loadNotes() {
     // пустой день или нет. Здесь догоняем отложенную проверку итога дня (если она была).
     if (!window.__notesLoadedOnce) {
       window.__notesLoadedOnce = true;
+      setTimeout(maybeShowRememberPopup, 300); // v124: данные готовы — попап не ждёт таймер 3.6с после логина
       if (pendingDailySummaryCheck) {
         pendingDailySummaryCheck = false;
         setTimeout(() => { checkAndGenerateDailySummary().catch(() => {}); }, 1200);
@@ -8874,22 +8914,27 @@ document.getElementById('wishchat-send').addEventListener('click', async () => {
     try {
       const args = JSON.parse(call.function.arguments || '{}');
       if (args.text) {
-        // v82: по умному скору (срочность + важность + объём + время суток) — не перекрывает порядок дня
-        const _wTaskRef = await addDoc(notesCol(), {
-          text: args.text,
+        // v124: «срочно» — флаг (поле urgent + страховка по слову), слово из текста убираем
+        const _wUrg = args.urgent === true || /(срочно|прямо сейчас|как можно быстрее|немедленно|не откладывая)/i.test(args.text || '');
+        const _wText = (_wUrg && stripUrgencyWords(args.text)) || args.text;
+        const _wDoc = {
+          // v82: по умному скору (срочность + важность + объём + время суток) — не перекрывает порядок дня
+          text: _wText,
           type: 'text',
           tag: w.shortTag || args.tag || null, // тег желания — главный признак задач из желания
           wishId: currentWishId,               // связь с желанием (видно в карточке желания и при удалении)
           inTodo: true,
-          todoOrder: computeSmartOrder(smartScoreForFields({ scheduledDate: null, importance: args.importance, effort: args.effort })),
+          todoOrder: computeSmartOrder(smartScoreForFields({ scheduledDate: null, importance: args.importance, effort: args.effort, urgent: _wUrg })),
           importance: clampImportance(args.importance),
           effort: clampEffort(args.effort),
           createdAt: new Date().toISOString()
-        });
+        };
+        if (_wUrg) _wDoc.urgent = true; // v124: срочное — самый верх очереди
+        const _wTaskRef = await addDoc(notesCol(), _wDoc);
         try { hziAward('taskadd', _wTaskRef.id); } catch(e) {} // v92: метрика (ИИ-задача желания)
         await loadNotes();
         renderCalendar();
-        reply += (reply ? '\n\n' : '') + '📋 Добавил задачу к желанию [' + (w.shortTag || '') + ']: ' + args.text + ' — уже в тудушке. День и час можно назначить кнопкой 📅 или перетаскиванием в календаре.';
+        reply += (reply ? '\n\n' : '') + '📋 Добавил задачу к желанию [' + (w.shortTag || '') + ']: ' + _wText + (_wUrg ? ' 🔥' : '') + ' — уже в тудушке. День и час можно назначить кнопкой 📅 или перетаскиванием в календаре.';
       }
     } catch(e) { console.warn('[WishChat] failed to handle tool call', e); }
   }
@@ -9919,14 +9964,14 @@ function maybeShowRememberPopup() {
   // день помечался «показано», и карточка не выскочила ВЕСЬ день. Теперь пустой список ДО
   // первой успешной загрузки заметок — повод подождать, а не закрывать вопрос.
   if (!window.__notesLoadedOnce) {
-    if (_remPopupTries < 40) { _remPopupTries++; setTimeout(maybeShowRememberPopup, 1500); }
+    if (_remPopupTries < 240) { _remPopupTries++; setTimeout(maybeShowRememberPopup, 1500); } // v124: 40→240 (6 минут) — медленная утренняя сеть не отменяет попап
     return;
   }
   const items = rememberList().filter(n => n.rememberOn !== false).slice(0, REMEMBER_ACTIVE_MAX);
   if (!items.length) { markRememberShown(); return; } // активных нет — не дёргаем, попробуем завтра
   // другие стартовые модалки (регистрация, итог дня, офферы) важнее — дождёмся тишины
   if (document.querySelector('.modal-overlay.open')) {
-    if (_remPopupTries < 60) { _remPopupTries++; setTimeout(maybeShowRememberPopup, 1500); }
+    if (_remPopupTries < 400) { _remPopupTries++; setTimeout(maybeShowRememberPopup, 1500); } // v124: 60→400 — ждём тишины дольше
     return;
   }
   markRememberShown();
@@ -9966,6 +10011,25 @@ window.rememberStartEdit = rememberStartEdit;
 window.rememberCancelEdit = rememberCancelEdit;
 window.closeRememberDaily = closeRememberDaily;
 window.maybeShowRememberPopup = maybeShowRememberPopup;
+// v124: триггер НЕ только на холодном старте. PWA обычно ВОЗОБНОВАЕТСЯ из фона (процесс жив,
+// страница не перезагружается) — таймер 3.6с после логина давно отработал, и попап не выскакивал
+// весь день (фидбек: «опять не выскочило»). Теперь: возврат в приложение + тик раз в минуту +
+// первая загрузка notes — все зовут maybeShowRememberPopup (внутри дёшево: localStorage-чек).
+let _remLastVisCheck = 0;
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'visible') return;
+  const now = Date.now();
+  if (now - _remLastVisCheck < 4000) return; // дребезг
+  _remLastVisCheck = now;
+  _remPopupTries = 0; // новое «открытие» — свежий бюджет ожиданий
+  setTimeout(maybeShowRememberPopup, 900);
+});
+setInterval(() => {
+  if (document.visibilityState !== 'visible') return;
+  if (rememberShownToday()) return;
+  _remPopupTries = 0; // тик = новая попытка с полным бюджетом (сутки сменились / модалки ушли)
+  maybeShowRememberPopup();
+}, 60000);
 // ══════════ /REMEMBER ══════════
 
 // ── КВЕСТ: 9 шагов ──
@@ -10124,14 +10188,26 @@ function isFutureTodo(n) {
 function getTodoMainQueue() { // тир A — то, что реально требует внимания сегодня
   return getTodoQueue().filter(n => !isFutureTodo(n));
 }
-function splitTodoQueue() { // v89 Н6: срочные → отдельно (самый верх); «на завтра» — хвост сегодняшней очереди; дальше — по датам
+// ── v124: ПРОПУСК СРОЧНОЙ ЗАДАЧИ ──
+// Фидбек юзера: «все задачи с пометкой "Срочно" не пропускаются на главной — всегда вверху.
+// Нужно сделать возможность пропустить задачу и понизить её в списке, если пока делаешь другое».
+// Скип = skippedAt (таймштамп). Эффект ТОЛЬКО до конца текущего дня по МСК: назавтра пропуск
+// сгорает — срочное снова наверху (пропуск = «сделаю позже сегодня», а не «отменить срочность»).
+// Ручной перенос (драг) и ▲ снимают пропуск — явное действие сильнее.
+function todoSkippedToday(n) {
+  if (!n || !n.skippedAt) return false;
+  try { return new Date(n.skippedAt + 3 * 3600000).toISOString().slice(0, 10) === hziDayStr(); } catch(e) { return false; }
+}
+function splitTodoQueue() { // v89 Н6: срочные → отдельно (самый верх); v124: пропущенное срочное — низ очереди сегодня; «на завтра» — хвост; дальше — по датам
   const q = getTodoQueue();
   const tmKey = formatDateKey(new Date(Date.now() + 86400000));
   const isTomorrow = n => isFutureTodo(n) && n.scheduledDate === tmKey;
-  const urgent = q.filter(n => n.urgent === true && (!isFutureTodo(n) || isTomorrow(n)))
+  const urgent = q.filter(n => n.urgent === true && !todoSkippedToday(n) && (!isFutureTodo(n) || isTomorrow(n)))
     .sort((a, b) => (a.todoOrder ?? 0) - (b.todoOrder ?? 0));
   const urgentIds = new Set(urgent.map(n => n.id));
-  const main = q.filter(n => !n.urgent && !isFutureTodo(n));
+  const main = q.filter(n => !n.urgent && !isFutureTodo(n))
+    .concat(q.filter(n => n.urgent === true && todoSkippedToday(n) && !isFutureTodo(n))
+      .sort((a, b) => (a.todoOrder ?? 0) - (b.todoOrder ?? 0))); // v124: пропущенное срочное — вниз сегодняшней очереди
   const tomorrow = q.filter(n => !urgentIds.has(n.id) && isTomorrow(n))
     .sort((a, b) => ((a.scheduledTime || '99:99') + (a.todoOrder ?? 0)).localeCompare((b.scheduledTime || '99:99') + (b.todoOrder ?? 0)) || (a.todoOrder ?? 0) - (b.todoOrder ?? 0));
   const future = q.filter(n => isFutureTodo(n) && n.scheduledDate > tmKey).sort((a, b) =>
@@ -10144,7 +10220,7 @@ function splitTodoQueue() { // v89 Н6: срочные → отдельно (с�
 // Новые задачи встают ПО СКОРУ (не перекрывают намеченный порядок), а кнопка «✨ Умно»
 // пересобирает всю очередь разом. Ручные правки (▲ / драг) остаются как есть до следующей пересборки.
 function smartScore(n) {
-  if (n.urgent) return 999; // v89 Н6: срочное — всегда самый верх (и в ✨ Умно, и при вставке новой)
+  if (n.urgent && !todoSkippedToday(n)) return 999; // v89 Н6: срочное — всегда самый верх; v124: пропущенное сегодня — по общему скору
   let s = 40; // база: без срока, важность 3, объём M
   const today = formatDateKey(new Date());
   if (n.scheduledDate) {
@@ -10215,8 +10291,11 @@ async function smartSortTodo() {
   // v87: тир A — по скору; тир B («на потом») — всегда ниже и по датам: скор будущей
   // задачи больше не выбивает её наверх очереди сегодняшних дел.
   // v89: срочные — впереди всех (скор 999 сам их поднимает), «на завтра» — хвост очереди до разделителя
+  // v124: пропущенное срочное — низ тира A (выше «на потом», ниже всех сегодняшних)
+  const todayTier = [...urgent, ...main].sort((a, b) => smartScore(b) - smartScore(a)); // стабильная сортировка: равные скоры сохраняют порядок
   const sorted = [
-    ...[...urgent, ...main].sort((a, b) => smartScore(b) - smartScore(a)), // стабильная сортировка: равные скоры сохраняют порядок
+    ...todayTier.filter(n => !todoSkippedToday(n)),
+    ...todayTier.filter(n => todoSkippedToday(n)),
     ...tomorrow, // по времени/порядку (splitTodoQueue отсортировал)
     ...future,   // по датам (splitTodoQueue отсортировал)
   ];
@@ -10397,7 +10476,10 @@ function renderFocusCard() {
 
   const _hSet118 = todoHiddenSet(); // v118: матери с подзадачами скрыты — фокус показывает первый шаг
   const queue = getTodoMainQueue().filter(n => !_hSet118.has(n.id)); // v87: фокус — только «сегодняшний» тир, задачи на потом не звонят в фокусе
-  queue.sort((a, b) => (b.urgent === true) - (a.urgent === true)); // v89 Н6: срочное — в фокусе первым
+  // v89 Н6: срочное — в фокусе первым; v124: пропущенное срочное в фокус не рвётся —
+  // первым становится следующее живое дело (фидбек: «срочные не пропускаются»)
+  const urgNow = n => n.urgent === true && !todoSkippedToday(n);
+  queue.sort((a, b) => ((urgNow(b) ? 1 : 0) - (urgNow(a) ? 1 : 0)) || ((todoSkippedToday(a) ? 1 : 0) - (todoSkippedToday(b) ? 1 : 0)));
   if (queue.length) {
     const top = queue[0];
     const restCount = queue.length - 1;
@@ -10983,6 +11065,11 @@ async function reorderTodo(id, newIndex, byVisible) {
   const visual = urgent.concat(main, tomorrow, future); // v89: работаем в визуальном порядке (срочные → тир A → завтра → тир B)
   const dragged = visual.find(n => n.id === id);
   if (!dragged) return;
+  // v124: ручной перенос сильнее пропуска — тащишь пропущенную срочную, пропуск снимается
+  if (byVisible && todoSkippedToday(dragged)) {
+    dragged.skippedAt = null;
+    try { updateDoc(uDocRef('notes', dragged.id), { skippedAt: null }).catch(() => {}); } catch(e) {}
+  }
   const dragFut = isFutureTodo(dragged);
   const hSet = todoHiddenSet();
 
@@ -11064,6 +11151,7 @@ let _todoFlySeq = 0;
 function moveTodoTop(id) {
   const me = notes.find(n => n.id === id);
   if (isFutureTodo(me)) return; // v87: задачи «на потом» не поднимаются — только через дату в редакторе
+  if (todoSkippedToday(me)) { unskipUrgentTodo(id); return; } // v124: ▲ на пропущенной срочной = вернуть в топ
   const queue = getTodoMainQueue();
   const idx = queue.findIndex(n => n.id === id);
   if (idx <= 0) return; // первая и так наверху
@@ -11256,6 +11344,29 @@ async function reorderWish(id, newIndex) {
 // в самый конец. Счётчик пропусков (skipCount) хранится на записи в Firestore
 // и переживает перезапуск. Механика та же, что при драге за ⠿ (reorderTodo):
 // соседи сдвигаются сами.
+// v124: СРОЧНАЯ задача обычным скипом не понижается (она прибита к верху блока срочных) —
+// у неё свой пропуск через skippedAt (до конца дня), см. todoSkippedToday/splitTodoQueue.
+async function skipUrgentTodo(id, quiet) {
+  const n = notes.find(x => x.id === id);
+  if (!n) return;
+  n.skippedAt = Date.now();
+  renderTodo(); // v124: оптимистичный рендер ДО сети (как в reorderTodo) — карточка уезжает мгновенно
+  renderFocusCard();
+  try { await updateDoc(uDocRef('notes', id), { skippedAt: n.skippedAt }); } catch(e) { console.warn('[urgent-skip] save failed', e); }
+  if (quiet) setStatus('↪ Срочная пропущена — уехала вниз очереди до вечера, назавтра снова наверху', 3200);
+  else showToast('↪ Пропущена до конца дня — назавтра срочное снова наверху', 2800);
+}
+async function unskipUrgentTodo(id) {
+  const n = notes.find(x => x.id === id);
+  if (!n) return;
+  n.skippedAt = null;
+  renderTodo(); // v124: оптимистичный рендер ДО сети
+  renderFocusCard();
+  try { await updateDoc(uDocRef('notes', id), { skippedAt: null }); } catch(e) { console.warn('[urgent-unskip] save failed', e); }
+  showToast('🔥 Вернул в срочный блок — снова наверху', 2600);
+}
+window.skipUrgentTodo = skipUrgentTodo;
+window.unskipUrgentTodo = unskipUrgentTodo;
 async function skipTodoTask(id) {
   const queue = getTodoQueue();
   const idx = queue.findIndex(n => n.id === id);
@@ -11265,6 +11376,11 @@ async function skipTodoTask(id) {
     return;
   }
   const note = queue[idx];
+  // v124: срочная — свой пропуск (skippedAt до конца дня), обычный reorder её не понижает
+  if (note.urgent === true && !todoSkippedToday(note)) {
+    try { await skipUrgentTodo(id, true); } catch(e) { console.warn('[focus] urgent skip failed', e); }
+    return;
+  }
   const skipN = (Number(note.skipCount) || 0) + 1;
   const toEnd = skipN >= 2;
   const newIdx = toEnd ? queue.length - 1 : Math.min(4, queue.length - 1);
@@ -11483,6 +11599,7 @@ function renderTodo() {
     const staleTitle = stale ? ` title="Висит уже ${Math.floor((Date.now() - new Date(n.createdAt).getTime()) / 86400000)} дн."` : '';
     const isUrg = zone === 'urgent';
     const isFut = zone === 'future' || zone === 'tomorrow'; // v89: «на завтра» тоже без ручек — срок уже назначен
+    const isSkippedUrg = !isUrg && n.urgent === true && todoSkippedToday(n); // v124: пропущенное срочное (живёт в низу тира A)
     // v87: у задач «на потом» нет ▲ и ⠿ — тир B сортируется по дате сам,
     // а «поднять на сегодня» = снять/переназначить дату в редакторе.
     // v89: у срочных тоже нет ⠿ (они прибиты к верху), но ▲ работает внутри срочного блока.
@@ -11496,13 +11613,15 @@ function renderTodo() {
       </div>
       <div style="flex:1;min-width:0;">
         <div class="note-meta">
-          <span class="note-date"${whenStyle}>#${i+1}${isUrg ? ' · 🔥 Срочно' : ''}${n.tag ? ' · ' + n.tag : ''}${whenStr ? ' · ' + whenStr : ''}${n.details ? ' · 📝' : ''}</span>
+          <span class="note-date"${whenStyle}>#${i+1}${isUrg ? ' · 🔥 Срочно' : (isSkippedUrg ? ' · 🔥 Срочно · пропущена' : '')}${n.tag ? ' · ' + n.tag : ''}${whenStr ? ' · ' + whenStr : ''}${n.details ? ' · 📝' : ''}</span>
           <button class="note-copy-btn" title="Скопировать текст" onclick="copyNoteText('${n.id}');event.stopPropagation();">${COPY_ICON_SVG}</button>
         </div>
         <div class="note-text">${escHtml(n.text)}</div>
         ${subtaskBadgesHtml(n)}
         <div class="note-actions">
           <button class="note-btn note-markdone" onclick="toggleDone('${n.id}', false);event.stopPropagation();"><span class="note-donebox" aria-hidden="true"></span>Выполнить</button>
+          ${isUrg ? `<button class="note-btn" title="Пропустить на сегодня — уедет вниз очереди до вечера, назавтра снова наверху" onclick="skipUrgentTodo('${n.id}');event.stopPropagation();">⤵ Пропустить</button>` : ''}
+          ${isSkippedUrg ? `<button class="note-btn" title="Вернуть в срочный блок — снова наверху" onclick="unskipUrgentTodo('${n.id}');event.stopPropagation();">⤴ Вернуть в топ</button>` : ''}
           <button class="note-btn note-undone" onclick="toggleTodo('${n.id}', true);event.stopPropagation();">✕ Убрать</button>
         </div>
       </div>
@@ -11948,7 +12067,7 @@ function buildChatTools() {
       parameters: {
         type: 'object',
         properties: {
-          text: { type: 'string', description: 'Текст записи. Для задач с датой/временем — БЕЗ слов о сроке («завтра», «в 15:00» не пиши): срок — только в полях date/time' },
+          text: { type: 'string', description: 'Текст записи. Для задач — БЕЗ слов о сроке и БЕЗ «срочно»: срок — в полях date/time, срочность — в поле urgent' },
           tag: { type: 'string', enum: tagLabels, description: 'Сфера жизни записи' },
           wish: { type: 'string', description: 'shortTag желания из раздела ЖЕЛАНИЯ — копируй точно как в [скобках], без перевода/транслитерации. Заполняй, если запись относится к желанию' },
           to_todo: { type: 'boolean', description: 'true — ЗАДАЧА (конкретное действие: купить, позвонить, настроить, сделать) — сразу в тудушку. false/пропуск — ЗАМЕТКА (мысль, факт, идея без действия)' },
@@ -11956,6 +12075,7 @@ function buildChatTools() {
           time: { type: 'string', description: 'HH:MM МСК, если названо время («в 15:00») или «через N минут/часов» — считай от строки «Сейчас». Время в прошлом — никогда. Не названо — не заполняй' },
           importance: { type: 'integer', description: 'Важность 1–5 для умной сортировки очереди: 5 — критично (деньги, здоровье, дедлайн), 1 — мелочь. Неясно — не заполняй' },
           effort: { type: 'string', enum: ['S','M','L'], description: 'Объём: S — до 15 минут (позвонить, купить), M — 15–60 минут (настроить, встретиться), L — часы и больше. Неясно — не заполняй' },
+          urgent: { type: 'boolean', description: 'true — сказал «срочно»/«немедленно»/«как можно быстрее»: задача прибьётся к самому верху очереди. Слово «срочно» в text НЕ пиши' },
           parent_task: { type: 'string', description: 'Только для ПОДЗАДАЧИ к существующей задаче: текст (или узнаваемая часть) материнской задачи из ТУДУШКИ' }
         },
         required: ['text','tag']
@@ -13780,6 +13900,7 @@ function getBaseInstructions() {
 - ПОДЗАДАЧИ: просят шаг к существующей задаче — заполни parent_task (текст матери из ТУДУШКИ; её подзадачи там с «↳»). Не выдумывай мать.
 
 ВАЖНОСТЬ И ОБЪЁМ (importance/effort): новые задачи встают в очередь по умному скору, поэтому оценивай каждую: importance 1–5 (5 — критично: деньги, здоровье, дедлайн; 1 — мелочь), effort S/M/L (S — до 15 минут, M — 15–60, L — часы+). Названа важность («срочно», «мелочь») — отрази.
+СРОЧНОСТЬ (urgent): пользователь сказал «срочно»/«немедленно»/«как можно быстрее» — заполни urgent: true, задача сама встанет на самый верх очереди и подсветится. САМО СЛОВО «срочно» в text НЕ пишется: не «Срочно позвонить маме», а «Позвонить маме» + urgent: true.
 
 КОГДА propose_note: говорит о действии, ставит задачу, формулирует цель или упоминает идею (даже мимоходом) — сразу вызывай с точным текстом и тегом. НЕ вызывай: болтовня, вопрос, обсуждение без конкретики, похожая незакрытая запись точно уже есть. tag — СФЕРА ЖИЗНИ (не тип записи), строго из enum поля tag (список настраивается пользователем). Одна запись за раз. Задачи сохраняются сразу — можно писать «поставил в тудушку»; заметки — предложи подтвердить.
 
@@ -14745,6 +14866,11 @@ async function sendChatMessage(userText) {
           wishNote = ' → к желанию ' + (w.text.length > 40 ? '«' + w.text.slice(0, 40) + '…»' : '«' + w.text + '»');
         }
       }
+      // v124: «срочно» — флаг: ИИ вернул urgent ИЛИ страховка — слово в самом диктанте.
+      // Слово в текст задачи НЕ пишется (см. stripUrgencyWords ниже) — срочность живёт в поле.
+      const _lastUserEarly = [...chatHistory].reverse().find(m => m.role === 'user');
+      let isUrgentChat = proposedNote.urgent === true
+        || /(срочно|прямо сейчас|как можно быстрее|немедленно|не откладывая)/i.test((_lastUserEarly ? _lastUserEarly.content : '') || '');
       let inTodo = false, todoOrder = null;
       if (proposedNote.to_todo === true) {
         inTodo = true;
@@ -14753,7 +14879,8 @@ async function sendChatMessage(userText) {
         todoOrder = computeSmartOrder(smartScoreForFields({
           scheduledDate: isValidDateStr(proposedNote.date) ? proposedNote.date : null,
           importance: proposedNote.importance,
-          effort: proposedNote.effort
+          effort: proposedNote.effort,
+          urgent: isUrgentChat
         }));
       }
       // дата/время: «через N минут/часов» считаем ТОЛЬКО локально (ИИ ошибается с поясами);
@@ -14776,11 +14903,16 @@ async function sendChatMessage(userText) {
       if (isCalendarCommand(lastUserText ? lastUserText.content : (userText || ''))) {
         const cc = stripCalendarCommand(noteText);
         if (cc && cc.length >= 2) noteText = cc;
-        if (!inTodo) { inTodo = true; todoOrder = computeSmartOrder(smartScoreForFields({ scheduledDate, importance: proposedNote.importance, effort: proposedNote.effort })); }
+        if (!inTodo) { inTodo = true; todoOrder = computeSmartOrder(smartScoreForFields({ scheduledDate, importance: proposedNote.importance, effort: proposedNote.effort, urgent: isUrgentChat })); }
       }
       if (scheduledDate || scheduledTime) {
         const cleaned = stripSchedulingPhrases(noteText);
         if (cleaned) noteText = cleaned;
+      }
+      // v124: «срочно» — флаг, слово из текста задачи убираем («Срочно позвонить маме» → «Позвонить маме»)
+      if (inTodo && isUrgentChat) {
+        const noUrg = stripUrgencyWords(noteText);
+        if (noUrg) noteText = noUrg;
       }
       const whenStr = scheduledDate ? ' · 📅 ' + scheduledDate.slice(8,10) + '.' + scheduledDate.slice(5,7) + (scheduledTime ? ' ' + scheduledTime : '') : '';
       // ЗАДАЧА (to_todo) — ИИ сам классифицировал: сохраняем сразу, без кнопок «Да/Нет»
@@ -14796,7 +14928,7 @@ async function sendChatMessage(userText) {
               if (parent) parentId = parent.id;
             }
           }
-          await addNoteFromChat({ text: noteText, tag, wishId, inTodo: true, todoOrder, scheduledDate, scheduledTime, importance: proposedNote.importance, effort: proposedNote.effort, parentId });
+          await addNoteFromChat({ text: noteText, tag, wishId, inTodo: true, todoOrder, scheduledDate, scheduledTime, importance: proposedNote.importance, effort: proposedNote.effort, urgent: isUrgentChat === true ? true : null, parentId });
           const okText = (replyText ? replyText + '\n\n' : '') +
             '✅ Задача добавлена в тудушку: «' + noteText + '»' + (tag ? ' [' + tag + ']' : '') + wishNote + whenStr + (scheduledDate ? ' — поставил в календарь.' : '.') + (parentId ? ' (подзадача «' + (notes.find(n => n.id === parentId) || {}).text + '»)' : '');
           await addChatMessage('assistant', okText);
@@ -15114,6 +15246,7 @@ function buildImportedNotePatch(n, createdAt, orderHint) {
   if (n.importance) patch.importance = n.importance;       // v119: важность 1–5
   if (n.effort) patch.effort = n.effort;                   // v119: объём S/M/L
   if (n.urgent === true) patch.urgent = true;              // v119: «срочно»
+  if (n.skippedAt) patch.skippedAt = n.skippedAt;         // v124: пропуск срочного (действует до конца дня)
   if (n.skipCount != null) patch.skipCount = n.skipCount;  // v119: счётчик пропусков
   if (n.remember === true) { patch.remember = true; if (n.rememberOn) patch.rememberOn = n.rememberOn; } // v93: «помнить всегда»
   const hasDate = !!n.scheduledDate;
@@ -15482,7 +15615,7 @@ async function extractIcsFromZip(buf) {
 window.extractIcsFromZip = extractIcsFromZip;
 
 // Файл .ics (или .zip от Google) → кандидаты импорта (с дедупликацией) → общая превью-модалка
-const APP_VERSION = 'v123'; // v123: диета ИИ-промпта — БД 30 записей вместо 100, правила вдвое короче, кэпы БЗ, история 12, гейт приветствий (см. sw.js)
+const APP_VERSION = 'v124'; // v124: «Помнить всегда» выскакивает и при возобновлении PWA; «срочно» — флаг, не слово в задаче; срочные можно пропустить до конца дня (см. sw.js)
 window.APP_VERSION = APP_VERSION;
 try { const _vc = document.getElementById('ver-chip'); if (_vc) _vc.textContent = APP_VERSION; } catch(e) {}
 window.handleIcsFile = async function(file) {
@@ -16363,6 +16496,8 @@ window.__t = {
   // v87: тиры тудушки, зависшие, база знаний, темы
   isFutureTodo,
   splitTodoQueue,
+  todoSkippedToday,   // v124: пропуск срочного до конца дня
+  stripUrgencyWords,  // v124: «срочно» — флаг, а не слово в тексте
   getLongStaleNotes,
   longStaleDays,
   kbGet: () => kbState,
