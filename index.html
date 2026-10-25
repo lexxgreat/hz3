@@ -10297,21 +10297,42 @@ function todoSkippedToday(n) {
   if (!n || !n.skippedAt) return false;
   try { return new Date(n.skippedAt + 3 * 3600000).toISOString().slice(0, 10) === hziDayStr(); } catch(e) { return false; }
 }
-function splitTodoQueue() { // v89 Н6: срочные → отдельно (самый верх); v124: пропущенное срочное — низ очереди сегодня; «на завтра» — хвост; дальше — по датам
+// ── v126: ЛЕСТНИЦА ОЧЕРЕДИ (фидбек юзера) ──
+// «Вверху срочные; далее задачи на сегодняшний день — если указано время, сначала те, кто раньше
+// по времени, потом просто без времени; и далее остальные. Сегодняшние актуальнее просроченных,
+// которые непонятно сколько ждут, но и их не загонять вниз списка».
+// Тир A стал канонической лестницей (порядок жёсткий, блоки не перемешиваются):
+//   1) сегодня со временем — по часам: раньше время → выше          [детерминировано]
+//   2) сегодня без времени — ручной/умный порядок (todoOrder)        [ручной]
+//   3) просроченные — сразу после сегодняшних, свежие просрочки выше [детерминировано]
+//   4) без даты — ручной/умный порядок                               [ручной]
+//   5) пропущенное сегодня (v124) — хвост тира A до конца дня        [ручной]
+// Дальше как было: «на завтра» (по времени) → разделитель → «на потом» (по датам).
+function splitTodoQueue() { // v89 Н6: срочные → отдельно (самый верх); v126: лестница тира A — время сегодня → сегодня без времени → просроч → без даты → пропущенное сегодня
   const q = getTodoQueue();
+  const todayKey = formatDateKey(new Date());
   const tmKey = formatDateKey(new Date(Date.now() + 86400000));
   const isTomorrow = n => isFutureTodo(n) && n.scheduledDate === tmKey;
+  const byOrder = (a, b) => (a.todoOrder ?? 0) - (b.todoOrder ?? 0);
+  const timeMin = t => { const m = /^(\d{1,2}):(\d{2})/.exec(String(t || '')); return m ? (+m[1]) * 60 + (+m[2]) : 1440; }; // без времени — конец дня
   const urgent = q.filter(n => n.urgent === true && !todoSkippedToday(n) && (!isFutureTodo(n) || isTomorrow(n)))
-    .sort((a, b) => (a.todoOrder ?? 0) - (b.todoOrder ?? 0));
+    .sort(byOrder);
   const urgentIds = new Set(urgent.map(n => n.id));
-  const main = q.filter(n => !n.urgent && !isFutureTodo(n))
-    .concat(q.filter(n => n.urgent === true && todoSkippedToday(n) && !isFutureTodo(n))
-      .sort((a, b) => (a.todoOrder ?? 0) - (b.todoOrder ?? 0))); // v124: пропущенное срочное — вниз сегодняшней очереди
+  const tierA = q.filter(n => !urgentIds.has(n.id) && !isFutureTodo(n));
+  const live = n => !todoSkippedToday(n); // v126: пропущенное сегодня живёт ТОЛЬКО в хвостовом блоке — из остальных исключаем (иначе двойной показ)
+  const todayTime = tierA.filter(n => live(n) && n.scheduledDate === todayKey && n.scheduledTime)
+    .sort((a, b) => timeMin(a.scheduledTime) - timeMin(b.scheduledTime) || byOrder(a, b)); // v126: раньше по времени — выше
+  const todayNoTime = tierA.filter(n => live(n) && n.scheduledDate === todayKey && !n.scheduledTime).sort(byOrder);
+  const overdue = tierA.filter(n => live(n) && n.scheduledDate && n.scheduledDate < todayKey)
+    .sort((a, b) => String(b.scheduledDate).localeCompare(String(a.scheduledDate)) || byOrder(a, b)); // v126: не в подвал — свежие просрочки соседствуют с «сегодня»
+  const noDate = tierA.filter(n => live(n) && !n.scheduledDate).sort(byOrder);
+  const skippedUrg = tierA.filter(n => todoSkippedToday(n)).sort(byOrder); // v124: пропуск до конца дня; v126: у любой задачи, не только срочной
+  const main = [...todayTime, ...todayNoTime, ...overdue, ...noDate, ...skippedUrg];
   const tomorrow = q.filter(n => !urgentIds.has(n.id) && isTomorrow(n))
-    .sort((a, b) => ((a.scheduledTime || '99:99') + (a.todoOrder ?? 0)).localeCompare((b.scheduledTime || '99:99') + (b.todoOrder ?? 0)) || (a.todoOrder ?? 0) - (b.todoOrder ?? 0));
+    .sort((a, b) => timeMin(a.scheduledTime) - timeMin(b.scheduledTime) || byOrder(a, b));
   const future = q.filter(n => isFutureTodo(n) && n.scheduledDate > tmKey).sort((a, b) =>
     ((a.scheduledDate + (a.scheduledTime || '')) || '').localeCompare((b.scheduledDate + (b.scheduledTime || '')) || ''));
-  return { urgent, main, tomorrow, future };
+  return { urgent, main, tomorrow, future, todayTime, todayNoTime, overdue, noDate, skippedUrg };
 }
 
 // ── УМНАЯ СОРТИРОВКА (v82) ──
@@ -10323,8 +10344,10 @@ function smartScore(n) {
   let s = 40; // база: без срока, важность 3, объём M
   const today = formatDateKey(new Date());
   if (n.scheduledDate) {
-    if (n.scheduledDate < today) s = 95;                 // просрочено — первым делом
-    else if (n.scheduledDate === today) s = 88;          // сегодня
+    // v126: сегодняшние ВЫШЕ просроченных (фидбек: «сегодняшние более актуальны, чем просроченные,
+    // которые непонятно сколько ждут, но и их не загонять вниз») — просроч сразу после сегодняшних
+    if (n.scheduledDate === today) s = 95;               // сегодня — самое актуальное
+    else if (n.scheduledDate < today) s = 88;            // просрочено — сразу за сегодняшними
     else {
       const dd = Math.round((new Date(n.scheduledDate + 'T00:00:00') - new Date(today + 'T00:00:00')) / 86400000);
       s = dd === 1 ? 74 : dd <= 3 ? 64 : dd <= 7 ? 54 : 44; // завтра / ≤3 дней / ≤недели / дальше
@@ -10385,16 +10408,23 @@ async function renormalizeTodoQueue() {
 
 // кнопка «✨ Умно»: пересобрать ВСЮ очередь по скору (срочность + важность + объём + время суток)
 async function smartSortTodo() {
-  const { urgent, main, tomorrow, future } = splitTodoQueue();
+  const { urgent, main, todayTime, todayNoTime, overdue, noDate, skippedUrg, tomorrow, future } = splitTodoQueue();
   if (urgent.length + main.length + tomorrow.length + future.length < 2) { showToast('В очереди меньше двух задач — сортировать нечего 🙂', 2600); return; }
   // v87: тир A — по скору; тир B («на потом») — всегда ниже и по датам: скор будущей
   // задачи больше не выбивает её наверх очереди сегодняшних дел.
   // v89: срочные — впереди всех (скор 999 сам их поднимает), «на завтра» — хвост очереди до разделителя
   // v124: пропущенное срочное — низ тира A (выше «на потом», ниже всех сегодняшних)
-  const todayTier = [...urgent, ...main].sort((a, b) => smartScore(b) - smartScore(a)); // стабильная сортировка: равные скоры сохраняют порядок
+  // v126: ✨ сортирует по скору только РУЧНЫЕ блоки лестницы (сегодня без времени, без даты);
+  // детерминированные не трогает: «сегодня по времени» остаётся по часам, просроч — по датам
+  // (фидбек: «если указано время — сначала те, кто раньше по времени»)
+  const byScore = (a, b) => smartScore(b) - smartScore(a) || (a.todoOrder ?? 0) - (b.todoOrder ?? 0);
   const sorted = [
-    ...todayTier.filter(n => !todoSkippedToday(n)),
-    ...todayTier.filter(n => todoSkippedToday(n)),
+    ...urgent,                              // скор 999 — внутри блока по todoOrder
+    ...todayTime,                           // лестница: по часам
+    ...todayNoTime.slice().sort(byScore),   // ручной блок — по скору
+    ...overdue,                             // лестница: свежие просрочки выше
+    ...noDate.slice().sort(byScore),        // ручной блок — по скору
+    ...skippedUrg,                          // пропущенное до конца дня — хвост тира A
     ...tomorrow, // по времени/порядку (splitTodoQueue отсортировал)
     ...future,   // по датам (splitTodoQueue отсортировал)
   ];
@@ -10574,11 +10604,11 @@ function renderFocusCard() {
   let html = '';
 
   const _hSet118 = todoHiddenSet(); // v118: матери с подзадачами скрыты — фокус показывает первый шаг
-  const queue = getTodoMainQueue().filter(n => !_hSet118.has(n.id)); // v87: фокус — только «сегодняшний» тир, задачи на потом не звонят в фокусе
-  // v89 Н6: срочное — в фокусе первым; v124: пропущенное срочное в фокус не рвётся —
-  // первым становится следующее живое дело (фидбек: «срочные не пропускаются»)
-  const urgNow = n => n.urgent === true && !todoSkippedToday(n);
-  queue.sort((a, b) => ((urgNow(b) ? 1 : 0) - (urgNow(a) ? 1 : 0)) || ((todoSkippedToday(a) ? 1 : 0) - (todoSkippedToday(b) ? 1 : 0)));
+  // v126: фокус = голова канонической лестницы (splitTodoQueue): срочные → сегодня по времени →
+  // сегодня без времени → просроч → без даты. Пропущенное сегодня стоит в хвосте тира A —
+  // в фокус не рвётся (v124), первым становится следующее живое дело
+  const _sq126 = splitTodoQueue();
+  const queue = _sq126.urgent.concat(_sq126.main).filter(n => !_hSet118.has(n.id)); // v87: задачи на потом в фокусе не звонят
   if (queue.length) {
     const top = queue[0];
     const restCount = queue.length - 1;
@@ -11440,12 +11470,12 @@ async function reorderWish(id, newIndex) {
 }
 
 // ── КАРТОЧКА ФОКУСА НА ГЛАВНОЙ: тап → открыть задачу, свайп вправо → опустить в очереди ──
-// Скип (v77 по фидбеку): 1-й пропуск уносит задачу на 5-ю позицию, повторный —
-// в самый конец. Счётчик пропусков (skipCount) хранится на записи в Firestore
-// и переживает перезапуск. Механика та же, что при драге за ⠿ (reorderTodo):
-// соседи сдвигаются сами.
-// v124: СРОЧНАЯ задача обычным скипом не понижается (она прибита к верху блока срочных) —
-// у неё свой пропуск через skippedAt (до конца дня), см. todoSkippedToday/splitTodoQueue.
+// v126: пропуск ЕДИНЫЙ для любой задачи — skippedAt (до конца дня по МСК, см. todoSkippedToday):
+// лестница очереди детерминирована, поэтому старое понижение через reorderTodo (v77: 1-й пропуск
+// на 5-ю позицию, повторный в конец) больше не работало бы для блоков «сегодня по времени» и
+// «просроч» — лестница вернула бы карточку на место. Пропуск честно уезжает в хвост тира A,
+// назавтра сгорает. skipCount остаётся как счётчик статистики (импорт/история).
+// v124: срочные пропускались так же (skippedAt) — теперь механика общая.
 async function skipUrgentTodo(id, quiet) {
   const n = notes.find(x => x.id === id);
   if (!n) return;
@@ -11453,8 +11483,8 @@ async function skipUrgentTodo(id, quiet) {
   renderTodo(); // v124: оптимистичный рендер ДО сети (как в reorderTodo) — карточка уезжает мгновенно
   renderFocusCard();
   try { await updateDoc(uDocRef('notes', id), { skippedAt: n.skippedAt }); } catch(e) { console.warn('[urgent-skip] save failed', e); }
-  if (quiet) setStatus('↪ Срочная пропущена — уехала вниз очереди до вечера, назавтра снова наверху', 3200);
-  else showToast('↪ Пропущена до конца дня — назавтра срочное снова наверху', 2800);
+  if (quiet) setStatus('↪ Пропущена — уехала вниз очереди до вечера, назавтра снова наверху', 3200);
+  else showToast('↪ Пропущена до конца дня — назавтра снова наверху', 2800); // v126: тексты нейтральные — пропуск единый для любой задачи
 }
 async function unskipUrgentTodo(id) {
   const n = notes.find(x => x.id === id);
@@ -11469,31 +11499,20 @@ window.skipUrgentTodo = skipUrgentTodo;
 window.unskipUrgentTodo = unskipUrgentTodo;
 async function skipTodoTask(id) {
   const queue = getTodoQueue();
-  const idx = queue.findIndex(n => n.id === id);
-  if (idx < 0) return;
   if (queue.length < 2) {
     setStatus('Это единственная задача в очереди — листать некуда 🙂', 2600);
     return;
   }
-  const note = queue[idx];
-  // v124: срочная — свой пропуск (skippedAt до конца дня), обычный reorder её не понижает
-  if (note.urgent === true && !todoSkippedToday(note)) {
-    try { await skipUrgentTodo(id, true); } catch(e) { console.warn('[focus] urgent skip failed', e); }
-    return;
-  }
+  const note = queue.find(n => n.id === id);
+  if (!note) return;
+  // v126: пропуск ЕДИНЫЙ для любой задачи — skippedAt до конца дня. Лестница детерминирована,
+  // понижение через todoOrder больше не работает для задач из блоков «сегодня по времени» /
+  // «просроч» (лестница вернула бы их на место) — пропуск честно уезжает в хвост тира A.
+  // История v77/v124: skipCount копим для статистики, поведение от него больше не зависит
   const skipN = (Number(note.skipCount) || 0) + 1;
-  const toEnd = skipN >= 2;
-  const newIdx = toEnd ? queue.length - 1 : Math.min(4, queue.length - 1);
-  try {
-    note.skipCount = skipN; // локально — до перезагрузки с сервера
-    try { await updateDoc(uDocRef('notes', id), { skipCount: skipN }); } catch(e) { console.warn('[focus] skipCount save failed', e); }
-    await reorderTodo(id, newIdx);
-    setStatus(toEnd
-      ? '↪ Пропущена снова — уехала в конец очереди'
-      : (newIdx === queue.length - 1
-        ? '↪ Уехала в конец очереди — задач меньше пяти'
-        : '↪ Переехала на 5-ю позицию — ещё один пропуск унесёт её в конец'), 3000);
-  } catch(e) { console.warn('[focus] skip failed', e); alert('Ошибка: ' + e.message); }
+  note.skipCount = skipN; // локально — до перезагрузки с сервера
+  try { updateDoc(uDocRef('notes', id), { skipCount: skipN }).catch(() => {}); } catch(e) {}
+  try { await skipUrgentTodo(id, true); } catch(e) { console.warn('[focus] skip failed', e); }
 }
 window.skipTodoTask = skipTodoTask;
 
@@ -11638,7 +11657,8 @@ function renderTodo() {
   const el = document.getElementById('todo-list');
   if (!el) return;
   if (todoDragState) return; // v119: перерисовка посреди драга убивает летящую карточку (DOM заменяется, transform теряется) — отложим до отпускания
-  let { urgent, main, tomorrow, future } = splitTodoQueue();
+  let { urgent, tomorrow, future, todayTime, todayNoTime, overdue, noDate, skippedUrg } = splitTodoQueue(); // v126: лестница тира A — блоки по отдельности
+  let main = [...todayTime, ...todayNoTime, ...overdue, ...noDate, ...skippedUrg];
   // v89 Н6: наступившее «завтра» улетает наверх — одноразовый бамп при переходе даты
   try {
     const _tKey = formatDateKey(new Date());
@@ -11648,7 +11668,7 @@ function renderTodo() {
       matured.forEach(n => localStorage.removeItem('hz3_mat_' + n.id));
       (async () => {
         for (let i = 0; i < matured.length; i++) {
-          try { await updateDoc(uDocRef('notes', matured[i].id), { todoOrder: computeSmartOrder(88 - i * 0.5) }); } catch(e) {}
+          try { await updateDoc(uDocRef('notes', matured[i].id), { todoOrder: computeSmartOrder(95 - i * 0.5) }); } catch(e) {} // v126: скор сегодняшних 95
         }
         await loadNotes();
         showToast('📅 Наступил срок — задача поднялась в очереди', 2600);
@@ -11658,15 +11678,18 @@ function renderTodo() {
   // v89 Н9: фильтр по тегу в тудушке (чипы как в Истории)
   if (activeTodoTag) {
     const f = n => (n.tag || '') === activeTodoTag;
-    urgent = urgent.filter(f); main = main.filter(f); tomorrow = tomorrow.filter(f); future = future.filter(f);
+    urgent = urgent.filter(f); tomorrow = tomorrow.filter(f); future = future.filter(f);
+    todayTime = todayTime.filter(f); todayNoTime = todayNoTime.filter(f); overdue = overdue.filter(f); noDate = noDate.filter(f); skippedUrg = skippedUrg.filter(f);
   }
   // v118: цепочки подзадач схлопываются — мать скрыта, виден только первый шаг;
   // фильтр ДО счётчиков, чтобы «N в очереди» совпадало с реально видимыми карточками
   const _hSet118 = todoHiddenSet();
   if (_hSet118.size) {
     const vis = arr => arr.filter(n => !_hSet118.has(n.id));
-    urgent = vis(urgent); main = vis(main); tomorrow = vis(tomorrow); future = vis(future);
+    urgent = vis(urgent); tomorrow = vis(tomorrow); future = vis(future);
+    todayTime = vis(todayTime); todayNoTime = vis(todayNoTime); overdue = vis(overdue); noDate = vis(noDate); skippedUrg = vis(skippedUrg);
   }
+  main = [...todayTime, ...todayNoTime, ...overdue, ...noDate, ...skippedUrg]; // v126: конкат лестницы после фильтров
   try {
     const tagsBox = document.getElementById('todo-tags');
     if (tagsBox) {
@@ -11699,21 +11722,25 @@ function renderTodo() {
     const staleTitle = stale ? ` title="Висит уже ${Math.floor((Date.now() - new Date(n.createdAt).getTime()) / 86400000)} дн."` : '';
     const isUrg = zone === 'urgent';
     const isFut = zone === 'future' || zone === 'tomorrow'; // v89: «на завтра» тоже без ручек — срок уже назначен
-    const isSkippedUrg = !isUrg && n.urgent === true && todoSkippedToday(n); // v124: пропущенное срочное (живёт в низу тира A)
+    const isSkipped = !isUrg && todoSkippedToday(n); // v124: пропуск до конца дня; v126: у любой задачи (живёт в хвосте тира A)
     // v87: у задач «на потом» нет ▲ и ⠿ — тир B сортируется по дате сам,
     // а «поднять на сегодня» = снять/переназначить дату в редакторе.
     // v89: у срочных тоже нет ⠿ (они прибиты к верху), но ▲ работает внутри срочного блока.
+    // v126: у детерминированных блоков лестницы («сегодня по времени» — по часам, «просроч» — по датам)
+    // ручек тоже нет: порядок ведут часы и даты, как у «на потом»
+    const noDrag = isFut || isUrg || zone === 'todayTime' || zone === 'overdue';
+    const noUp = isFut || zone === 'todayTime' || zone === 'overdue';
     const urgBorder = isUrg ? 'border-color:rgba(255,90,90,0.45);box-shadow:0 0 18px rgba(255,80,80,0.10);' : '';
     return `
     <div class="swipe-wrap"><button class="swipe-del" onclick="swipeDeleteNote('${n.id}');event.stopPropagation();" aria-label="Удалить задачу">${TRASH_ICON_SVG}<span>Удалить</span></button>
     <div class="note-card${stale ? ' note-stale' : ''}" data-id="${n.id}"${staleTitle} onclick="todoCardTap('${n.id}')" style="display:flex;gap:10px;align-items:flex-start;cursor:pointer;${urgBorder}">
       <div style="display:flex;flex-direction:column;align-items:center;flex-shrink:0;gap:7px;">
-        <button class="todo-up-btn" title="Наверх — станет первой" onclick="moveTodoTop('${n.id}');event.stopPropagation();"${(i === 0 || isFut) ? ' style="visibility:hidden;"' : ''}>▲</button>
-        <div class="todo-drag-handle"${isFut || isUrg ? ' style="visibility:hidden;"' : ''}>⠿</div>
+        <button class="todo-up-btn" title="Наверх — станет первой" onclick="moveTodoTop('${n.id}');event.stopPropagation();"${(i === 0 || noUp) ? ' style="visibility:hidden;"' : ''}>▲</button>
+        <div class="todo-drag-handle"${noDrag ? ' style="visibility:hidden;"' : ''}>⠿</div>
       </div>
       <div style="flex:1;min-width:0;">
         <div class="note-meta">
-          <span class="note-date"${whenStyle}>#${i+1}${isUrg ? ' · 🔥 Срочно' : (isSkippedUrg ? ' · 🔥 Срочно · пропущена' : '')}${n.tag ? ' · ' + n.tag : ''}${whenStr ? ' · ' + whenStr : ''}${n.details ? ' · 📝' : ''}</span>
+          <span class="note-date"${whenStyle}>#${i+1}${isUrg ? ' · 🔥 Срочно' : (isSkipped ? (n.urgent === true ? ' · 🔥 Срочно · пропущена' : ' · ⏳ пропущена') : '')}${n.tag ? ' · ' + n.tag : ''}${whenStr ? ' · ' + whenStr : ''}${n.details ? ' · 📝' : ''}</span>
           <button class="note-copy-btn" title="Скопировать текст" onclick="copyNoteText('${n.id}');event.stopPropagation();">${COPY_ICON_SVG}</button>
         </div>
         <div class="note-text">${escHtml(n.text)}</div>
@@ -11721,7 +11748,7 @@ function renderTodo() {
         <div class="note-actions">
           <button class="note-btn note-markdone" onclick="toggleDone('${n.id}', false);event.stopPropagation();"><span class="note-donebox" aria-hidden="true"></span>Выполнить</button>
           ${isUrg ? `<button class="note-btn" title="Пропустить на сегодня — уедет вниз очереди до вечера, назавтра снова наверху" onclick="skipUrgentTodo('${n.id}');event.stopPropagation();">⤵ Пропустить</button>` : ''}
-          ${isSkippedUrg ? `<button class="note-btn" title="Вернуть в срочный блок — снова наверху" onclick="unskipUrgentTodo('${n.id}');event.stopPropagation();">⤴ Вернуть в топ</button>` : ''}
+          ${isSkipped ? `<button class="note-btn" title="Вернуть наверх — пропуск снимется" onclick="unskipUrgentTodo('${n.id}');event.stopPropagation();">⤴ Вернуть в топ</button>` : ''}
           <button class="note-btn note-undone" onclick="toggleTodo('${n.id}', true);event.stopPropagation();">✕ Убрать</button>
         </div>
       </div>
@@ -11731,7 +11758,21 @@ function renderTodo() {
   let html = '';
   let idx = 0;
   if (urgent.length) html += urgent.map((n, i) => cardHtml(n, idx++, 'urgent')).join('');
-  html += main.map((n, i) => cardHtml(n, idx++, 'main')).join('');
+  // v126: тир A = лестница блоками (не общей кучей): сегодня по времени → сегодня без времени →
+  // ⚠ просроч (честная плашка, не подвал) → без даты → пропущенное сегодня
+  html += todayTime.map((n, i) => cardHtml(n, idx++, 'todayTime')).join('');
+  html += todayNoTime.map((n, i) => cardHtml(n, idx++, 'main')).join('');
+  if (overdue.length && (urgent.length || todayTime.length || todayNoTime.length)) {
+    html += `
+    <div class="todo-future-divider" style="display:flex;align-items:center;gap:10px;margin:14px 0 10px;">
+      <div style="flex:1;height:0.5px;background:rgba(255,255,255,0.12);"></div>
+      <div style="font-size:10.5px;letter-spacing:0.6px;text-transform:uppercase;font-weight:600;color:rgba(255,110,110,0.8);white-space:nowrap;">⚠ Просрочено — ${overdue.length}</div>
+      <div style="flex:1;height:0.5px;background:rgba(255,255,255,0.12);"></div>
+    </div>`;
+  }
+  html += overdue.map((n, i) => cardHtml(n, idx++, 'overdue')).join('');
+  html += noDate.map((n, i) => cardHtml(n, idx++, 'main')).join('');
+  html += skippedUrg.map((n, i) => cardHtml(n, idx++, 'main')).join('');
   html += tomorrow.map((n, i) => cardHtml(n, idx++, 'tomorrow')).join('');
   if (future.length) {
     html += `
@@ -15716,7 +15757,7 @@ async function extractIcsFromZip(buf) {
 window.extractIcsFromZip = extractIcsFromZip;
 
 // Файл .ics (или .zip от Google) → кандидаты импорта (с дедупликацией) → общая превью-модалка
-const APP_VERSION = 'v125'; // v125: главная кнопка всегда большая — кап 2 подсказок + flex-shrink:0 + спасатель зоны (см. sw.js)
+const APP_VERSION = 'v126'; // v126: лестница очереди тудушки — срочные → сегодня по времени → сегодня без времени → просроч → без даты → пропущенное (см. sw.js)
 window.APP_VERSION = APP_VERSION;
 try { const _vc = document.getElementById('ver-chip'); if (_vc) _vc.textContent = APP_VERSION; } catch(e) {}
 window.handleIcsFile = async function(file) {
