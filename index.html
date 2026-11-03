@@ -3681,6 +3681,7 @@ async function confirmDedupCleanup() {
         if (!keeper.scheduledDate && victim.scheduledDate && keeper.done !== true) {
           patch.scheduledDate = victim.scheduledDate;
           if (victim.scheduledTime) patch.scheduledTime = victim.scheduledTime;
+          patch.todoManualKey = null; patch.todoManualKeyDay = null; // v127: другой срок — пин сбрасывается
         }
         if (Object.keys(patch).length) { try { await updateDoc(uDocRef('notes', keeper.id), patch); } catch (e) {} }
         await deleteDoc(uDocRef('notes', victim.id));
@@ -4355,7 +4356,7 @@ async function wishOfferTodo(noteId) {
   const n = notes.find(x => x.id === noteId);
   if (!n) return;
   try {
-    await updateDoc(uDocRef('notes', noteId), { inTodo: true, todoOrder: computeSmartOrder(smartScoreForFields({ scheduledDate: n.scheduledDate || null, importance: n.importance || null, effort: n.effort || null, urgent: false })) });
+    await updateDoc(uDocRef('notes', noteId), { inTodo: true, todoOrder: computeSmartOrder(smartScoreForFields({ scheduledDate: n.scheduledDate || null, importance: n.importance || null, effort: n.effort || null, urgent: false })), todoManualKey: null, todoManualKeyDay: null }); // v127: возврат в тудушку — без старого пина
     try { hziAward('taskadd', noteId); } catch(e) {} // v92: метрика (оффер «в тудушку»)
     await loadNotes();
     showToast('☑️ Задача добавлена в Тудушку', 2400);
@@ -5231,7 +5232,11 @@ async function saveEdit() {
       scheduledTime: timeVal,
       importance: editingImportance || null, // v82: важность 1–5 (умная сортировка)
       effort: editingEffort || null,         // v82: объём S/M/L
-      urgent: editingUrgent === true ? true : null // v89 Н6: «срочно» — самый верх очереди (null снимает флаг)
+      urgent: editingUrgent === true ? true : null, // v89 Н6: «срочно» — самый верх очереди (null снимает флаг)
+      // v127: сменился срок — ручной порядок в детерминированном блоке (пин драга/▲) сбрасывается:
+      // задача встаёт по своим новым часам/дате, а не по вчерашней расстановке
+      ...((oldNote && ((oldNote.scheduledDate || null) !== (dateVal || null) || (oldNote.scheduledTime || null) !== (timeVal || null)))
+        ? { todoManualKey: null, todoManualKeyDay: null } : {})
     });
     // САМООБУЧЕНИЕ ТЕГОВ (v76): пользователь перенёс запись в другой тег руками —
     // запоминаем пример «текст → тег», классификатор потом наследует такие правки
@@ -5802,7 +5807,7 @@ async function autoDistributeQueue() {
       load[k] = (load[k] || 0) + 1;
       patches.push({ id: t.id, key: k });
     }
-    await Promise.all(patches.map(p => updateDoc(uDocRef('notes', p.id), { scheduledDate: p.key })));
+    await Promise.all(patches.map(p => updateDoc(uDocRef('notes', p.id), { scheduledDate: p.key, todoManualKey: null, todoManualKeyDay: null }))); // v127: новый день — пин блока сбрасывается
     await loadNotes();
     calendarMonthOffset = 0; // показать результат — вернуться к текущему месяцу
     renderCalendar();
@@ -6182,6 +6187,7 @@ async function setNoteSchedule(noteId, dateKey, timeStr) {
   try {
     const patch = dateKey ? { scheduledDate: dateKey } : { scheduledDate: null, scheduledTime: null };
     if (dateKey && timeStr !== undefined) patch.scheduledTime = timeStr;
+    patch.todoManualKey = null; patch.todoManualKeyDay = null; // v127: новый срок — пин блока сбрасывается (задача встаёт по часам/датам)
     await updateDoc(uDocRef('notes', noteId), patch);
     await loadNotes();
     renderCalendar();
@@ -10297,6 +10303,48 @@ function todoSkippedToday(n) {
   if (!n || !n.skippedAt) return false;
   try { return new Date(n.skippedAt + 3 * 3600000).toISOString().slice(0, 10) === hziDayStr(); } catch(e) { return false; }
 }
+// ── v127: РУЧНЫЕ КЛЮЧИ (пины) — драг и ▲ теперь у ВСЕХ блоков лестницы (фидбек юзера:
+// «оставь, пусть у всех будет перетаскивание»). Детерминированные блоки («сегодня по времени»,
+// «просроч», «на завтра», «на потом») по умолчанию сортируются часами/датами, но ручной перенос
+// ставит задаче todoManualKey — число, СРАВНИМОЕ с натуральным ключом блока (соседи при дропе
+// задают середину). Нетронутые задачи продолжают жить по часам/датам, зоны не перемешиваются.
+// Пин действует ДО КОНЦА ДНЯ (todoManualKeyDay = сегодня, как пропуск skippedAt): назавтра
+// лестница снова по часам — вчерашняя расстановка не телепортирует задачи через смену дат.
+function todoNatKey(n, zone) { // натуральный ключ блока (тот же домен, что у сортировки)
+  const timeMin = t => { const m = /^(\d{1,2}):(\d{2})/.exec(String(t || '')); return m ? (+m[1]) * 60 + (+m[2]) : 1440; };
+  const dNum = d => parseInt(String(d).replace(/-/g, ''), 10) || 0;
+  if (zone === 'overdue') return -dNum(n.scheduledDate);                                   // свежий просроч выше (дата desc)
+  if (zone === 'future') return dNum(n.scheduledDate) * 10000 + (n.scheduledTime ? timeMin(n.scheduledTime) + 1 : 0); // дата, без времени раньше обозначенного времени
+  return timeMin(n.scheduledTime);                                                          // todayTime / tomorrow — минуты суток
+}
+function todoPinKey(n) { // пин валиден только сегодня (день по календарю страницы, как вся лестница)
+  return (n && typeof n.todoManualKey === 'number' && n.todoManualKeyDay === formatDateKey(new Date())) ? n.todoManualKey : null;
+}
+function todoEffKey(n, zone) { const p = todoPinKey(n); return p === null ? todoNatKey(n, zone) : p; }
+// ЗОНА карточки — детерминированный/ручной блок лестницы, в котором она живёт сейчас
+// (ровно как splitTodoQueue раскладывает: срочное-«на завтра» живёт в срочном блоке и т.д.)
+function todoZoneOf(n) {
+  if (!n) return 'noDate';
+  const todayKey = formatDateKey(new Date());
+  const tmKey = formatDateKey(new Date(Date.now() + 86400000));
+  const skipped = todoSkippedToday(n);
+  if (n.urgent === true && !skipped && (!isFutureTodo(n) || n.scheduledDate === tmKey)) return 'urgent';
+  if (isFutureTodo(n)) return n.scheduledDate === tmKey ? 'tomorrow' : 'future';
+  if (skipped) return 'skipped';
+  if (n.scheduledDate === todayKey) return n.scheduledTime ? 'todayTime' : 'todayNoTime';
+  if (n.scheduledDate) return 'overdue';
+  return 'noDate';
+}
+const TODO_DET_ZONES = ['todayTime', 'overdue', 'tomorrow', 'future']; // блоки с пинами
+function setTodoPin(n, key) { // локально + запись в облако сразу (v127: без батча — иначе запоздавший
+  // флаш перезаписывал бы сброс пина при смене срока: драг → через мгновение дата изменена в календаре)
+  if (!n) return;
+  n.todoManualKey = key;
+  n.todoManualKeyDay = key === null ? null : formatDateKey(new Date());
+  try { updateDoc(uDocRef('notes', n.id), { todoManualKey: key, todoManualKeyDay: n.todoManualKeyDay }).catch(() => {}); } catch (e) {}
+}
+function clearTodoPin(n) { if (n && (typeof n.todoManualKey === 'number' || n.todoManualKeyDay)) setTodoPin(n, null); }
+
 // ── v126: ЛЕСТНИЦА ОЧЕРЕДИ (фидбек юзера) ──
 // «Вверху срочные; далее задачи на сегодняшний день — если указано время, сначала те, кто раньше
 // по времени, потом просто без времени; и далее остальные. Сегодняшние актуальнее просроченных,
@@ -10321,17 +10369,17 @@ function splitTodoQueue() { // v89 Н6: срочные → отдельно (с�
   const tierA = q.filter(n => !urgentIds.has(n.id) && !isFutureTodo(n));
   const live = n => !todoSkippedToday(n); // v126: пропущенное сегодня живёт ТОЛЬКО в хвостовом блоке — из остальных исключаем (иначе двойной показ)
   const todayTime = tierA.filter(n => live(n) && n.scheduledDate === todayKey && n.scheduledTime)
-    .sort((a, b) => timeMin(a.scheduledTime) - timeMin(b.scheduledTime) || byOrder(a, b)); // v126: раньше по времени — выше
+    .sort((a, b) => todoEffKey(a, 'todayTime') - todoEffKey(b, 'todayTime') || byOrder(a, b)); // v126: по часам; v127: пин драга/▲ перестраивает блок до конца дня
   const todayNoTime = tierA.filter(n => live(n) && n.scheduledDate === todayKey && !n.scheduledTime).sort(byOrder);
   const overdue = tierA.filter(n => live(n) && n.scheduledDate && n.scheduledDate < todayKey)
-    .sort((a, b) => String(b.scheduledDate).localeCompare(String(a.scheduledDate)) || byOrder(a, b)); // v126: не в подвал — свежие просрочки соседствуют с «сегодня»
+    .sort((a, b) => todoEffKey(a, 'overdue') - todoEffKey(b, 'overdue') || byOrder(a, b)); // v126: свежие выше; v127: пин работает и здесь
   const noDate = tierA.filter(n => live(n) && !n.scheduledDate).sort(byOrder);
   const skippedUrg = tierA.filter(n => todoSkippedToday(n)).sort(byOrder); // v124: пропуск до конца дня; v126: у любой задачи, не только срочной
   const main = [...todayTime, ...todayNoTime, ...overdue, ...noDate, ...skippedUrg];
   const tomorrow = q.filter(n => !urgentIds.has(n.id) && isTomorrow(n))
-    .sort((a, b) => timeMin(a.scheduledTime) - timeMin(b.scheduledTime) || byOrder(a, b));
+    .sort((a, b) => todoEffKey(a, 'tomorrow') - todoEffKey(b, 'tomorrow') || byOrder(a, b)); // v127: «на завтра» тоже можно перетаскивать (пин до конца дня)
   const future = q.filter(n => isFutureTodo(n) && n.scheduledDate > tmKey).sort((a, b) =>
-    ((a.scheduledDate + (a.scheduledTime || '')) || '').localeCompare((b.scheduledDate + (b.scheduledTime || '')) || ''));
+    todoEffKey(a, 'future') - todoEffKey(b, 'future') || byOrder(a, b)); // v127: дата (без времени раньше обозначенного) + пин драга
   return { urgent, main, tomorrow, future, todayTime, todayNoTime, overdue, noDate, skippedUrg };
 }
 
@@ -10418,6 +10466,9 @@ async function smartSortTodo() {
   // детерминированные не трогает: «сегодня по времени» остаётся по часам, просроч — по датам
   // (фидбек: «если указано время — сначала те, кто раньше по времени»)
   const byScore = (a, b) => smartScore(b) - smartScore(a) || (a.todoOrder ?? 0) - (b.todoOrder ?? 0);
+  // v127: ✨ пересобирает ВСЮ очередь — пины детерминированных блоков сбрасываются,
+  // «по времени»/«просроч»/«на завтра»/«на потом» снова по часам и датам
+  [...todayTime, ...overdue, ...tomorrow, ...future].forEach(n => clearTodoPin(n));
   const sorted = [
     ...urgent,                              // скор 999 — внутри блока по todoOrder
     ...todayTime,                           // лестница: по часам
@@ -10914,6 +10965,19 @@ function initTodoDrag() {
         const lim = st.wallNonFutEl.getBoundingClientRect().bottom + GAP;
         if (top < lim) top = lim;
       }
+      // v127: зажим в ЗОНЕ — по ИСХОДНЫМ позициям снапшота (соседи расступаются, live-rect
+      // «плывёт»; исходник стабилен). Строгие v121-стены (срочные/тиры) применены выше и
+      // всегда сильнее: драг не вылетает из блока и не наезжает на соседние зоны.
+      if (st.zoneTopOrigTop != null) {
+        const lim = st.zoneTopOrigTop - scrolled - GAP;
+        if (top < lim) top = lim;
+      }
+      // v127: пол зоны — для всех зон, кроме «без даты» (под ней divider и v121-стена
+      // «на потом»: пусть летящая прижимается к ней, как в v121, а не висит над divider)
+      if (st.zoneBotOrigBottom != null && !st.zoneNoFloor) {
+        const lim = st.zoneBotOrigBottom - scrolled + GAP - scaleH;
+        if (top > lim) top = lim;
+      }
     } catch (e) {}
     st.itemEl.style.transform = `translateY(${(top - st.startTop) + scrolled}px) scale(1.02)`;
     updateLiveShift(scrolled);
@@ -10954,6 +11018,12 @@ function initTodoDrag() {
       if (fingerY < adjY) { targetIndex = i; break; }
     }
     if (targetIndex === todoDragState.currentTargetIndex) return;
+    // v127: цель зажимается внутрь ЗОНЫ перетаскиваемой (те же границы, что в reorderTodo):
+    // соседы из чужих блоков не расступаются и дроп не может телепортировать карточку
+    if (todoDragState.zoneRange) {
+      const [zf, zl] = todoDragState.zoneRange;
+      targetIndex = Math.max(zf, Math.min(targetIndex, zl + 1));
+    }
     todoDragState.currentTargetIndex = targetIndex;
 
     others.forEach((s, j) => {
@@ -11005,8 +11075,9 @@ function initTodoDrag() {
     const itemsSnapshot = items.map(elm => {
       const r = elm.getBoundingClientRect();
       const nn = noteById[elm.dataset.id];
-      // v120: urg — карточка из срочного блока (вторая стена драга, см. updateLiveShift)
-      return { id: elm.dataset.id, midY: r.top + r.height / 2, h: r.height, fut: isFutureTodo(nn), urg: !!(nn && nn.urgent === true) };
+      // v120: urg — карточка из срочного блока (вторая стена драга, см. updateLiveShift);
+      // v127: zn — зона лестницы (блок), стена которого не выпускает драг за свои пределы
+      return { id: elm.dataset.id, midY: r.top + r.height / 2, h: r.height, fut: isFutureTodo(nn), urg: !!(nn && nn.urgent === true), zn: todoZoneOf(nn) };
     });
     const startFullIndex = itemsSnapshot.findIndex(s => s.id === card.dataset.id);
     const cardRect = card.getBoundingClientRect();
@@ -11014,8 +11085,30 @@ function initTodoDrag() {
     // v121: элементы СТЕН для зажима летящей карточки (rect читается живьём каждый кадр —
     // работает и при автоскролле). Стены те же, что в updateLiveShift/reorderTodo:
     // срочный блок сверху (для не-срочных), граница тиров A/«на потом» (в обе стороны).
+    // v127: ЗОНА — у каждой карточки свои потолок и пол (первая/последняя карточка её блока;
+    // пропущенные без зажима — их драг поднимается выше хвоста, это «вернуть в топ»).
     let wallUrgEl = null, wallFutEl = null, wallNonFutEl = null;
+    let zoneTopOrigTop = null, zoneBotOrigBottom = null, zoneRange = null;
     const wallElById = (wid) => listEl.querySelector(`.note-card[data-id="${wid}"]`);
+    if (draggedSnap.zn !== 'skipped') {
+      let zf = -1, zl = -1, oi = 0;
+      for (let i = 0; i < itemsSnapshot.length; i++) {
+        if (itemsSnapshot[i].id === draggedSnap.id) continue;
+        if (itemsSnapshot[i].zn === draggedSnap.zn) { if (zf === -1) zf = oi; zl = oi; }
+        oi++;
+      }
+      if (zf !== -1) {
+        zoneRange = [zf, zl]; // индексы среди others — те же, что в updateLiveShift
+        const zTopEl = wallElById(itemsSnapshot.filter(s => s.id !== draggedSnap.id)[zf].id);
+        const zBotEl = wallElById(itemsSnapshot.filter(s => s.id !== draggedSnap.id)[zl].id);
+        // v127: ИСХОДНЫЕ границы зоны (на beginDrag сдвигов ещё нет): соседи зоны при драге
+        // расступаются, их live-rect «плывёт» — зажим по исходнику даёт стабильный потолок/пол
+        try {
+          if (zTopEl) zoneTopOrigTop = zTopEl.getBoundingClientRect().top;
+          if (zBotEl) zoneBotOrigBottom = zBotEl.getBoundingClientRect().bottom;
+        } catch (e) {}
+      }
+    }
     if (!draggedSnap.urg) {
       for (let i = itemsSnapshot.length - 1; i >= 0; i--) {
         if (itemsSnapshot[i].urg) { wallUrgEl = wallElById(itemsSnapshot[i].id); break; }
@@ -11045,6 +11138,8 @@ function initTodoDrag() {
       dragUrg: !!draggedSnap.urg, // v120: тащим срочную? (ручка у срочных скрыта — страховка для кода)
       startTop: cardRect.top, // v121: viewport-верх карточки без transform — база зажима у стен
       wallUrgEl, wallFutEl, wallNonFutEl, // v121: элементы стен для зажима
+      zoneTopOrigTop, zoneBotOrigBottom, zoneRange, // v127: исходные потолок/пол ЗОНЫ
+      zoneNoFloor: draggedSnap.zn === 'noDate', // v127: нижняя тир-A зона — пол ведёт v121-стена «на потом» (через divider)
       currentTargetIndex: startFullIndex
     };
     // v121: на время драга обёртки свайпа не режут карточки (overflow:visible) —
@@ -11174,6 +11269,7 @@ async function persistTodoOrderNow() {
     const { urgent, main, tomorrow, future } = splitTodoQueue();
     const visual = urgent.concat(main, tomorrow, future); // v89: пишем порядок В ВИЗУАЛЬНОМ виде (срочные → тир A → завтра → тир B)
     await Promise.all(visual.map((n, i) => updateDoc(uDocRef('notes', n.id), { todoOrder: i + 1 })));
+    // v127: пины пишутся сразу в setTodoPin — здесь только порядок
   } catch(e) { alert('Ошибка сортировки: ' + e.message); }
   _todoPersistBusy = false;
 }
@@ -11201,6 +11297,7 @@ async function reorderTodo(id, newIndex, byVisible) {
     try { updateDoc(uDocRef('notes', dragged.id), { skippedAt: null }).catch(() => {}); } catch(e) {}
   }
   const dragFut = isFutureTodo(dragged);
+  const dz = todoZoneOf(dragged); // v127: зона перетаскиваемой (после снятия пропуска — драг пропущенной его снимает)
   const hSet = todoHiddenSet();
 
   // v119: БЛОК перетаскиваемой — вся её цепочка (предки + бездетные «сайд»-шаги).
@@ -11234,6 +11331,19 @@ async function reorderTodo(id, newIndex, byVisible) {
       }
       if (dragFut) idx = Math.max(idx, firstFut === -1 ? others.length : firstFut);
       else idx = Math.min(idx, firstFut === -1 ? others.length : firstFut);
+      // v127: СТЕНА ЗОНЫ — драг не выходит за пределы СВОЕГО блока лестницы (v126: блоки жёсткие,
+      // не перемешиваются). Раньше у детерминированных блоков ручек просто не было; теперь они
+      // есть у всех, поэтому дроп зажимается внутрь зоны — иначе splitTodoQueue вернул бы
+      // карточку на место (телепорт) и драг выглядел сломанным. Пропущенные без зажима:
+      // их драг поднимается выше хвоста — это и есть «вернуть в топ» (v124).
+      if (dz !== 'skipped') {
+        let zFirst = -1, zLast = -1;
+        for (let i = 0; i < others.length; i++) {
+          if (todoZoneOf(others[i]) === dz) { if (zFirst === -1) zFirst = i; zLast = i; }
+        }
+        if (zFirst === -1) return; // без перетаскиваемой зона пуста — двигать некуда
+        idx = Math.max(zFirst, Math.min(idx, zLast + 1));
+      }
       anchor = others[idx] || null;
     }
   } else {
@@ -11264,6 +11374,32 @@ async function reorderTodo(id, newIndex, byVisible) {
   seq.forEach((n, i) => {
     n.todoOrder = i + 1; // getTodoQueue() возвращает те же ссылки — порядок уже новый
   });
+  // v127: ПИНЫ для детерминированных зон. Дроп внутри своего блока ставит todoManualKey —
+  // середину между эффективными ключами ближайших своих же соседей (пин ?? натуральный ключ).
+  // Дроп у границы зоны (напр. пропущенную вернули над «без времени») пин не ставит —
+  // задача честно возвращается на своё натуральное место по часам/датам.
+  for (const m of dragBlock) {
+    const mz = todoZoneOf(m);
+    if (!TODO_DET_ZONES.includes(mz)) continue; // ручные зоны живут по todoOrder — пин не нужен
+    const pos = seq.findIndex(x => x.id === m.id);
+    let prevKey = null, nextKey = null;
+    for (let p = pos - 1; p >= 0; p--) {
+      if (dragIds.has(seq[p].id)) continue; // своя цепочка едет вместе — соседом не считается
+      if (todoZoneOf(seq[p]) !== mz) break; // граница зоны — ключ берём только изнутри блока
+      prevKey = todoEffKey(seq[p], mz); break;
+    }
+    for (let nx = pos + 1; nx < seq.length; nx++) {
+      if (dragIds.has(seq[nx].id)) continue;
+      if (todoZoneOf(seq[nx]) !== mz) break;
+      nextKey = todoEffKey(seq[nx], mz); break;
+    }
+    let key;
+    if (prevKey === null && nextKey === null) key = null;  // один в блоке — живёт по часам/датам
+    else if (prevKey === null) key = nextKey - 1;          // дроп на верх блока
+    else if (nextKey === null) key = prevKey + 1;          // дроп в низ блока
+    else key = Math.abs(nextKey - prevKey) < 1e-9 ? null : (prevKey + nextKey) / 2; // развалка ключей — вернём к натуральному
+    setTodoPin(m, key);
+  }
   renderTodo();      // синхронный рендер — до первого await, без «мигания» старым порядком
   renderFocusCard(); // фокус-карточка на главной — вдруг наверх утащили другую задачу
   scheduleTodoPersist(); // облако — одна полная запись через 350мс тишины
@@ -11280,17 +11416,41 @@ async function reorderTodo(id, newIndex, byVisible) {
 let _todoFlySeq = 0;
 function moveTodoTop(id) {
   const me = notes.find(n => n.id === id);
-  if (isFutureTodo(me)) return; // v87: задачи «на потом» не поднимаются — только через дату в редакторе
-  if (todoSkippedToday(me)) { unskipUrgentTodo(id); return; } // v124: ▲ на пропущенной срочной = вернуть в топ
-  const queue = getTodoMainQueue();
-  const idx = queue.findIndex(n => n.id === id);
-  if (idx <= 0) return; // первая и так наверху
+  if (!me) return;
+  if (todoSkippedToday(me)) { unskipUrgentTodo(id); return; } // v124: ▲ на пропущенной = вернуть в топ
+  // v127: ▲ работает у ВСЕХ блоков. В детерминированных зонах задача становится первой
+  // СВОЕГО блока через пин (часы других не трогаем); в ручных — как раньше, наверх тира A.
+  const zone = todoZoneOf(me);
+  const usePin = TODO_DET_ZONES.includes(zone);
+  let topKey = null;
+  if (usePin) {
+    const blocks = splitTodoQueue();
+    const block = { todayTime: blocks.todayTime, overdue: blocks.overdue, tomorrow: blocks.tomorrow, future: blocks.future }[zone];
+    if (!block.length || block[0].id === id) return; // уже первая в своём блоке
+    topKey = todoEffKey(block[0], zone) - 1; // строго выше нынешней головы блока
+  } else {
+    if (isFutureTodo(me)) return; // недостижимо (future/tomorrow — det-зоны), страховка v87
+    const queue = getTodoMainQueue();
+    const idx = queue.findIndex(n => n.id === id);
+    if (idx <= 0) return; // первая и так наверху
+  }
   const listEl = document.getElementById('todo-list');
-  if (!listEl) { reorderTodo(id, 0); return; }
+  if (!listEl) {
+    if (usePin) { setTodoPin(me, topKey); renderTodo(); renderFocusCard(); scheduleTodoPersist(); }
+    else reorderTodo(id, 0);
+    return;
+  }
   // FLIP-снимок: где стояли карточки ДО перестановки (viewport-координаты)
   const oldTops = new Map();
   listEl.querySelectorAll('.note-card').forEach(el => oldTops.set(el.dataset.id, el.getBoundingClientRect().top));
-  reorderTodo(id, 0); // мгновенный локальный порядок + renderTodo + renderFocusCard + облако (дебаунс)
+  if (usePin) {
+    setTodoPin(me, topKey); // мгновенный пин + облако (дебаунс, флаш в persistTodoOrderNow)
+    renderTodo();
+    renderFocusCard();
+    scheduleTodoPersist();
+  } else {
+    reorderTodo(id, 0); // мгновенный локальный порядок + renderTodo + renderFocusCard + облако (дебаунс)
+  }
   // Скролл НЕ трогаем (v81): пользователь остаётся на своём месте — уезжает только карточка
   // стартовые позиции: каждая карточка визуально остаётся на старом месте
   const seq = ++_todoFlySeq;
@@ -11715,28 +11875,25 @@ function renderTodo() {
     el.innerHTML = '<div class="hist-empty"><div class="hist-empty-icon">📋</div>' + (activeTodoTag ? 'С этим тегом задач нет' : 'Список пуст — напиши задачу на главном, ИИ сам поставит её сюда. Или добавь из Истории кнопкой «В тудулист»') + '</div>';
     return;
   }
-  const cardHtml = (n, i, zone) => {
+  const cardHtml = (n, i, zone, bi) => {
     const whenStr = whenBadgeStr(n);
     const whenStyle = n.scheduledDate && n.scheduledDate < formatDateKey(new Date()) ? ' style="color:rgba(255,110,110,0.9);"' : '';
     const stale = isStaleNote(n);
     const staleTitle = stale ? ` title="Висит уже ${Math.floor((Date.now() - new Date(n.createdAt).getTime()) / 86400000)} дн."` : '';
     const isUrg = zone === 'urgent';
-    const isFut = zone === 'future' || zone === 'tomorrow'; // v89: «на завтра» тоже без ручек — срок уже назначен
     const isSkipped = !isUrg && todoSkippedToday(n); // v124: пропуск до конца дня; v126: у любой задачи (живёт в хвосте тира A)
-    // v87: у задач «на потом» нет ▲ и ⠿ — тир B сортируется по дате сам,
-    // а «поднять на сегодня» = снять/переназначить дату в редакторе.
-    // v89: у срочных тоже нет ⠿ (они прибиты к верху), но ▲ работает внутри срочного блока.
-    // v126: у детерминированных блоков лестницы («сегодня по времени» — по часам, «просроч» — по датам)
-    // ручек тоже нет: порядок ведут часы и даты, как у «на потом»
-    const noDrag = isFut || isUrg || zone === 'todayTime' || zone === 'overdue';
-    const noUp = isFut || zone === 'todayTime' || zone === 'overdue';
+    // v127: РУЧКИ У ВСЕХ (фидбек юзера: «оставь, пусть у всех будет перетаскивание»).
+    // В детерминированных блоках драг/▲ ставят пин (todoManualKey до конца дня) — порядок
+    // внутри блока меняет пользователь, блоки лестницы не перемешиваются (стена зоны).
+    // ▲ скрывается только у первой карточки СВОЕГО блока (bi — локальный индекс блока).
+    const upHidden = bi === 0;
     const urgBorder = isUrg ? 'border-color:rgba(255,90,90,0.45);box-shadow:0 0 18px rgba(255,80,80,0.10);' : '';
     return `
     <div class="swipe-wrap"><button class="swipe-del" onclick="swipeDeleteNote('${n.id}');event.stopPropagation();" aria-label="Удалить задачу">${TRASH_ICON_SVG}<span>Удалить</span></button>
     <div class="note-card${stale ? ' note-stale' : ''}" data-id="${n.id}"${staleTitle} onclick="todoCardTap('${n.id}')" style="display:flex;gap:10px;align-items:flex-start;cursor:pointer;${urgBorder}">
       <div style="display:flex;flex-direction:column;align-items:center;flex-shrink:0;gap:7px;">
-        <button class="todo-up-btn" title="Наверх — станет первой" onclick="moveTodoTop('${n.id}');event.stopPropagation();"${(i === 0 || noUp) ? ' style="visibility:hidden;"' : ''}>▲</button>
-        <div class="todo-drag-handle"${noDrag ? ' style="visibility:hidden;"' : ''}>⠿</div>
+        <button class="todo-up-btn" title="В начало своего блока" onclick="moveTodoTop('${n.id}');event.stopPropagation();"${upHidden ? ' style="visibility:hidden;"' : ''}>▲</button>
+        <div class="todo-drag-handle">⠿</div>
       </div>
       <div style="flex:1;min-width:0;">
         <div class="note-meta">
@@ -11757,11 +11914,11 @@ function renderTodo() {
   };
   let html = '';
   let idx = 0;
-  if (urgent.length) html += urgent.map((n, i) => cardHtml(n, idx++, 'urgent')).join('');
+  if (urgent.length) html += urgent.map((n, i) => cardHtml(n, idx++, 'urgent', i)).join('');
   // v126: тир A = лестница блоками (не общей кучей): сегодня по времени → сегодня без времени →
   // ⚠ просроч (честная плашка, не подвал) → без даты → пропущенное сегодня
-  html += todayTime.map((n, i) => cardHtml(n, idx++, 'todayTime')).join('');
-  html += todayNoTime.map((n, i) => cardHtml(n, idx++, 'main')).join('');
+  html += todayTime.map((n, i) => cardHtml(n, idx++, 'todayTime', i)).join('');
+  html += todayNoTime.map((n, i) => cardHtml(n, idx++, 'main', i)).join('');
   if (overdue.length && (urgent.length || todayTime.length || todayNoTime.length)) {
     html += `
     <div class="todo-future-divider" style="display:flex;align-items:center;gap:10px;margin:14px 0 10px;">
@@ -11770,10 +11927,10 @@ function renderTodo() {
       <div style="flex:1;height:0.5px;background:rgba(255,255,255,0.12);"></div>
     </div>`;
   }
-  html += overdue.map((n, i) => cardHtml(n, idx++, 'overdue')).join('');
-  html += noDate.map((n, i) => cardHtml(n, idx++, 'main')).join('');
-  html += skippedUrg.map((n, i) => cardHtml(n, idx++, 'main')).join('');
-  html += tomorrow.map((n, i) => cardHtml(n, idx++, 'tomorrow')).join('');
+  html += overdue.map((n, i) => cardHtml(n, idx++, 'overdue', i)).join('');
+  html += noDate.map((n, i) => cardHtml(n, idx++, 'main', i)).join('');
+  html += skippedUrg.map((n, i) => cardHtml(n, idx++, 'main', i)).join('');
+  html += tomorrow.map((n, i) => cardHtml(n, idx++, 'tomorrow', i)).join('');
   if (future.length) {
     html += `
     <div class="todo-future-divider" style="display:flex;align-items:center;gap:10px;margin:14px 0 10px;">
@@ -11781,7 +11938,7 @@ function renderTodo() {
       <div style="font-size:10.5px;letter-spacing:0.6px;text-transform:uppercase;font-weight:600;color:rgba(255,209,102,0.75);white-space:nowrap;">📅 На потом — по датам (${future.length})</div>
       <div style="flex:1;height:0.5px;background:rgba(255,255,255,0.12);"></div>
     </div>`;
-    html += future.map((n, j) => cardHtml(n, idx++, 'future')).join('');
+    html += future.map((n, j) => cardHtml(n, idx++, 'future', j)).join('');
   }
   el.innerHTML = html;
 }
@@ -15389,6 +15546,10 @@ function buildImportedNotePatch(n, createdAt, orderHint) {
   if (n.effort) patch.effort = n.effort;                   // v119: объём S/M/L
   if (n.urgent === true) patch.urgent = true;              // v119: «срочно»
   if (n.skippedAt) patch.skippedAt = n.skippedAt;         // v124: пропуск срочного (действует до конца дня)
+  if (typeof n.todoManualKey === 'number') {              // v127: ручной порядок детерминированного блока
+    patch.todoManualKey = n.todoManualKey;
+    if (n.todoManualKeyDay) patch.todoManualKeyDay = n.todoManualKeyDay; // чужой день — пин сам станет недействительным
+  }
   if (n.skipCount != null) patch.skipCount = n.skipCount;  // v119: счётчик пропусков
   if (n.remember === true) { patch.remember = true; if (n.rememberOn) patch.rememberOn = n.rememberOn; } // v93: «помнить всегда»
   const hasDate = !!n.scheduledDate;
@@ -15757,7 +15918,7 @@ async function extractIcsFromZip(buf) {
 window.extractIcsFromZip = extractIcsFromZip;
 
 // Файл .ics (или .zip от Google) → кандидаты импорта (с дедупликацией) → общая превью-модалка
-const APP_VERSION = 'v126'; // v126: лестница очереди тудушки — срочные → сегодня по времени → сегодня без времени → просроч → без даты → пропущенное (см. sw.js)
+const APP_VERSION = 'v127'; // v127: перетаскивание у ВСЕХ блоков тудушки — пины (todoManualKey до конца дня) в детерминированных блоках, стены зон, ▲ = начало своего блока (см. sw.js)
 window.APP_VERSION = APP_VERSION;
 try { const _vc = document.getElementById('ver-chip'); if (_vc) _vc.textContent = APP_VERSION; } catch(e) {}
 window.handleIcsFile = async function(file) {
@@ -16639,6 +16800,12 @@ window.__t = {
   isFutureTodo,
   splitTodoQueue,
   todoSkippedToday,   // v124: пропуск срочного до конца дня
+  todoZoneOf,         // v127: зона лестницы (блок) задачи
+  todoNatKey,         // v127: натуральный ключ блока (часы/даты)
+  todoPinKey,         // v127: пин драга/▲ (действует до конца дня)
+  todoEffKey,         // v127: пин ?? натуральный
+  setTodoPin,         // v127: поставить/снять пин
+  clearTodoPin,       // v127: снять пин
   stripUrgencyWords,  // v124: «срочно» — флаг, а не слово в тексте
   getLongStaleNotes,
   longStaleDays,
