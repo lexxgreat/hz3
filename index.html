@@ -234,10 +234,20 @@ body{background:#060918;font-family:'Inter',sans-serif;display:flex;justify-cont
   background:rgba(255,255,255,0.04);
   border:1px solid rgba(108,71,255,0.35);
   border-radius:18px;padding:12px 14px;
-  transition:border-color 0.2s;
+  transition:border-color 0.2s, padding 0.25s ease;
 }
+/* v132: максимальная ширина ввода — при наборе звёздочка уступает место, при высоком
+   поле кнопки встают в столбик (фидбек: «область ввода очень узкая, надо максимально расширить») */
+.capture-wrap.typing{margin:0 12px}
+.capture-row.typing{padding:10px 12px}
+.capture-row.typing .cap-star{display:none}
+.capture-row.typing .cap-btns{gap:7px}
+.capture-row.typing .cap-clear{width:22px;height:22px;font-size:14px}
+.capture-row.tall{padding:12px}
+.capture-row.tall .cap-btns{flex-direction:column;gap:7px}
 .capture-row:focus-within{border-color:rgba(108,71,255,0.65);box-shadow:0 0 20px rgba(108,71,255,0.1)}
 .cap-star{flex-shrink:0}
+.cap-btns{display:flex;align-items:center;gap:10px;flex-shrink:0}
 .cap-input{
   flex:1;background:transparent;border:none;outline:none;
   font-size:15px;color:rgba(255,255,255,0.82);font-family:'Inter',sans-serif;
@@ -1325,19 +1335,21 @@ body[data-theme="business"] .cap-mic.recording{box-shadow:0 0 10px rgba(140,176,
           <path d="M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4L12 17l-6.2 4.3 2.4-7.4L2 9.4h7.6L12 2z"/>
         </svg>
         <textarea class="cap-input" id="cap-input" placeholder="Ввод текстом" rows="1"></textarea>
-        <button class="cap-clear" id="cap-clear" title="Очистить">✕</button>
-        <button class="cap-mic" id="cap-mic" title="Держи и говори — отпусти, отправится">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.6)" stroke-width="1.7" stroke-linecap="round">
-            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
-            <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
-            <line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/>
-          </svg>
-        </button>
-        <button class="cap-send" id="cap-send" title="Отправить">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="rgba(139,92,246,0.95)" stroke-width="2" stroke-linecap="round">
-            <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2" fill="rgba(139,92,246,0.95)" stroke="none"/>
-          </svg>
-        </button>
+        <div class="cap-btns" id="cap-btns">
+          <button class="cap-clear" id="cap-clear" title="Очистить">✕</button>
+          <button class="cap-mic" id="cap-mic" title="Держи и говори — отпусти, отправится">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.6)" stroke-width="1.7" stroke-linecap="round">
+              <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+              <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+              <line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/>
+            </svg>
+          </button>
+          <button class="cap-send" id="cap-send" title="Отправить">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="rgba(139,92,246,0.95)" stroke-width="2" stroke-linecap="round">
+              <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2" fill="rgba(139,92,246,0.95)" stroke="none"/>
+            </svg>
+          </button>
+        </div>
       </div>
       <div class="cap-status" id="cap-status"></div>
     </div>
@@ -3320,11 +3332,28 @@ function autoResize() {
   const ta = document.getElementById('cap-input');
   ta.style.height = 'auto';
   ta.style.height = Math.min(ta.scrollHeight, window.innerHeight * 0.5) + 'px';
+  syncCaptureRow(); // v132: классы typing/tall
+}
+
+// v132: состояние строки ввода — при наборе звёздочка прячется (тексту больше места),
+// при высоком поле (выше двух строк) кнопки встают в столбик справа
+function syncCaptureRow() {
+  const row = document.querySelector('.capture-row');
+  const ta = document.getElementById('cap-input');
+  if (!row || !ta) return;
+  const val = ta.value;
+  const typing = val.length > 0;
+  const tall = typing && ta.scrollHeight > 56;
+  row.classList.toggle('typing', typing);
+  row.classList.toggle('tall', tall);
+  const wrap = row.closest('.capture-wrap');
+  if (wrap) wrap.classList.toggle('typing', typing || tall); // v132: поля строки тоже сжимаются
 }
 
 function showClear() {
   const val = document.getElementById('cap-input').value;
   document.getElementById('cap-clear').classList.toggle('show', val.length > 0);
+  syncCaptureRow(); // v132
 }
 
 function flashSaved() {
@@ -16288,7 +16317,7 @@ async function extractIcsFromZip(buf) {
 window.extractIcsFromZip = extractIcsFromZip;
 
 // Файл .ics (или .zip от Google) → кандидаты импорта (с дедупликацией) → общая превью-модалка
-const APP_VERSION = 'v131'; // v131: Желания — отдельная вкладка в доке; «Помнить всегда» — тихая ненажимаемая плашка на главной (прозрачный ✕ до завтра, каждое утро заново, ≤3 правил) вместо утренней модалки; правила — короткие аффирмации до 90 символов
+const APP_VERSION = 'v132'; // v132: область ввода на главной — максимальная ширина: при наборе звёздочка слева прячется, при высоком поле (больше двух строк) кнопки очистить/микрофон/отправить встают в столбик справа, полям ввода достаётся вся ширина
 window.APP_VERSION = APP_VERSION;
 try { const _vc = document.getElementById('ver-chip'); if (_vc) _vc.textContent = APP_VERSION; } catch(e) {}
 window.handleIcsFile = async function(file) {
