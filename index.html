@@ -1557,6 +1557,8 @@ body[data-theme="business"] .cap-mic.recording{box-shadow:0 0 10px rgba(140,176,
       <div style="display:flex;gap:8px;flex-wrap:wrap;">
         <button class="note-btn note-markdone" onclick="bulkMarkDone()"><span class="note-donebox" aria-hidden="true"></span>Выполнить</button>
         <button class="note-btn note-edit" onclick="bulkAddToTodo()">➜ В тудулист</button>
+        <button class="note-btn note-edit" onclick="bulkCopyText()" title="Текст выбранных записей — каждая с новой строки">📋 Копировать текст</button>
+        <button class="note-btn" onclick="bulkSelectAll()" title="Выделить всё видимое / снять выделение">☑ Все</button>
         <button class="note-btn note-edit" onclick="toggleBulkTagPicker()">🏷️ Тег</button>
         <button class="note-btn note-undone" onclick="bulkRemoveTag()">✕ Без тега</button>
         <button class="note-btn note-del" onclick="bulkDelete()">🗑 Удалить</button>
@@ -3682,6 +3684,7 @@ async function confirmDedupCleanup() {
           patch.scheduledDate = victim.scheduledDate;
           if (victim.scheduledTime) patch.scheduledTime = victim.scheduledTime;
           patch.todoManualKey = null; patch.todoManualKeyDay = null; // v127: другой срок — пин сбрасывается
+          patch.todoLiftAt = null; patch.todoLiftDay = null; // v128: подъём тоже сбрасывается — задача встаёт по новому сроку
         }
         if (Object.keys(patch).length) { try { await updateDoc(uDocRef('notes', keeper.id), patch); } catch (e) {} }
         await deleteDoc(uDocRef('notes', victim.id));
@@ -4356,7 +4359,7 @@ async function wishOfferTodo(noteId) {
   const n = notes.find(x => x.id === noteId);
   if (!n) return;
   try {
-    await updateDoc(uDocRef('notes', noteId), { inTodo: true, todoOrder: computeSmartOrder(smartScoreForFields({ scheduledDate: n.scheduledDate || null, importance: n.importance || null, effort: n.effort || null, urgent: false })), todoManualKey: null, todoManualKeyDay: null }); // v127: возврат в тудушку — без старого пина
+    await updateDoc(uDocRef('notes', noteId), { inTodo: true, todoOrder: computeSmartOrder(smartScoreForFields({ scheduledDate: n.scheduledDate || null, importance: n.importance || null, effort: n.effort || null, urgent: false })), todoManualKey: null, todoManualKeyDay: null, todoLiftAt: null, todoLiftDay: null }); // v127/v128: возврат в тудушку — без старого пина/подъёма
     try { hziAward('taskadd', noteId); } catch(e) {} // v92: метрика (оффер «в тудушку»)
     await loadNotes();
     showToast('☑️ Задача добавлена в Тудушку', 2400);
@@ -4525,7 +4528,7 @@ function renderNotes(list) {
     ].filter(Boolean).join('');
     return `
       <div class="swipe-wrap"><button class="swipe-del" onclick="swipeDeleteNote('${n.id}');event.stopPropagation();" aria-label="Удалить запись">${TRASH_ICON_SVG}<span>Удалить</span></button>
-      <div class="note-card${staleCls}" ${cardClick}>
+      <div class="note-card${staleCls}" ${cardClick} data-id="${n.id}">
         <div style="display:flex;gap:10px;align-items:flex-start;">
           ${checkbox}
           <div style="flex:1;min-width:0;">
@@ -4703,6 +4706,49 @@ async function bulkAddToTodo() {
   } catch(e) { alert('Ошибка: ' + e.message); }
 }
 window.bulkAddToTodo = bulkAddToTodo;
+
+// v128: КОПИРОВАНИЕ ВЫБРАННЫХ ЗАПИСЕЙ (фидбек юзера: «добавь возможность выделения нескольких
+// заметок, скопировать их все — просто текст, но с новой строки каждая заметка; я там много
+// надиктовал и теперь хочу правки скинуть все»). Порядок — как на экране (DOM), выбранные
+// за фильтром дописываются в конце; фолбэк копирования — как у copyNoteText (старые WebView).
+function bulkCopyText() {
+  if (!selectedNoteIds.size) { showToast('Сначала выбери записи — тапни по карточкам', 2600); return; }
+  const byId = new Map(notes.map(n => [n.id, n]));
+  const domOrder = [...document.querySelectorAll('#hist-list .note-card')].map(c => c.dataset && c.dataset.id).filter(Boolean);
+  const ordered = domOrder.filter(id => selectedNoteIds.has(id));
+  for (const id of selectedNoteIds) if (!ordered.includes(id)) ordered.push(id);
+  const text = ordered.map(id => ((byId.get(id) || {}).text || '').trim()).filter(Boolean).join('\n');
+  if (!text) { showToast('У выбранных записей пустой текст', 2400); return; }
+  const legacyCopy = () => {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.cssText = 'position:fixed;left:-9999px;top:0;opacity:0;';
+    document.body.appendChild(ta);
+    ta.focus(); ta.select();
+    let ok = false;
+    try { ok = document.execCommand('copy'); } catch(e) { ok = false; }
+    document.body.removeChild(ta);
+    return ok;
+  };
+  (async () => {
+    let copied = false;
+    try { if (navigator.clipboard && navigator.clipboard.writeText) { await navigator.clipboard.writeText(text); copied = true; } } catch(e) {}
+    if (!copied) copied = legacyCopy();
+    if (copied) showToast('✓ Скопировано записей: ' + ordered.length, 2600);
+    else alert('Не удалось скопировать');
+  })();
+}
+window.bulkCopyText = bulkCopyText;
+
+function bulkSelectAll() { // «☑ Все»: выделить все видимые на экране записи / снять всё
+  const domIds = [...document.querySelectorAll('#hist-list .note-card')].map(c => c.dataset && c.dataset.id).filter(Boolean);
+  if (!domIds.length) return;
+  const allOn = domIds.every(id => selectedNoteIds.has(id));
+  if (allOn) domIds.forEach(id => selectedNoteIds.delete(id));
+  else domIds.forEach(id => selectedNoteIds.add(id));
+  filterNotes();
+}
+window.bulkSelectAll = bulkSelectAll;
 
 async function bulkDelete() {
   if (!selectedNoteIds.size) return;
@@ -5235,8 +5281,9 @@ async function saveEdit() {
       urgent: editingUrgent === true ? true : null, // v89 Н6: «срочно» — самый верх очереди (null снимает флаг)
       // v127: сменился срок — ручной порядок в детерминированном блоке (пин драга/▲) сбрасывается:
       // задача встаёт по своим новым часам/дате, а не по вчерашней расстановке
+      // v128: подъём ▲ тоже сбрасывается
       ...((oldNote && ((oldNote.scheduledDate || null) !== (dateVal || null) || (oldNote.scheduledTime || null) !== (timeVal || null)))
-        ? { todoManualKey: null, todoManualKeyDay: null } : {})
+        ? { todoManualKey: null, todoManualKeyDay: null, todoLiftAt: null, todoLiftDay: null } : {})
     });
     // САМООБУЧЕНИЕ ТЕГОВ (v76): пользователь перенёс запись в другой тег руками —
     // запоминаем пример «текст → тег», классификатор потом наследует такие правки
@@ -5807,7 +5854,7 @@ async function autoDistributeQueue() {
       load[k] = (load[k] || 0) + 1;
       patches.push({ id: t.id, key: k });
     }
-    await Promise.all(patches.map(p => updateDoc(uDocRef('notes', p.id), { scheduledDate: p.key, todoManualKey: null, todoManualKeyDay: null }))); // v127: новый день — пин блока сбрасывается
+    await Promise.all(patches.map(p => updateDoc(uDocRef('notes', p.id), { scheduledDate: p.key, todoManualKey: null, todoManualKeyDay: null, todoLiftAt: null, todoLiftDay: null }))); // v127/v128: новый день — пин и подъём сбрасываются
     await loadNotes();
     calendarMonthOffset = 0; // показать результат — вернуться к текущему месяцу
     renderCalendar();
@@ -6188,6 +6235,7 @@ async function setNoteSchedule(noteId, dateKey, timeStr) {
     const patch = dateKey ? { scheduledDate: dateKey } : { scheduledDate: null, scheduledTime: null };
     if (dateKey && timeStr !== undefined) patch.scheduledTime = timeStr;
     patch.todoManualKey = null; patch.todoManualKeyDay = null; // v127: новый срок — пин блока сбрасывается (задача встаёт по часам/датам)
+    patch.todoLiftAt = null; patch.todoLiftDay = null; // v128: подъём тоже сбрасывается
     await updateDoc(uDocRef('notes', noteId), patch);
     await loadNotes();
     renderCalendar();
@@ -7692,6 +7740,84 @@ document.getElementById('wish-add-btn').addEventListener('click', async () => {
   showWishSuggestionModal(text);
 });
 
+// ── v128: ШАГИ ПРИ ДОБАВЛЕНИИ ЖЕЛАНИЯ — как в сохранённой карточке (фидбек юзера: «он выдает
+// в одном окне все шаги, а должно быть как когда сохранил желание, но с возможностью
+// переименовывать поля и таскать их»). Каждый шаг = строка с ручкой ⠿ (drag), полем
+// переименования и удалением; «+ Шаг» добавляет строку; порядок сохраняется как на экране.
+function wsStepRowHtml(val) {
+  return `<div data-ws-row style="display:flex;align-items:center;gap:6px;padding:6px 8px;border-radius:8px;background:rgba(255,255,255,0.03);border:0.5px solid rgba(255,255,255,0.06);">
+    <div onpointerdown="wsStepDrag(event)" title="Перетащить — поменять порядок" style="flex-shrink:0;cursor:grab;color:rgba(255,255,255,0.32);font-size:13px;padding:0 2px;touch-action:none;user-select:none;-webkit-user-select:none;">⠿</div>
+    <input data-ws-text value="${escHtml(val || '')}" placeholder="Текст шага" style="flex:1;min-width:0;background:transparent;border:none;border-bottom:0.5px solid rgba(255,255,255,0.10);padding:4px 2px;color:#fff;font-size:12.5px;font-family:Inter,sans-serif;outline:none;">
+    <button type="button" onclick="wsStepDel(this)" title="Удалить шаг" style="flex-shrink:0;background:none;border:none;color:rgba(255,80,80,0.55);font-size:13px;cursor:pointer;padding:2px;">🗑</button>
+  </div>`;
+}
+function wsStepAdd(val) {
+  const host = document.getElementById('ws-steps');
+  if (!host) return;
+  const empty = document.getElementById('ws-steps-empty');
+  if (empty) empty.remove();
+  host.insertAdjacentHTML('beforeend', wsStepRowHtml(val));
+  const rows = host.querySelectorAll('[data-ws-row]');
+  const last = rows[rows.length - 1];
+  if (last) { const inp = last.querySelector('[data-ws-text]'); if (inp && val === '') inp.focus(); }
+}
+function wsStepDel(btn) {
+  const row = btn && btn.closest ? btn.closest('[data-ws-row]') : null;
+  if (row) row.remove();
+  const host = document.getElementById('ws-steps');
+  if (host && !host.querySelector('[data-ws-row]')) {
+    host.insertAdjacentHTML('afterend', '<div id="ws-steps-empty" style="font-size:12px;color:rgba(255,255,255,0.4);padding:10px;text-align:center;background:rgba(255,255,255,0.02);border-radius:8px;">Шагов нет — добавь кнопкой «+ Шаг»</div>');
+  }
+}
+let _wsDrag = null;
+function wsStepDrag(ev) { // механика msDragStart (v115) — но локальная, без записи в базу: порядок читает confirm
+  ev.preventDefault();
+  ev.stopPropagation();
+  if (_wsDrag) return;
+  const row = ev.currentTarget.closest('[data-ws-row]');
+  const host = document.getElementById('ws-steps');
+  if (!row || !host) return;
+  const rows = Array.from(host.querySelectorAll('[data-ws-row]'));
+  if (rows.length < 2) return;
+  const startIndex = rows.indexOf(row);
+  if (startIndex < 0) return;
+  const startY = ev.clientY;
+  let curIndex = startIndex;
+  row.style.zIndex = '60'; row.style.position = 'relative';
+  row.style.boxShadow = '0 10px 30px rgba(0,0,0,0.5)';
+  row.style.background = 'rgba(30,26,60,0.97)';
+  _wsDrag = { row };
+  const move = (e) => {
+    if (!_wsDrag) return;
+    e.preventDefault();
+    const dy = e.clientY - startY;
+    row.style.transform = 'translateY(' + dy + 'px)';
+    const rect = row.getBoundingClientRect();
+    const mid = rect.top + rect.height / 2;
+    rows.forEach((r, i) => {
+      if (r === row) return;
+      const rr = r.getBoundingClientRect();
+      const rm = rr.top + rr.height / 2;
+      if (i > curIndex && mid > rm) { host.insertBefore(row, r.nextSibling); curIndex = i; }
+      else if (i < curIndex && mid < rm) { host.insertBefore(row, r); curIndex = i; }
+    });
+  };
+  const up = () => {
+    window.removeEventListener('pointermove', move);
+    window.removeEventListener('pointerup', up);
+    window.removeEventListener('pointercancel', up);
+    row.style.transform = ''; row.style.zIndex = ''; row.style.position = '';
+    row.style.boxShadow = ''; row.style.background = '';
+    _wsDrag = null;
+  };
+  window.addEventListener('pointermove', move, { passive: false });
+  window.addEventListener('pointerup', up);
+  window.addEventListener('pointercancel', up);
+}
+window.wsStepAdd = wsStepAdd;
+window.wsStepDel = wsStepDel;
+window.wsStepDrag = wsStepDrag;
+
 async function showWishSuggestionModal(text) {
   // Создаём модалку если её нет
   let modal = document.getElementById('wish-suggestion-modal');
@@ -7770,8 +7896,15 @@ async function showWishSuggestionModal(text) {
       <input id="ws-prompt" value="${escHtml(suggestion.moodImagePrompt)}" style="width:100%;background:rgba(255,255,255,0.04);border:0.5px solid rgba(108,71,255,0.3);border-radius:8px;padding:8px 10px;color:#fff;font-size:12px;font-family:Inter,sans-serif;outline:none;">
     </div>
     <div style="margin-bottom:14px;">
-      <div style="font-size:10px;color:rgba(255,255,255,0.5);margin-bottom:6px;text-transform:uppercase;letter-spacing:1px;">План (milestones) — по одному на строку</div>
-      <textarea id="ws-milestones" style="width:100%;background:rgba(255,255,255,0.04);border:0.5px solid rgba(108,71,255,0.3);border-radius:8px;padding:8px 10px;color:#fff;font-size:12px;font-family:Inter,sans-serif;resize:vertical;min-height:90px;outline:none;" rows="5">${(suggestion.milestones || []).map(m => escHtml(m)).join('\n')}</textarea>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+        <div style="font-size:10px;color:rgba(255,255,255,0.5);text-transform:uppercase;letter-spacing:1px;">План (шаги) — как в карточке желания</div>
+        <button type="button" onclick="wsStepAdd('')" style="background:rgba(108,71,255,0.2);border:0.5px solid rgba(108,71,255,0.4);border-radius:99px;padding:4px 10px;color:rgba(139,92,246,0.95);font-size:11px;font-weight:600;cursor:pointer;font-family:Inter,sans-serif;">+ Шаг</button>
+      </div>
+      <div style="font-size:10.5px;color:rgba(255,255,255,0.35);margin-bottom:8px;">Переименуй в поле, перетащи за ⠿, удали лишнее — сохранится в этом порядке</div>
+      <div id="ws-steps" style="display:flex;flex-direction:column;gap:6px;">
+        ${(suggestion.milestones || []).map(m => wsStepRowHtml(m)).join('')}
+      </div>
+      ${(suggestion.milestones || []).length === 0 ? `<div id="ws-steps-empty" style="font-size:12px;color:rgba(255,255,255,0.4);padding:10px;text-align:center;background:rgba(255,255,255,0.02);border-radius:8px;">Шагов нет — добавь кнопкой «+ Шаг»</div>` : ''}
     </div>
     <div style="margin-bottom:14px;">
       <div style="font-size:10px;color:rgba(255,255,255,0.5);margin-bottom:2px;text-transform:uppercase;letter-spacing:1px;">Оценки — нажми на цифру в каждой строке</div>
@@ -7805,12 +7938,14 @@ async function confirmWishSuggestion() {
   const icon = document.getElementById('ws-icon').value.trim() || '⭐';
   const category = document.getElementById('ws-category').value;
   const moodImagePrompt = document.getElementById('ws-prompt').value.trim();
-  const milestonesText = document.getElementById('ws-milestones').value.trim();
+  // v128: шаги читаются из интерактивных строк (#ws-steps) в ВИДИМОМ порядке
+  // (переименовал/перетащил/удалил — сохранится как на экране); textarea больше нет
+  const milestones = Array.from(document.querySelectorAll('#ws-steps [data-ws-text]'))
+    .map(inp => (inp.value || '').trim()).filter(s => s.length > 0)
+    .map(s => ({ id: 'ms_' + Date.now() + '_' + Math.random().toString(36).slice(2,7), text: s, done: false, completedAt: null, noteId: null }));
   const shortTagInput = document.getElementById('ws-shorttag');
   const shortTag = (shortTagInput ? shortTagInput.value.trim() : '') || text.toLowerCase().split(/\s+/).filter(w => w.length > 2).pop() || 'желание';
 
-  const milestones = milestonesText.split('\n').map(s => s.trim()).filter(s => s.length > 0)
-    .map(s => ({ id: 'ms_' + Date.now() + '_' + Math.random().toString(36).slice(2,7), text: s, done: false, completedAt: null, noteId: null }));
   // оценки (зигзаг-пэд) + лог обучения: что предложил ИИ → что выбрал пользователь
   const scores = (window._wsPad && window._wsPad.get()) || window._pendingWishSuggestion.scores || null;
   const aiScores = window._pendingWishSuggestion.scores || null;
@@ -8706,6 +8841,20 @@ window.shareWishCard = shareWishCard;
 function wishMessagesCol(wishId) { return collection(db,'users',currentUid,'wishes',wishId,'messages'); }
 
 let currentWishPerspective = 'general';
+let _wishAllMsgs = []; // v128: кэш ВСЕХ сообщений всех режимов-чатов желания — для кросс-контекста
+
+// v128: ЧАТЫ ЖЕЛАНИЯ ВИДЯТ ДРУГ ДРУГА (фидбек юзера: «чаты при обсуждении желания должны
+// понимать, что в других чатах желания происходило»). У каждого режима (Чат/Практик/Скептик/
+// Мечтатель/Философ) своя лента; в системный промпт подмешиваем краткую ленту ДРУГИХ режимов:
+// совет скептика учтён практиком, план из общего чата не предлагается заново и т.д.
+function buildWishCrossContext(allMsgs, curPersp) {
+  const other = (allMsgs || []).filter(m => (m.perspective || 'general') !== curPersp);
+  if (!other.length) return '';
+  const clamp = s => { s = String(s || '').replace(/\s+/g, ' ').trim(); return s.length > 140 ? s.slice(0, 137) + '…' : s; };
+  const lines = other.slice(-16).map(m =>
+    `[${(WISH_PERSPECTIVES[m.perspective] || WISH_PERSPECTIVES.general).name}] ${m.role === 'user' ? 'Юзер' : 'ИИ'}: ${clamp(m.content)}`);
+  return `\n\nЛента других обсуждений этого желания (другие режимы-чаты, от старых к свежим — учитывай её как часть общей истории: о чём уже говорили и какие шаги уже предлагались; не пересказывай её сам по себе и не повторяй чужой совет дословно):\n` + lines.join('\n');
+}
 
 // короткая сводка по желанию для системного промпта чата — ИИ видит тег и текущий план
 function wishContextLine(wish) {
@@ -8800,10 +8949,12 @@ async function loadWishChatMessages(wishId) {
   try {
     const snap = await getDocs(query(wishMessagesCol(wishId), orderBy('time','asc')));
     const all = snap.docs.map(d => d.data());
+    _wishAllMsgs = all; // v128: кэш всех режимов для кросс-контекста
     // Фильтруем по текущей perspective
     // old messages (без perspective field) → показываем в general
     wishChatMessages = all.filter(m => (m.perspective || 'general') === currentWishPerspective);
   } catch(e) {
+    _wishAllMsgs = [];
     wishChatMessages = [];
   }
 }
@@ -8854,6 +9005,7 @@ document.getElementById('wishchat-send').addEventListener('click', async () => {
   console.log('[WishChat] using perspective:', perspective);
   const userMsg = { role:'user', content:text, time:new Date().toISOString(), perspective };
   wishChatMessages.push(userMsg);
+  _wishAllMsgs.push(userMsg); // v128: кэш кросс-контекста пополняется
   renderWishChat();
   try {
     await addDoc(wishMessagesCol(currentWishId), userMsg);
@@ -8862,8 +9014,9 @@ document.getElementById('wishchat-send').addEventListener('click', async () => {
     console.error('[WishChat] failed to save user message:', e);
   }
 
-  // Системный промпт зависит от perspective
-  const sysPrompt = WISH_PERSPECTIVES[perspective].system(w);
+  // Системный промпт зависит от perspective; v128: + лента других чатов этого желания
+  // (совет скептика учтён практиком, план из общего чата не предлагается заново)
+  const sysPrompt = WISH_PERSPECTIVES[perspective].system(w) + buildWishCrossContext(_wishAllMsgs, perspective);
   const apiMsgs = [{role:'system',content:sysPrompt}, ...wishChatMessages.map(m=>({role:m.role,content:m.content}))];
   console.log('[WishChat] calling API with', apiMsgs.length, 'messages');
   let msg;
@@ -8951,6 +9104,7 @@ document.getElementById('wishchat-send').addEventListener('click', async () => {
   if (reply) {
     const aiMsg = { role:'assistant', content: reply, time:new Date().toISOString(), perspective };
     wishChatMessages.push(aiMsg);
+    _wishAllMsgs.push(aiMsg); // v128: кэш кросс-контекста пополняется
     renderWishChat();
     try {
       await addDoc(wishMessagesCol(currentWishId), aiMsg);
@@ -8960,6 +9114,7 @@ document.getElementById('wishchat-send').addEventListener('click', async () => {
     // мягкий фолбэк вместо alert — диалог продолжается
     const aiMsg = { role:'assistant', content:'Хм, ответ не сформировался. Попробуй переформулировать — или напиши конкретнее, что добавить к желанию.', time:new Date().toISOString(), perspective };
     wishChatMessages.push(aiMsg);
+    _wishAllMsgs.push(aiMsg); // v128
     renderWishChat();
     try { await addDoc(wishMessagesCol(currentWishId), aiMsg); } catch(e) {}
   }
@@ -10331,6 +10486,7 @@ function todoZoneOf(n) {
   if (n.urgent === true && !skipped && (!isFutureTodo(n) || n.scheduledDate === tmKey)) return 'urgent';
   if (isFutureTodo(n)) return n.scheduledDate === tmKey ? 'tomorrow' : 'future';
   if (skipped) return 'skipped';
+  if (todoLiftValid(n)) return 'lifted'; // v128: поднятые ▲ — свой блок над лестницей (драг внутри блока поднятых)
   if (n.scheduledDate === todayKey) return n.scheduledTime ? 'todayTime' : 'todayNoTime';
   if (n.scheduledDate) return 'overdue';
   return 'noDate';
@@ -10344,6 +10500,23 @@ function setTodoPin(n, key) { // локально + запись в облако
   try { updateDoc(uDocRef('notes', n.id), { todoManualKey: key, todoManualKeyDay: n.todoManualKeyDay }).catch(() => {}); } catch (e) {}
 }
 function clearTodoPin(n) { if (n && (typeof n.todoManualKey === 'number' || n.todoManualKeyDay)) setTodoPin(n, null); }
+
+// ── v128: ПОДЪЁМ НА САМЫЙ ВЕРХ (фидбек юзера: «у всех должна быть возможность подниматься
+// наверх… другие пусть аккуратно смещаются в очереди»). ▲ в тире A ставит задаче todoLiftAt
+// (таймштамп, действует до конца дня — todoLiftDay, механика skippedAt/пинов): поднятые живут
+// НАД естественной лестницей, сортировка по liftAt DESC — последний поднятый самый верхний.
+// Остальные задачи сохраняют относительный порядок и просто аккуратно смещаются вниз на слот.
+// Назавтра lift сгорает — лестница снова по часам/датам (как и пины).
+function todoLiftValid(n) {
+  return !!(n && typeof n.todoLiftAt === 'number' && n.todoLiftDay === formatDateKey(new Date()));
+}
+function setTodoLift(n, at) { // локально + запись в облако сразу (как setTodoPin — без батча)
+  if (!n) return;
+  n.todoLiftAt = at;
+  n.todoLiftDay = at === null ? null : formatDateKey(new Date());
+  try { updateDoc(uDocRef('notes', n.id), { todoLiftAt: n.todoLiftAt, todoLiftDay: n.todoLiftDay }).catch(() => {}); } catch (e) {}
+}
+function clearTodoLift(n) { if (n && (typeof n.todoLiftAt === 'number' || n.todoLiftDay)) setTodoLift(n, null); }
 
 // ── v126: ЛЕСТНИЦА ОЧЕРЕДИ (фидбек юзера) ──
 // «Вверху срочные; далее задачи на сегодняшний день — если указано время, сначала те, кто раньше
@@ -10368,19 +10541,24 @@ function splitTodoQueue() { // v89 Н6: срочные → отдельно (с�
   const urgentIds = new Set(urgent.map(n => n.id));
   const tierA = q.filter(n => !urgentIds.has(n.id) && !isFutureTodo(n));
   const live = n => !todoSkippedToday(n); // v126: пропущенное сегодня живёт ТОЛЬКО в хвостовом блоке — из остальных исключаем (иначе двойной показ)
-  const todayTime = tierA.filter(n => live(n) && n.scheduledDate === todayKey && n.scheduledTime)
+  // v128: поднятые ▲ — над естественной лестницей, liftAt DESC (последний поднятый самый верх);
+  // из естественных блоков исключены (иначе двойной показ — тот же live-фильтр, что у пропущенных)
+  const lifted = tierA.filter(n => live(n) && todoLiftValid(n))
+    .sort((a, b) => b.todoLiftAt - a.todoLiftAt || byOrder(a, b));
+  const liftedIds = new Set(lifted.map(n => n.id));
+  const todayTime = tierA.filter(n => live(n) && !liftedIds.has(n.id) && n.scheduledDate === todayKey && n.scheduledTime)
     .sort((a, b) => todoEffKey(a, 'todayTime') - todoEffKey(b, 'todayTime') || byOrder(a, b)); // v126: по часам; v127: пин драга/▲ перестраивает блок до конца дня
-  const todayNoTime = tierA.filter(n => live(n) && n.scheduledDate === todayKey && !n.scheduledTime).sort(byOrder);
-  const overdue = tierA.filter(n => live(n) && n.scheduledDate && n.scheduledDate < todayKey)
+  const todayNoTime = tierA.filter(n => live(n) && !liftedIds.has(n.id) && n.scheduledDate === todayKey && !n.scheduledTime).sort(byOrder);
+  const overdue = tierA.filter(n => live(n) && !liftedIds.has(n.id) && n.scheduledDate && n.scheduledDate < todayKey)
     .sort((a, b) => todoEffKey(a, 'overdue') - todoEffKey(b, 'overdue') || byOrder(a, b)); // v126: свежие выше; v127: пин работает и здесь
-  const noDate = tierA.filter(n => live(n) && !n.scheduledDate).sort(byOrder);
+  const noDate = tierA.filter(n => live(n) && !liftedIds.has(n.id) && !n.scheduledDate).sort(byOrder);
   const skippedUrg = tierA.filter(n => todoSkippedToday(n)).sort(byOrder); // v124: пропуск до конца дня; v126: у любой задачи, не только срочной
-  const main = [...todayTime, ...todayNoTime, ...overdue, ...noDate, ...skippedUrg];
+  const main = [...lifted, ...todayTime, ...todayNoTime, ...overdue, ...noDate, ...skippedUrg]; // v128: поднятые — над лестницей
   const tomorrow = q.filter(n => !urgentIds.has(n.id) && isTomorrow(n))
     .sort((a, b) => todoEffKey(a, 'tomorrow') - todoEffKey(b, 'tomorrow') || byOrder(a, b)); // v127: «на завтра» тоже можно перетаскивать (пин до конца дня)
   const future = q.filter(n => isFutureTodo(n) && n.scheduledDate > tmKey).sort((a, b) =>
     todoEffKey(a, 'future') - todoEffKey(b, 'future') || byOrder(a, b)); // v127: дата (без времени раньше обозначенного) + пин драга
-  return { urgent, main, tomorrow, future, todayTime, todayNoTime, overdue, noDate, skippedUrg };
+  return { urgent, main, tomorrow, future, todayTime, todayNoTime, overdue, noDate, skippedUrg, lifted };
 }
 
 // ── УМНАЯ СОРТИРОВКА (v82) ──
@@ -10456,7 +10634,7 @@ async function renormalizeTodoQueue() {
 
 // кнопка «✨ Умно»: пересобрать ВСЮ очередь по скору (срочность + важность + объём + время суток)
 async function smartSortTodo() {
-  const { urgent, main, todayTime, todayNoTime, overdue, noDate, skippedUrg, tomorrow, future } = splitTodoQueue();
+  const { urgent, main, todayTime, todayNoTime, overdue, noDate, skippedUrg, tomorrow, future, lifted } = splitTodoQueue();
   if (urgent.length + main.length + tomorrow.length + future.length < 2) { showToast('В очереди меньше двух задач — сортировать нечего 🙂', 2600); return; }
   // v87: тир A — по скору; тир B («на потом») — всегда ниже и по датам: скор будущей
   // задачи больше не выбивает её наверх очереди сегодняшних дел.
@@ -10469,6 +10647,8 @@ async function smartSortTodo() {
   // v127: ✨ пересобирает ВСЮ очередь — пины детерминированных блоков сбрасываются,
   // «по времени»/«просроч»/«на завтра»/«на потом» снова по часам и датам
   [...todayTime, ...overdue, ...tomorrow, ...future].forEach(n => clearTodoPin(n));
+  // v128: подъёмы ▲ тоже сбрасываются — весь блок поднятых возвращается в естественную лестницу
+  [...(lifted || [])].forEach(n => clearTodoLift(n));
   const sorted = [
     ...urgent,                              // скор 999 — внутри блока по todoOrder
     ...todayTime,                           // лестница: по часам
@@ -10949,7 +11129,7 @@ function initTodoDrag() {
     // не может наехать на срочный блок или перелететь границу тиров и «накрыть» их
     // (фидбек: «тащу карточку вверх — верхняя пропадает»). Стены живут в viewport-
     // координатах (rect читается живьём) — зажим корректен и при автоскролле.
-    let top = st.startTop + (st.lastClientY - st.startY);
+    let top = st.startTop + (st.lastClientY - st.startY) - (st.liftOffset || 0); // v128: touch-лифт — карточка над пальцем, палец её не закрывает
     const GAP = 8; // тот же шаг сетки, что в draggedHeight
     const scaleH = st.cardH * 0.02; // scale(1.02) с origin top — низ карточки вырастает на 2%
     try {
@@ -10987,7 +11167,7 @@ function initTodoDrag() {
   function updateLiveShift(scrolled) {
     if (!todoDragState) return;
     const { itemsSnapshot, id, startIndexAmongOthers, draggedHeight, grabOffset, cardH, dragFut, dragUrg } = todoDragState;
-    const fingerY = todoDragState.lastClientY;
+    const fingerY = todoDragState.lastClientY - (todoDragState.liftOffset || 0); // v128: пороги — по ЭФФЕКТИВНОЙ позиции карточки (с лифтом): что видишь — туда и упадёт
     const others = itemsSnapshot.filter(s => s.id !== id);
 
     let targetIndex = others.length;
@@ -11102,10 +11282,17 @@ function initTodoDrag() {
         const zTopEl = wallElById(itemsSnapshot.filter(s => s.id !== draggedSnap.id)[zf].id);
         const zBotEl = wallElById(itemsSnapshot.filter(s => s.id !== draggedSnap.id)[zl].id);
         // v127: ИСХОДНЫЕ границы зоны (на beginDrag сдвигов ещё нет): соседи зоны при драге
-        // расступаются, их live-rect «плывёт» — зажим по исходнику даёт стабильный потолок/пол
+        // расступаются, их live-rect «плывёт» — зажим по исходнику даёт стабильный потолок/пол.
+        // v128 ФИКС (фидбек: «опять перетаскивание плохо работает, саму карточку не видно»):
+        // границы ДРУГИХ карточек зоны НЕ ВКЛЮЧАЮТ место самой летящей. Тащишь голову блока —
+        // сосед-голова НИЖЕ неё: потолок оказывался ниже старта, карточка на первом же кадре
+        // прыгала на слот вниз и залипала там (накрыв соседа) — «карточку не видно». Тащишь
+        // хвост — пол оказывался ВЫШЕ старта: карточка не могла сдвинуться вниз вовсе.
+        // Правильно: летящая может занимать и СВОЁ прежнее место — берём объединение:
+        // потолок = min(верх головы зоны, свой верх), пол = max(низ хвоста зоны, свой низ).
         try {
-          if (zTopEl) zoneTopOrigTop = zTopEl.getBoundingClientRect().top;
-          if (zBotEl) zoneBotOrigBottom = zBotEl.getBoundingClientRect().bottom;
+          if (zTopEl) zoneTopOrigTop = Math.min(zTopEl.getBoundingClientRect().top, cardRect.top);
+          if (zBotEl) zoneBotOrigBottom = Math.max(zBotEl.getBoundingClientRect().bottom, cardRect.bottom);
         } catch (e) {}
       }
     }
@@ -11136,6 +11323,9 @@ function initTodoDrag() {
       cardH: draggedSnap.h,
       dragFut: draggedSnap.fut, // v87: тир перетаскиваемой карточки (стена между тирами)
       dragUrg: !!draggedSnap.urg, // v120: тащим срочную? (ручка у срочных скрыта — страховка для кода)
+      // v128: touch-лифт — на телефоне палец закрывал карточку («саму карточку не видно»):
+      // летящая поднимается на 56px выше пальца, пороги свопа считаются от той же точки (WYSIWYG)
+      liftOffset: pointerType === 'touch' ? 56 : 0,
       startTop: cardRect.top, // v121: viewport-верх карточки без transform — база зажима у стен
       wallUrgEl, wallFutEl, wallNonFutEl, // v121: элементы стен для зажима
       zoneTopOrigTop, zoneBotOrigBottom, zoneRange, // v127: исходные потолок/пол ЗОНЫ
@@ -11400,6 +11590,14 @@ async function reorderTodo(id, newIndex, byVisible) {
     else key = Math.abs(nextKey - prevKey) < 1e-9 ? null : (prevKey + nextKey) / 2; // развалка ключей — вернём к натуральному
     setTodoPin(m, key);
   }
+  // v128: дроп в БЛОКЕ ПОДНЯТЫХ — переприсваиваем liftAt по итоговому визуальному порядку
+  // (первый в блоке — самый свежий таймштамп; блок живёт по liftAt DESC). Тир A: подъём-стена
+  // не даёт вытащить карточку из блока — порядок внутри сохраняем честно.
+  if (dz === 'lifted') {
+    const nowMs = Date.now();
+    let li = 0;
+    seq.forEach(x => { if (todoZoneOf(x) === 'lifted') setTodoLift(x, nowMs - 1000 * (++li)); });
+  }
   renderTodo();      // синхронный рендер — до первого await, без «мигания» старым порядком
   renderFocusCard(); // фокус-карточка на главной — вдруг наверх утащили другую задачу
   scheduleTodoPersist(); // облако — одна полная запись через 350мс тишины
@@ -11418,25 +11616,28 @@ function moveTodoTop(id) {
   const me = notes.find(n => n.id === id);
   if (!me) return;
   if (todoSkippedToday(me)) { unskipUrgentTodo(id); return; } // v124: ▲ на пропущенной = вернуть в топ
-  // v127: ▲ работает у ВСЕХ блоков. В детерминированных зонах задача становится первой
-  // СВОЕГО блока через пин (часы других не трогаем); в ручных — как раньше, наверх тира A.
+  // v128: ▲ у ВСЕХ. Тир A (сегодня по времени / без времени / просроч / без даты / поднятые) —
+  // САМЫЙ ВЕРХ очереди через lift (todoLiftAt до конца дня; фидбек: «у всех должна быть
+  // возможность подниматься наверх… другие пусть аккуратно смещаются в очереди»):
+  // поднятая уходит над лестницей, остальные сохраняют порядок и смещаются на слот.
+  // «На завтра»/«на потом» — верх СВОЕГО блока пином (v127, за разделителем «На потом»
+  // глобальный верх не имеет смысла); срочные — верх срочного блока (reorderTodo-зажим).
   const zone = todoZoneOf(me);
-  const usePin = TODO_DET_ZONES.includes(zone);
+  const usePin = zone === 'tomorrow' || zone === 'future';
+  const blocksPre = usePin ? splitTodoQueue() : null;
   let topKey = null;
   if (usePin) {
-    const blocks = splitTodoQueue();
-    const block = { todayTime: blocks.todayTime, overdue: blocks.overdue, tomorrow: blocks.tomorrow, future: blocks.future }[zone];
+    const block = { tomorrow: blocksPre.tomorrow, future: blocksPre.future }[zone];
     if (!block.length || block[0].id === id) return; // уже первая в своём блоке
     topKey = todoEffKey(block[0], zone) - 1; // строго выше нынешней головы блока
-  } else {
-    if (isFutureTodo(me)) return; // недостижимо (future/tomorrow — det-зоны), страховка v87
-    const queue = getTodoMainQueue();
-    const idx = queue.findIndex(n => n.id === id);
-    if (idx <= 0) return; // первая и так наверху
+  } else if (zone !== 'urgent') {
+    const blocks = splitTodoQueue();
+    if (!blocks.main.length || blocks.main[0].id === id) return; // уже самая первая в очереди
   }
   const listEl = document.getElementById('todo-list');
   if (!listEl) {
     if (usePin) { setTodoPin(me, topKey); renderTodo(); renderFocusCard(); scheduleTodoPersist(); }
+    else if (zone !== 'urgent') { setTodoLift(me, Date.now()); renderTodo(); renderFocusCard(); scheduleTodoPersist(); }
     else reorderTodo(id, 0);
     return;
   }
@@ -11448,8 +11649,13 @@ function moveTodoTop(id) {
     renderTodo();
     renderFocusCard();
     scheduleTodoPersist();
+  } else if (zone !== 'urgent') {
+    setTodoLift(me, Date.now()); // v128: lift — самый верх тира A, остальные аккуратно смещаются
+    renderTodo();
+    renderFocusCard();
+    scheduleTodoPersist();
   } else {
-    reorderTodo(id, 0); // мгновенный локальный порядок + renderTodo + renderFocusCard + облако (дебаунс)
+    reorderTodo(id, 0); // срочная: верх срочного блока (зажим зоны) — мгновенно + облако (дебаунс)
   }
   // Скролл НЕ трогаем (v81): пользователь остаётся на своём месте — уезжает только карточка
   // стартовые позиции: каждая карточка визуально остаётся на старом месте
@@ -11650,10 +11856,13 @@ async function unskipUrgentTodo(id) {
   const n = notes.find(x => x.id === id);
   if (!n) return;
   n.skippedAt = null;
+  // v128: «⤴ Вернуть в топ» — честный ГЛОБАЛЬНЫЙ верх: не-срочная поднимается lift-меткой
+  // над всей лестницей (срочная и так вернётся в срочный блок — самый верх списка)
+  if (n.urgent !== true) setTodoLift(n, Date.now());
   renderTodo(); // v124: оптимистичный рендер ДО сети
   renderFocusCard();
   try { await updateDoc(uDocRef('notes', id), { skippedAt: null }); } catch(e) { console.warn('[urgent-unskip] save failed', e); }
-  showToast('🔥 Вернул в срочный блок — снова наверху', 2600);
+  showToast(n.urgent === true ? '🔥 Вернул в срочный блок — снова наверху' : '⤴ Вернул в топ очереди', 2600);
 }
 window.skipUrgentTodo = skipUrgentTodo;
 window.unskipUrgentTodo = unskipUrgentTodo;
@@ -11817,8 +12026,8 @@ function renderTodo() {
   const el = document.getElementById('todo-list');
   if (!el) return;
   if (todoDragState) return; // v119: перерисовка посреди драга убивает летящую карточку (DOM заменяется, transform теряется) — отложим до отпускания
-  let { urgent, tomorrow, future, todayTime, todayNoTime, overdue, noDate, skippedUrg } = splitTodoQueue(); // v126: лестница тира A — блоки по отдельности
-  let main = [...todayTime, ...todayNoTime, ...overdue, ...noDate, ...skippedUrg];
+  let { urgent, tomorrow, future, todayTime, todayNoTime, overdue, noDate, skippedUrg, lifted } = splitTodoQueue(); // v126: лестница тира A — блоки по отдельности; v128: + поднятые ▲
+  let main = [...lifted, ...todayTime, ...todayNoTime, ...overdue, ...noDate, ...skippedUrg];
   // v89 Н6: наступившее «завтра» улетает наверх — одноразовый бамп при переходе даты
   try {
     const _tKey = formatDateKey(new Date());
@@ -11839,7 +12048,7 @@ function renderTodo() {
   if (activeTodoTag) {
     const f = n => (n.tag || '') === activeTodoTag;
     urgent = urgent.filter(f); tomorrow = tomorrow.filter(f); future = future.filter(f);
-    todayTime = todayTime.filter(f); todayNoTime = todayNoTime.filter(f); overdue = overdue.filter(f); noDate = noDate.filter(f); skippedUrg = skippedUrg.filter(f);
+    todayTime = todayTime.filter(f); todayNoTime = todayNoTime.filter(f); overdue = overdue.filter(f); noDate = noDate.filter(f); skippedUrg = skippedUrg.filter(f); lifted = lifted.filter(f);
   }
   // v118: цепочки подзадач схлопываются — мать скрыта, виден только первый шаг;
   // фильтр ДО счётчиков, чтобы «N в очереди» совпадало с реально видимыми карточками
@@ -11847,9 +12056,13 @@ function renderTodo() {
   if (_hSet118.size) {
     const vis = arr => arr.filter(n => !_hSet118.has(n.id));
     urgent = vis(urgent); tomorrow = vis(tomorrow); future = vis(future);
-    todayTime = vis(todayTime); todayNoTime = vis(todayNoTime); overdue = vis(overdue); noDate = vis(noDate); skippedUrg = vis(skippedUrg);
+    todayTime = vis(todayTime); todayNoTime = vis(todayNoTime); overdue = vis(overdue); noDate = vis(noDate); skippedUrg = vis(skippedUrg); lifted = vis(lifted);
   }
-  main = [...todayTime, ...todayNoTime, ...overdue, ...noDate, ...skippedUrg]; // v126: конкат лестницы после фильтров
+  main = [...lifted, ...todayTime, ...todayNoTime, ...overdue, ...noDate, ...skippedUrg]; // v128: поднятые ▲ — над лестницей; конкат после фильтров
+  // v128: разделитель «⚠ Просрочено» — перед ГОЛОВОЙ натурального просроча (поднятые просрочки
+  // выше разделителя — юзер сам их поднял; плашка честно считает только блок под ней)
+  const _odHead = overdue[0] || null;
+  const _odIdx = _odHead ? main.findIndex(n => n.id === _odHead.id) : -1;
   try {
     const tagsBox = document.getElementById('todo-tags');
     if (tagsBox) {
@@ -11892,7 +12105,7 @@ function renderTodo() {
     <div class="swipe-wrap"><button class="swipe-del" onclick="swipeDeleteNote('${n.id}');event.stopPropagation();" aria-label="Удалить задачу">${TRASH_ICON_SVG}<span>Удалить</span></button>
     <div class="note-card${stale ? ' note-stale' : ''}" data-id="${n.id}"${staleTitle} onclick="todoCardTap('${n.id}')" style="display:flex;gap:10px;align-items:flex-start;cursor:pointer;${urgBorder}">
       <div style="display:flex;flex-direction:column;align-items:center;flex-shrink:0;gap:7px;">
-        <button class="todo-up-btn" title="В начало своего блока" onclick="moveTodoTop('${n.id}');event.stopPropagation();"${upHidden ? ' style="visibility:hidden;"' : ''}>▲</button>
+        <button class="todo-up-btn" title="Наверх — станет первой в очереди" onclick="moveTodoTop('${n.id}');event.stopPropagation();"${upHidden ? ' style="visibility:hidden;"' : ''}>▲</button>
         <div class="todo-drag-handle">⠿</div>
       </div>
       <div style="flex:1;min-width:0;">
@@ -11915,21 +12128,19 @@ function renderTodo() {
   let html = '';
   let idx = 0;
   if (urgent.length) html += urgent.map((n, i) => cardHtml(n, idx++, 'urgent', i)).join('');
-  // v126: тир A = лестница блоками (не общей кучей): сегодня по времени → сегодня без времени →
-  // ⚠ просроч (честная плашка, не подвал) → без даты → пропущенное сегодня
-  html += todayTime.map((n, i) => cardHtml(n, idx++, 'todayTime', i)).join('');
-  html += todayNoTime.map((n, i) => cardHtml(n, idx++, 'main', i)).join('');
-  if (overdue.length && (urgent.length || todayTime.length || todayNoTime.length)) {
-    html += `
+  // v128: тир A = единый список: поднятые ▲ (liftAt DESC) → естественная лестница
+  // (сегодня по времени → без времени → ⚠ просроч с честной плашкой → без даты → пропущенное).
+  // ▲ скрыта ТОЛЬКО у самой первой карточки очереди — подниматься наверх можно у любой другой
+  const overdueDivider = `
     <div class="todo-future-divider" style="display:flex;align-items:center;gap:10px;margin:14px 0 10px;">
       <div style="flex:1;height:0.5px;background:rgba(255,255,255,0.12);"></div>
       <div style="font-size:10.5px;letter-spacing:0.6px;text-transform:uppercase;font-weight:600;color:rgba(255,110,110,0.8);white-space:nowrap;">⚠ Просрочено — ${overdue.length}</div>
       <div style="flex:1;height:0.5px;background:rgba(255,255,255,0.12);"></div>
     </div>`;
-  }
-  html += overdue.map((n, i) => cardHtml(n, idx++, 'overdue', i)).join('');
-  html += noDate.map((n, i) => cardHtml(n, idx++, 'main', i)).join('');
-  html += skippedUrg.map((n, i) => cardHtml(n, idx++, 'main', i)).join('');
+  main.forEach((n, k) => {
+    if (k === _odIdx && _odIdx > 0) html += overdueDivider; // плашка перед натуральным просрочом
+    html += cardHtml(n, idx++, 'main', k);
+  });
   html += tomorrow.map((n, i) => cardHtml(n, idx++, 'tomorrow', i)).join('');
   if (future.length) {
     html += `
@@ -15550,6 +15761,10 @@ function buildImportedNotePatch(n, createdAt, orderHint) {
     patch.todoManualKey = n.todoManualKey;
     if (n.todoManualKeyDay) patch.todoManualKeyDay = n.todoManualKeyDay; // чужой день — пин сам станет недействительным
   }
+  if (typeof n.todoLiftAt === 'number') {                 // v128: подъём ▲ на самый верх тира A
+    patch.todoLiftAt = n.todoLiftAt;
+    if (n.todoLiftDay) patch.todoLiftDay = n.todoLiftDay; // чужой день — lift сам станет недействительным
+  }
   if (n.skipCount != null) patch.skipCount = n.skipCount;  // v119: счётчик пропусков
   if (n.remember === true) { patch.remember = true; if (n.rememberOn) patch.rememberOn = n.rememberOn; } // v93: «помнить всегда»
   const hasDate = !!n.scheduledDate;
@@ -15918,7 +16133,7 @@ async function extractIcsFromZip(buf) {
 window.extractIcsFromZip = extractIcsFromZip;
 
 // Файл .ics (или .zip от Google) → кандидаты импорта (с дедупликацией) → общая превью-модалка
-const APP_VERSION = 'v127'; // v127: перетаскивание у ВСЕХ блоков тудушки — пины (todoManualKey до конца дня) в детерминированных блоках, стены зон, ▲ = начало своего блока (см. sw.js)
+const APP_VERSION = 'v128'; // v128: ▲ у всех = самый верх очереди (lift до конца дня, остальные смещаются аккуратно); фикс видимости драга (зажим зоны учитывает место летящей + touch-лифт над пальцем); шаги при добавлении желания — как в карточке (переименование/драг/удаление); чаты желания видят ленту других чатов этого желания (см. sw.js)
 window.APP_VERSION = APP_VERSION;
 try { const _vc = document.getElementById('ver-chip'); if (_vc) _vc.textContent = APP_VERSION; } catch(e) {}
 window.handleIcsFile = async function(file) {
@@ -16806,6 +17021,10 @@ window.__t = {
   todoEffKey,         // v127: пин ?? натуральный
   setTodoPin,         // v127: поставить/снять пин
   clearTodoPin,       // v127: снять пин
+  todoLiftValid,      // v128: lift-метка «наверх очереди» действует сегодня?
+  setTodoLift,        // v128: поставить/снять подъём
+  clearTodoLift,      // v128: снять подъём
+  buildWishCrossContext, // v128: лента других чатов-режимов этого желания (контекст ИИ)
   stripUrgencyWords,  // v124: «срочно» — флаг, а не слово в тексте
   getLongStaleNotes,
   longStaleDays,
