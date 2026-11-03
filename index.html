@@ -138,6 +138,30 @@ body{background:#060918;font-family:'Inter',sans-serif;display:flex;justify-cont
 .screen{display:none;flex-direction:column;flex:1;overflow:hidden;position:relative;z-index:2}
 .screen.active{display:flex}
 
+/* ── v133: ЖИВЫЕ ПЕРЕХОДЫ — плавные, «кинематографичные», без мельтешения ──
+   Каждый экран появляется как кадр: лёгкий подъём + проявление; контент не мигает
+   (hero-карточка остаётся без анимации — T49), у сниженной моторки всё отключено. */
+@keyframes screenIn{from{opacity:0;transform:translateY(10px) scale(0.995)}to{opacity:1;transform:translateY(0) scale(1)}}
+.screen.active{animation:screenIn 0.34s cubic-bezier(0.22,0.61,0.36,1)}
+/* сообщения чата: новый пузырь мягко «выплывает» (анимируется только последний —
+   перерисовка истории не переигрывает всю ленту) */
+@keyframes bubbleIn{from{opacity:0;transform:translateY(8px) scale(0.97)}to{opacity:1;transform:translateY(0) scale(1)}}
+.chat-messages .chat-bubble:last-child{animation:bubbleIn 0.3s cubic-bezier(0.22,0.61,0.36,1)}
+/* талисман на главном дышит — медленный, почти незаметный парящий кадр */
+@keyframes hzFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-4px)}}
+#hazi-badge{animation:hzFloat 4.5s ease-in-out infinite}
+/* спецэффект сохранения: из «✓ Сохранено» разлетаются искры-кометы */
+.save-flash::before,.save-flash::after{content:'✦';position:absolute;top:50%;font-size:11px;color:rgba(255,255,255,0);pointer-events:none}
+.save-flash.show::before{animation:sparkL 0.7s ease-out}
+.save-flash.show::after{animation:sparkR 0.7s ease-out}
+@keyframes sparkL{0%{left:50%;top:50%;color:rgba(255,255,255,0.9);transform:translate(0,-50%)}100%{left:-26px;top:-14px;color:rgba(0,212,255,0);transform:translate(0,-50%) rotate(-40deg)}}
+@keyframes sparkR{0%{left:50%;top:50%;color:rgba(255,255,255,0.9);transform:translate(0,-50%)}100%{left:calc(100% + 22px);top:-16px;color:rgba(139,92,246,0);transform:translate(0,-50%) rotate(40deg)}}
+/* у кого включено «уменьшить движение» — всё живое превращается в статику */
+@media (prefers-reduced-motion: reduce){
+  .screen.active,.chat-messages .chat-bubble:last-child,#hazi-badge{animation:none}
+  .save-flash::before,.save-flash.show::before,.save-flash::after,.save-flash.show::after{animation:none;content:''}
+}
+
 /* ── MAIN SCREEN ── */
 .main-top{text-align:center;padding:10px 24px 14px;flex-shrink:0}
 .main-logo{font-size:10px;letter-spacing:3px;text-transform:uppercase;color:rgba(108,71,255,0.6);font-weight:600;margin-bottom:6px}
@@ -16317,7 +16341,7 @@ async function extractIcsFromZip(buf) {
 window.extractIcsFromZip = extractIcsFromZip;
 
 // Файл .ics (или .zip от Google) → кандидаты импорта (с дедупликацией) → общая превью-модалка
-const APP_VERSION = 'v132'; // v132: область ввода на главной — максимальная ширина: при наборе звёздочка слева прячется, при высоком поле (больше двух строк) кнопки очистить/микрофон/отправить встают в столбик справа, полям ввода достаётся вся ширина
+const APP_VERSION = 'v133'; // v133: живые переходы — экраны появляются мягким кадром (подъём+проявление 0.34s), новый пузырь чата выплывает (только последний, лента не переигрывается), талисман на главном дышит, при сохранении из «✓ Сохранено» разлетаются искры; prefers-reduced-motion — всё статично
 window.APP_VERSION = APP_VERSION;
 try { const _vc = document.getElementById('ver-chip'); if (_vc) _vc.textContent = APP_VERSION; } catch(e) {}
 window.handleIcsFile = async function(file) {
