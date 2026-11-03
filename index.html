@@ -738,6 +738,25 @@ body.todo-mouse-dragging *{cursor:grabbing !important}
 .bubble-ai{align-self:flex-start;background:rgba(255,255,255,0.05);border:0.5px solid rgba(255,255,255,0.09);color:rgba(255,255,255,0.8);border-bottom-left-radius:5px}
 .bubble-time{font-size:9px;color:rgba(255,255,255,0.25);margin-top:5px;text-align:right}
 .bubble-ai .bubble-time{text-align:left}
+/* v129: действия сообщения — ответить/скопировать (как в Telegram, но тихо) */
+.bubble-foot{display:flex;align-items:center;gap:6px;margin-top:5px}
+.bubble-actions{display:flex;gap:2px;opacity:0.5;transition:opacity 0.25s}
+.bubble-actions button{background:none;border:none;color:rgba(255,255,255,0.4);font-size:12px;cursor:pointer;padding:2px 7px;border-radius:8px;font-family:'Inter',sans-serif;line-height:1.4;-webkit-tap-highlight-color:transparent;transition:all 0.2s}
+.bubble-actions button:hover{background:rgba(255,255,255,0.07);color:rgba(255,255,255,0.8)}
+.bubble-actions button:active{transform:scale(0.92)}
+/* v129: цитата-ответ внутри сообщения */
+.bubble-reply{border-left:2px solid rgba(139,92,246,0.6);background:rgba(108,71,255,0.10);border-radius:6px;padding:4px 8px;margin:0 0 6px;max-width:100%;overflow:hidden}
+.bubble-reply-role{display:block;font-weight:700;color:rgba(177,150,255,0.85);font-size:10px;margin-bottom:1px}
+.bubble-reply-text{display:block;font-size:11px;color:rgba(255,255,255,0.5);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* v129: плашка «отвечаем на…» над полем ввода */
+.reply-bar{display:none;align-items:center;gap:9px;margin:0 0 8px;padding:8px 11px;border-radius:13px;background:rgba(108,71,255,0.11);border:0.5px solid rgba(139,92,246,0.4);animation:replyBarIn 0.22s ease}
+.reply-bar.open{display:flex}
+@keyframes replyBarIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+.reply-bar-icon{flex-shrink:0;color:rgba(177,150,255,0.9);font-size:14px;line-height:1}
+.reply-bar-quote{flex:1;min-width:0;font-size:11.5px;color:rgba(255,255,255,0.62);overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.reply-bar-role{font-weight:700;color:rgba(177,150,255,0.92);font-size:10.5px}
+.reply-bar-close{flex-shrink:0;background:none;border:none;color:rgba(255,255,255,0.45);font-size:14px;cursor:pointer;padding:3px 6px;border-radius:8px;font-family:'Inter',sans-serif}
+.reply-bar-close:hover{background:rgba(255,80,80,0.12);color:rgba(255,110,110,0.85)}
 
 .bubble-confirm{margin-top:10px;display:flex;gap:7px;flex-wrap:wrap}
 .confirm-btn{padding:5px 13px;border-radius:99px;border:none;cursor:pointer;font-size:12px;font-weight:500;font-family:'Inter',sans-serif;transition:all 0.2s}
@@ -1581,6 +1600,7 @@ body[data-theme="business"] .cap-mic.recording{box-shadow:0 0 10px rgba(140,176,
     </div>
     <div class="chat-messages" id="chat-messages"></div>
     <div class="chat-input-wrap">
+      <div class="reply-bar" id="chat-reply-bar"></div>
       <div class="chat-input-row">
         <textarea class="chat-textarea" id="chat-input" placeholder="Спросите что угодно..." rows="1"></textarea>
         <button class="chat-mic-btn" id="chat-mic" title="Держи и говори — отпусти, отправится">
@@ -12737,13 +12757,74 @@ function renderChat() {
         <button class="confirm-btn confirm-no" onclick="resolveConfirm(${i},false)">✗ Нет</button>
       </div>`;
     }
+    // v129: цитата сообщения, на которое ответили (как в Telegram)
+    let replyHtml = '';
+    if (m.reply && m.reply.text) {
+      const rRole = m.reply.role === 'user' ? 'ты' : 'ИИ';
+      replyHtml = `<div class="bubble-reply"><span class="bubble-reply-role">↳ ${rRole}</span><span class="bubble-reply-text">${escHtmlChat(m.reply.text)}</span></div>`;
+    }
+    // v129: тихие действия под сообщением — ответить / скопировать
+    const actionsHtml = `<div class="bubble-actions">
+      <button onclick="chatReplyMsg(${i});event.stopPropagation();" title="Ответить на это сообщение">↩</button>
+      <button onclick="chatCopyMsg(${i});event.stopPropagation();" title="Скопировать текст">⧉</button>
+    </div>`;
     return `<div class="chat-bubble ${isUser?'bubble-user':'bubble-ai'}">
-      ${mdLiteChat(m.content)}${confirmHtml}
-      <div class="bubble-time">${time}</div>
+      ${replyHtml}${mdLiteChat(m.content)}${confirmHtml}
+      <div class="bubble-foot">${actionsHtml}<div class="bubble-time">${time}</div></div>
     </div>`;
   }).join('');
   el.scrollTop = el.scrollHeight;
 }
+
+// ── v129: копировать сообщение / ответить на сообщение (как в Telegram) ──
+let chatReplyTarget = null; // объект сообщения из chatHistory, на которое отвечаем
+
+function chatCopyFallback(txt) {
+  const ta = document.createElement('textarea');
+  ta.value = txt; ta.style.position = 'fixed'; ta.style.opacity = '0';
+  document.body.appendChild(ta); ta.select();
+  try { document.execCommand('copy'); } catch(e) {}
+  document.body.removeChild(ta);
+}
+
+window.chatCopyMsg = function(i) {
+  const m = chatHistory[i]; if (!m) return;
+  const txt = String(m.content || '');
+  const done = () => showToast('📋 Скопировано', 1600);
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(txt).then(done).catch(() => { chatCopyFallback(txt); done(); });
+  } else { chatCopyFallback(txt); done(); }
+};
+
+window.chatReplyMsg = function(i) {
+  const m = chatHistory[i]; if (!m) return;
+  chatReplyTarget = m;
+  renderReplyBar();
+  const inp = document.getElementById('chat-input');
+  if (inp) { try { inp.focus(); } catch(e) {} }
+};
+
+window.chatReplyCancel = function() { chatReplyTarget = null; renderReplyBar(); };
+
+function renderReplyBar() {
+  const bar = document.getElementById('chat-reply-bar');
+  if (!bar) return;
+  if (!chatReplyTarget) { bar.classList.remove('open'); bar.innerHTML = ''; return; }
+  const who = chatReplyTarget.role === 'user' ? 'Ответ тебе' : 'Ответ ИИ';
+  const q = String(chatReplyTarget.content || '').replace(/\s+/g, ' ').slice(0, 90);
+  bar.innerHTML = `<span class="reply-bar-icon">↩</span>
+    <div class="reply-bar-quote"><span class="reply-bar-role">${who}:</span> ${escHtmlChat(q)}</div>
+    <button class="reply-bar-close" onclick="chatReplyCancel()" aria-label="Не отвечать">✕</button>`;
+  bar.classList.add('open');
+}
+
+// v129: сформировать контекст ответа для промпта — «(В ответ на …)» перед текстом
+function chatReplyPrefix(reply) {
+  if (!reply || !reply.text) return '';
+  const who = reply.role === 'user' ? 'твоё собственное' : 'моё (ИИ)';
+  return '(В ответ на ' + who + ' сообщение: «' + String(reply.text).slice(0, 140) + '»)\n';
+}
+window.chatReplyPrefix = chatReplyPrefix; // тесты v129
 
 // единое добавление записи из чата: подтверждённые заметки + автозадачи (to_todo)
 async function addNoteFromChat(nd) {
@@ -12822,9 +12903,10 @@ window.resolveConfirm = async function(idx, yes) {
   renderChat();
 };
 
-async function addChatMessage(role, content, confirmData) {
+async function addChatMessage(role, content, confirmData, reply) {
   const msg = { role, content, time: new Date().toISOString() };
   if (confirmData) msg.confirmData = confirmData;
+  if (reply) msg.reply = reply; // v129: цитата сообщения, на которое отвечает пользователь
   chatHistory.push(msg);
   // v87: сжатие диалогов в базу знаний — копим счётчик пользовательских сообщений;
   // сами диалоги и так логируются полностью (Firestore), выжимка обновляется по триггеру
@@ -12834,6 +12916,7 @@ async function addChatMessage(role, content, confirmData) {
   }
   // сохраняем в Firestore БЕЗ confirmData — кнопки только в памяти
   const firestoreMsg = { role, content, time: msg.time };
+  if (reply) firestoreMsg.reply = reply; // v129
   try {
     const docRef = await addDoc(chatCol(), firestoreMsg);
     msg.id = docRef.id;
@@ -14427,7 +14510,12 @@ function getBaseInstructions() {
 ВОПРОСЫ О БАЗЕ: время записи = время события («начал таксовать» в 07:19 → начал в 07:19); пары «начал/закончил» — по времени записи; саммари дня — группируй по сферам, считай время и деньги.
 ПРО «СЕГОДНЯ»: используй раздел ЗА СЕГОДНЯ выше — он уже отфильтрован; не путай «добавлено» и «выполнено».
 ПРО ДРУГОЙ ПЕРИОД («за неделю», «за месяц»): вызови query_period с числом дней — вернётся точный список; общую базу ниже не пересчитывай — она может быть обрезана.
-ПРО ЗАДАЧИ: отвечай по разделу ТУДУШКА (актуальная очередь); [ВЫПОЛНЕНО] — не то, что предстоит; ТУДУШКА пуста — так и скажи, не подменяй случайными записями.`;
+ПРО ЗАДАЧИ: отвечай по разделу ТУДУШКА (актуальная очередь); [ВЫПОЛНЕНО] — не то, что предстоит; ТУДУШКА пуста — так и скажи, не подменяй случайными записями.
+
+ОТВЕТ НА СООБЩЕНИЕ («(В ответ на …)» перед текстом): цитата — сообщение, на которое отвечает пользователь: отвечай на неё, не на последний обмен.
+
+ПАМЯТКА ПРИЛОЖЕНИЯ (спросят «что это/как пользоваться» — рассказывай про Хэзэнштейн ЦЕЛИКОМ, не только чат):
+Главный — кнопка Хаоса или строка сверху: наговорённое ИИ сам раскладывает на задачи/заметки/желания; там же главное дело дня. Тудушка — умная очередь (▲ наверх, свайп — действия). История — записи, поиск, фильтры. Календарь — планы по дням. Желания — цели с шагами и чатами-наставниками. Хэзи — талисман, растёт от дел. «Помнить всегда» — короткие правила, всплывают каждое утро. Настройки — промпт, теги, база знаний.`;
 }
 
 // ════════ БАЗА ЗНАНИЙ (метод Карпати, v87) ════════
@@ -15216,6 +15304,10 @@ function localGreetingReply(t) {
 
 async function sendChatMessage(userText) {
   if (!userText.trim()) return;
+  // v129: захватываем цель ответа сразу — любой путь отправки (да/нет, приветствие, обычный)
+  // снимает плашку; цитата прикрепляется только к осмысленному сообщению в ИИ-поток
+  const _replySrc = (chatReplyTarget && chatReplyTarget.content) ? { role: chatReplyTarget.role, text: String(chatReplyTarget.content).replace(/\s+/g, ' ').slice(0, 140) } : null;
+  chatReplyTarget = null; renderReplyBar();
 
   // проверяем: есть ли pending confirm и пользователь отвечает «да»
   const lastAI = [...chatHistory].reverse().find(m => m.role === 'assistant' && m.confirmData && !m.confirmData.resolved);
@@ -15268,13 +15360,17 @@ async function sendChatMessage(userText) {
     return;
   }
 
-  await addChatMessage('user', userText);
+  await addChatMessage('user', userText, null, _replySrc); // v129: цитата, на которую отвечаем (если была)
   // v123: история чата 20 → 12 сообщений, каждое ≤400 символов (кроме только что отправленного
   // — оно всегда целиком, ИИ должен видеть полный текст). Старые 20 сообщений съедали до 1.5k токенов.
+  // v129: у сообщений с ответом-цитатой контекст цитаты идёт в начале («В ответ на …»).
   const _hist = chatHistory.filter(m => m.role === 'user' || m.role === 'assistant').slice(-12);
   const apiMessages = [
     { role:'system', content: buildSystemPrompt() },
-    ..._hist.map((m, i) => ({ role: m.role, content: i === _hist.length - 1 ? m.content : String(m.content || '').slice(0, 400) }))
+    ..._hist.map((m, i) => {
+      const core = i === _hist.length - 1 ? m.content : String(m.content || '').slice(0, 400);
+      return { role: m.role, content: m.reply ? chatReplyPrefix(m.reply) + core : core };
+    })
   ];
   showTyping();
   document.getElementById('chat-subtitle').textContent = 'Думаю...';
@@ -16133,7 +16229,7 @@ async function extractIcsFromZip(buf) {
 window.extractIcsFromZip = extractIcsFromZip;
 
 // Файл .ics (или .zip от Google) → кандидаты импорта (с дедупликацией) → общая превью-модалка
-const APP_VERSION = 'v128'; // v128: ▲ у всех = самый верх очереди (lift до конца дня, остальные смещаются аккуратно); фикс видимости драга (зажим зоны учитывает место летящей + touch-лифт над пальцем); шаги при добавлении желания — как в карточке (переименование/драг/удаление); чаты желания видят ленту других чатов этого желания (см. sw.js)
+const APP_VERSION = 'v129'; // v129: чат как в Telegram — ↩ ответить на сообщение (цитата в пузыре, плашка над вводом, контекст «В ответ на …» в промпте) и ⧉ скопировать текст сообщения; ИИ знает устройство всего приложения («что это за приложение» — объясняет целиком, памятка в промпте); тестовые сообщения в чат не пишем
 window.APP_VERSION = APP_VERSION;
 try { const _vc = document.getElementById('ver-chip'); if (_vc) _vc.textContent = APP_VERSION; } catch(e) {}
 window.handleIcsFile = async function(file) {
