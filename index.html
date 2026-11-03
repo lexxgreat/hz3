@@ -8385,6 +8385,85 @@ async function regenerateWishMoodImage(wishId) {
 }
 window.regenerateWishMoodImage = regenerateWishMoodImage;
 
+// ── v134: КАРТА ЖЕЛАНИЙ — свои фото в карточке ──
+// Фидбек: «В карточке желания должна быть возможность добавлять свои фото и как бы составлять
+// карту желаний… карточка должна больше содержать информации, чтобы в ней можно было
+// путешествовать и материализовывать мысль». Фото сжимается локально (canvas → JPEG ≤560px),
+// лежит прямо в доке желания (photos[]) — как moodImage (v122). Первое фото — фон шапки.
+const WISH_PHOTOS_MAX = 4;
+
+function wishFileToDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const fr = new FileReader();
+    fr.onerror = () => reject(new Error('read fail'));
+    fr.onload = () => {
+      const img = new Image();
+      img.onerror = () => reject(new Error('decode fail'));
+      img.onload = () => {
+        try {
+          const maxSide = Math.max(img.naturalWidth || 0, img.naturalHeight || 0) || 560;
+          const k = Math.min(1, 560 / maxSide);
+          const w = Math.max(1, Math.round((img.naturalWidth || 560) * k)), h = Math.max(1, Math.round((img.naturalHeight || 560) * k));
+          const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+          cv.getContext('2d').drawImage(img, 0, 0, w, h);
+          let out = cv.toDataURL('image/jpeg', 0.75);
+          if (out.length > 380000) out = cv.toDataURL('image/jpeg', 0.55); // страховка перед лимитом дока (~1МБ)
+          if (out.length > 520000) { reject(new Error('фото слишком большое')); return; }
+          resolve(out);
+        } catch (e) { reject(e); }
+      };
+      img.src = fr.result;
+    };
+    fr.readAsDataURL(file);
+  });
+}
+
+window.pickWishPhotos = function(wishId) {
+  const inp = document.createElement('input');
+  inp.type = 'file'; inp.accept = 'image/*'; inp.multiple = true;
+  inp.onchange = async () => {
+    if (!inp.files || !inp.files.length) return;
+    await addWishPhotos(wishId, [...inp.files]);
+  };
+  inp.click();
+};
+
+async function addWishPhotos(wishId, files) {
+  const w = wishes.find(x => x.id === wishId);
+  if (!w) return;
+  const photos = Array.isArray(w.photos) ? w.photos.slice() : [];
+  let added = 0, skipped = 0;
+  for (const f of files) {
+    if (photos.length >= WISH_PHOTOS_MAX) { break; }
+    try {
+      const dataUrl = await wishFileToDataUrl(f);
+      photos.push(dataUrl); added++;
+    } catch (e) { skipped++; }
+  }
+  if (!added) { showToast(skipped ? 'Не удалось прочитать фото' : 'Лимит — ' + WISH_PHOTOS_MAX + ' фото', 2400); return; }
+  try {
+    await updateDoc(uDocRef('wishes', wishId), { photos });
+    w.photos = photos;
+    showToast('📷 Фото в карте желаний · +' + added + (skipped ? ' (одно не влезло)' : ''), 2400);
+    try { hziAward('wish', wishId); } catch (e) {}
+    openWishDetail(wishId); // перерисовать карточку с новыми фото
+  } catch (e) { showToast('Ошибка сохранения: ' + e.message, 3000); }
+}
+window.addWishPhotos = addWishPhotos; // тесты
+
+window.removeWishPhoto = async function(wishId, idx) {
+  const w = wishes.find(x => x.id === wishId);
+  if (!w || !Array.isArray(w.photos) || !w.photos[idx]) return;
+  const photos = w.photos.slice();
+  photos.splice(idx, 1);
+  try {
+    await updateDoc(uDocRef('wishes', wishId), { photos });
+    w.photos = photos;
+    showToast('Фото убрано', 1600);
+    openWishDetail(wishId);
+  } catch (e) { showToast('Ошибка: ' + e.message, 2600); }
+};
+
 // ── WISH DETAIL MODAL — большая красивая карточка с milestones, state, perspectives ──
 async function openWishDetail(id) {
   try { window.__questEvent('open-wish-detail'); } catch(e) {} // v89: квест-шаг 9
@@ -8404,11 +8483,12 @@ async function openWishDetail(id) {
     document.body.appendChild(modal);
   }
   const hasMood = !!w.moodImage;
-  const gradient = `linear-gradient(135deg, ${cat.color}44, ${cat.color}11)`;
+  const photos = Array.isArray(w.photos) ? w.photos : []; // v134: СВОИ фото — карта желаний
+  const headerBg = hasMood ? `url('${w.moodImage}') center/cover` : (photos.length ? `url('${photos[0]}') center/cover` : `linear-gradient(135deg, ${cat.color}44, ${cat.color}11)`);
   modal.innerHTML = `
     <div class="modal" style="max-width:440px;max-height:90vh;display:flex;flex-direction:column;padding:0;overflow:hidden;">
-      <!-- Header with mood image -->
-      <div style="position:relative;height:180px;background:${hasMood ? `url('${w.moodImage}') center/cover` : gradient};flex-shrink:0;">
+      <!-- Header with mood image / первое своё фото -->
+      <div style="position:relative;height:180px;background:${headerBg};flex-shrink:0;">
         ${!hasMood && isMoodPending(id) ? '<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:12px;color:rgba(255,255,255,0.5);background:rgba(0,0,0,0.3);">🎨 Генерится картинка…</div>' : ''}
         ${!hasMood && !isMoodPending(id) && isMoodFailed(id) ? `<div onclick="event.stopPropagation();retryWishMoodImage('${id}');this.remove();" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:12px;color:rgba(255,255,255,0.65);background:rgba(0,0,0,0.35);cursor:pointer;">🎨 Не вышло — нажми, чтобы повторить</div>` : ''}
         <button onclick="closeWishDetail()" style="position:absolute;top:8px;right:8px;background:rgba(0,0,0,0.6);border:none;color:#fff;width:28px;height:28px;border-radius:50%;font-size:16px;cursor:pointer;backdrop-filter:blur(8px);">✕</button>
@@ -8433,6 +8513,28 @@ async function openWishDetail(id) {
             </div>
           </div>
         ` : ''}
+
+        <!-- v134: КАРТА ЖЕЛАНИЙ — свои фото: материализуй мысль, собирай визуализацию -->
+        <div style="margin-bottom:14px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+            <div style="font-size:10px;color:rgba(255,255,255,0.5);text-transform:uppercase;letter-spacing:1px;font-family:Inter,sans-serif;">📷 Карта желаний · фото ${photos.length}/${WISH_PHOTOS_MAX}</div>
+          </div>
+          <div id="wd-photos" style="display:flex;gap:8px;overflow-x:auto;scrollbar-width:none;padding-bottom:2px;">
+            ${photos.map((p, i) => `
+              <div style="position:relative;flex-shrink:0;width:96px;height:96px;border-radius:12px;overflow:hidden;border:0.5px solid rgba(255,255,255,0.14);">
+                <img src="${p}" alt="Фото желания ${i+1}" style="width:100%;height:100%;object-fit:cover;display:block;">
+                <button onclick="removeWishPhoto('${w.id}',${i});event.stopPropagation();" title="Убрать фото" style="position:absolute;top:3px;right:3px;width:18px;height:18px;border-radius:50%;border:none;background:rgba(0,0,0,0.55);color:rgba(255,255,255,0.75);font-size:10px;cursor:pointer;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px);">✕</button>
+              </div>
+            `).join('')}
+            ${photos.length < WISH_PHOTOS_MAX ? `
+              <button id="wd-photo-add" onclick="pickWishPhotos('${w.id}')" style="flex-shrink:0;width:96px;height:96px;border-radius:12px;border:0.5px dashed rgba(255,209,102,0.4);background:rgba(255,209,102,0.05);color:rgba(255,224,138,0.75);font-size:11px;font-weight:600;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;font-family:Inter,sans-serif;-webkit-tap-highlight-color:transparent;">
+                <span style="font-size:19px;line-height:1;">＋</span>
+                <span>Своё фото</span>
+              </button>
+            ` : ''}
+          </div>
+          ${photos.length === 0 ? '<div style="font-size:11px;color:rgba(255,255,255,0.35);margin-top:6px;line-height:1.5;font-family:Inter,sans-serif;">Добавь фотографии места, вещи, визуализации — желание становится осязаемее, а первое фото станет фоном карточки.</div>' : ''}
+        </div>
 
         <!-- State selector -->
         <div style="margin-bottom:14px;">
@@ -16341,7 +16443,7 @@ async function extractIcsFromZip(buf) {
 window.extractIcsFromZip = extractIcsFromZip;
 
 // Файл .ics (или .zip от Google) → кандидаты импорта (с дедупликацией) → общая превью-модалка
-const APP_VERSION = 'v133'; // v133: живые переходы — экраны появляются мягким кадром (подъём+проявление 0.34s), новый пузырь чата выплывает (только последний, лента не переигрывается), талисман на главном дышит, при сохранении из «✓ Сохранено» разлетаются искры; prefers-reduced-motion — всё статично
+const APP_VERSION = 'v134'; // v134: карта желаний — свои фото в карточке желания (≤4, локальное сжатие ≤560px, лежат в доке), первое фото = фон шапки, добавление/удаление из модалки
 window.APP_VERSION = APP_VERSION;
 try { const _vc = document.getElementById('ver-chip'); if (_vc) _vc.textContent = APP_VERSION; } catch(e) {}
 window.handleIcsFile = async function(file) {
