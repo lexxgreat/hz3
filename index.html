@@ -5524,7 +5524,7 @@ const CLOUD_COLORS = ['#e63946','#2a9d8f','#e9c46a','#f4a261','#457b9d','#9d4edd
 
 let cloudPeriod = 30; // 7 | 30 | 'all'
 let cloudCache = {}; // {7:{items,generatedAt}, 30:{...}, all:{...}} — грузится из Firestore при заходе
-const CLOUD_VERSION = 3; // v112: 2 — облако с '#'-тегами, шумными словами и высотой до 1400px; смена версии пересобирает кэш
+const CLOUD_VERSION = 4; // v130: 4 — сильное расхождение шрифтов (r^1.15, теги +0.4); смена версии пересобирает кэш со старыми размерами
 
 // разбивает текст на слова, СОХРАНЯЯ исходный регистр (чтобы имена/бренды остались как в оригинале)
 function tokenizeForCloud(text) {
@@ -5537,13 +5537,16 @@ function tokenizeForCloud(text) {
 // v112: единые формулы облака (размер/текст) — рендер и оценка площади больше не могут разойтись
 function cloudRatioFor(item, maxCount, minCount) {
   let r = maxCount === minCount ? 1 : (item.count - minCount) / (maxCount - minCount);
-  if (item.isTag) r = Math.min(1, Math.max(0.5, r + 0.35)); // области жизни всегда заметно крупнее обычных слов
+  if (item.isTag) r = Math.min(1, Math.max(0.5, r + 0.4)); // v130: области жизни ещё заметнее (было +0.35)
   return r;
 }
 function cloudDisplayText(item, ratio) {
   return item.isTag ? item.text : (ratio > 0.38 ? item.text.toUpperCase() : item.text); // v112: теги БЕЗ решётки — просто названия областей жизни
 }
-function cloudFontAt(ratio, scale) { return Math.max(11, Math.round((14 + Math.pow(ratio, 0.7) * 62) * (scale || 1))); }
+// v130: СИЛЬНОЕ расхождение шрифтов (фидбек: «всё сливается, частые теги/мысли должны быть крупнее»).
+// Было: 14 + r^0.7*62 (диапазон 14..76, середина задрана вверх — всё одного размера).
+// Стало: 11 + r^1.15*78 (диапазон 11..89): частые — заметно крупнее, редкие — мелкие, середина не выпирает.
+function cloudFontAt(ratio, scale) { return Math.max(11, Math.round((11 + Math.pow(ratio, 1.15) * 78) * (scale || 1))); }
 
 function computeWordCloudItems(period) {
   let filtered = notes.filter(n => n.remember !== true); // v93: правила «Помнить всегда» — не мысли, в облаке не участвуют
@@ -5718,7 +5721,7 @@ async function regenerateWordCloud() {
   let estArea = 0, maxW = 0;
   for (const item of items) {
     const ratio = cloudRatioFor(item, maxCount, minCount);
-    const base = 14 + Math.pow(ratio, 0.7) * 62;
+    const base = cloudFontAt(ratio, 1); // v130: формула ЕДИНАЯ с packWordCloud (раньше дубликат формулы расходился)
     const text = cloudDisplayText(item, ratio);
     measureCtx.font = `${ratio > 0.38 ? '800' : '600'} ${Math.round(base)}px Inter, Arial, sans-serif`;
     const w = measureCtx.measureText(text).width + 10;
@@ -12115,6 +12118,11 @@ function renderTodo() {
     const staleTitle = stale ? ` title="Висит уже ${Math.floor((Date.now() - new Date(n.createdAt).getTime()) / 86400000)} дн."` : '';
     const isUrg = zone === 'urgent';
     const isSkipped = !isUrg && todoSkippedToday(n); // v124: пропуск до конца дня; v126: у любой задачи (живёт в хвосте тира A)
+    // v130: задача из желания — показываем НАЗВАНИЕ желания (самое главное), а не просто тег области.
+    // Коротко (≤26 симв.), с 🌠 — сразу понятно, к какой мечте относится дело; тап по редактору открывает желание.
+    const _wl = n.wishId || (n.milestoneLink ? String(n.milestoneLink).split('/')[0] : null);
+    const _w = _wl ? (wishes || []).find(x => x.id === _wl) : null;
+    const _wName = _w ? (_w.text.length > 26 ? _w.text.slice(0, 26) + '…' : _w.text) : null;
     // v127: РУЧКИ У ВСЕХ (фидбек юзера: «оставь, пусть у всех будет перетаскивание»).
     // В детерминированных блоках драг/▲ ставят пин (todoManualKey до конца дня) — порядок
     // внутри блока меняет пользователь, блоки лестницы не перемешиваются (стена зоны).
@@ -12130,7 +12138,7 @@ function renderTodo() {
       </div>
       <div style="flex:1;min-width:0;">
         <div class="note-meta">
-          <span class="note-date"${whenStyle}>#${i+1}${isUrg ? ' · 🔥 Срочно' : (isSkipped ? (n.urgent === true ? ' · 🔥 Срочно · пропущена' : ' · ⏳ пропущена') : '')}${n.tag ? ' · ' + n.tag : ''}${whenStr ? ' · ' + whenStr : ''}${n.details ? ' · 📝' : ''}</span>
+          <span class="note-date"${whenStyle}>#${i+1}${isUrg ? ' · 🔥 Срочно' : (isSkipped ? (n.urgent === true ? ' · 🔥 Срочно · пропущена' : ' · ⏳ пропущена') : '')}${_wName ? ' · <span title="Задача из желания" style="color:rgba(255,225,150,0.9);">🌠 ' + escHtml(_wName) + '</span>' : (n.tag ? ' · ' + n.tag : '')}${whenStr ? ' · ' + whenStr : ''}${n.details ? ' · 📝' : ''}</span>
           <button class="note-copy-btn" title="Скопировать текст" onclick="copyNoteText('${n.id}');event.stopPropagation();">${COPY_ICON_SVG}</button>
         </div>
         <div class="note-text">${escHtml(n.text)}</div>
@@ -12303,6 +12311,12 @@ function goTo(screen) {
     if (histFilterPanelOpen) toggleFilterPanel(); // закрыть панель фильтров
     renderFilterTags();
     filterNotes(); // перерисовать список с дефолтными настройками
+  }
+  // v130: выход из Тудушки сбрасывает фильтр по тегу — каждый вход со всей очередью,
+  // не нужно листать/сбрасывать руками (фидбек: «надо тоже сбрасывать фильтры когда выходишь»)
+  if (_prevScreen && _prevScreen.id === 'screen-todo' && screen !== 'todo' && typeof activeTodoTag !== 'undefined' && activeTodoTag) {
+    activeTodoTag = null;
+    try { renderTodo(); } catch(e) {} // счётчик и чипы пересчитаются к следующему входу
   }
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
   document.querySelectorAll('.dock-item').forEach(b => b.classList.remove('active'));
@@ -16229,7 +16243,7 @@ async function extractIcsFromZip(buf) {
 window.extractIcsFromZip = extractIcsFromZip;
 
 // Файл .ics (или .zip от Google) → кандидаты импорта (с дедупликацией) → общая превью-модалка
-const APP_VERSION = 'v129'; // v129: чат как в Telegram — ↩ ответить на сообщение (цитата в пузыре, плашка над вводом, контекст «В ответ на …» в промпте) и ⧉ скопировать текст сообщения; ИИ знает устройство всего приложения («что это за приложение» — объясняет целиком, памятка в промпте); тестовые сообщения в чат не пишем
+const APP_VERSION = 'v130'; // v130: выход из Тудушки сбрасывает фильтр по тегу; задача из желания показывает НАЗВАНИЕ желания (🌠, ≤26 симв.) вместо тега области; облако мыслей — сильное расхождение шрифтов (r^1.15, теги крупнее, CLOUD_VERSION 4)
 window.APP_VERSION = APP_VERSION;
 try { const _vc = document.getElementById('ver-chip'); if (_vc) _vc.textContent = APP_VERSION; } catch(e) {}
 window.handleIcsFile = async function(file) {
@@ -17126,6 +17140,7 @@ window.__t = {
   longStaleDays,
   kbGet: () => kbState,
   kbSet: (patch) => { Object.assign(kbState, patch); renderKbStatus(); },
+  uid: () => currentUid, // v130: тесты ждут авторизацию перед записью в Firestore (устойчивость к таймингам)
   checkAndGenerateDailySummary,
   openDailySummaryModal,
   setTheme,
@@ -17149,6 +17164,7 @@ window.__t = {
   tokenizeForCloud,
   packWordCloud,
   cloudRatioFor,
+  cloudFontAt, // v130: единая формула шрифта облака (тесты)
   cloudDisplayText,
   ruStops: RU_STOPWORDS,
   resetHintPacing: () => { _ordHintsSession = 0; },
