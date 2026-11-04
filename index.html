@@ -7547,6 +7547,7 @@ async function loadWishes() {
     }
     wishes.sort((a, b) => (a.wishOrder || 0) - (b.wishOrder || 0));
     renderWishes(); // v136: золотая плашка «Желания» вернулась на главный — счётчик живёт с холодного старта
+    renderFocusCard(); // v137: желания могли прийти позже заметок (параллельная загрузка) — на фокус-карточке появится «🌠 название желания»
     // v89 Н10: конвейер шагов — в Тудушке у каждого желания ровно ОДИН активный шаг.
     // Идемпотентно: пишет в базу только там, где правило нарушено.
     normalizeAllWishTodos().catch(() => {});
@@ -11222,7 +11223,13 @@ function renderFocusCard() {
     const metaBits = [];
     if (top.urgent === true) metaBits.push('🔥 Срочно');
     if (whenStr) metaBits.push(whenStr);
-    if (top.tag) metaBits.push('🏷 ' + escHtml(top.tag));
+    // v137: задача из желания — на главной видно НАЗВАНИЕ желания, а не просто тег
+    // (фидбек: «на главной карточке не показывает из какого желания задача»; механика v130
+    // с карточек тудушки: ≤26 симв., тёплый золотой цвет; тег у wish-задач дублирует желание)
+    const _fwl = top.wishId || (top.milestoneLink ? String(top.milestoneLink).split('/')[0] : null);
+    const _fw = _fwl ? (wishes || []).find(x => x.id === _fwl) : null;
+    if (_fw) metaBits.push('<span title="Задача из желания" style="color:rgba(255,225,150,0.92);">🌠 ' + escHtml(_fw.text.length > 26 ? _fw.text.slice(0, 26) + '…' : _fw.text) + '</span>');
+    else if (top.tag) metaBits.push('🏷 ' + escHtml(top.tag));
     // v82: подзадачи — путь к старшей задаче и прогресс по детям
     if (top.parentId) {
       const p = notes.find(x => x.id === top.parentId);
@@ -11506,7 +11513,10 @@ function initTodoDrag() {
     // Единственный зажим — ФИЗИЧЕСКИЙ: карточка не покидает видимую коробку списка
     // (обещание v121 «карточку которую тащишь должно быть всегда видно»); rect живьём —
     // зажим корректен и при автоскролле.
-    let top = st.startTop + (st.lastClientY - st.startY) - (st.liftOffset || 0); // v128: touch-лифт — карточка над пальцем, палец её не закрывает
+    // v137: touch-лифт v128 (карточка на 56px выше пальца) УБРАН — фидбек: «при перетаскивании
+    // карточка уезжает немного вверх от области нажатия». Как в желаниях (эталон): карточка
+    // ТОЧНО под пальцем, WYSIWYG без поправок. Ручка ⠿ у левого края — текст остаётся виден.
+    let top = st.startTop + (st.lastClientY - st.startY);
     const scaleH = st.cardH * 0.02; // scale(1.02) с origin top — низ карточки вырастает на 2%
     try {
       const box = listEl.getBoundingClientRect();
@@ -11523,7 +11533,7 @@ function initTodoDrag() {
   function updateLiveShift(scrolled) {
     if (!todoDragState) return;
     const { itemsSnapshot, id, startIndexAmongOthers, draggedHeight, grabOffset, cardH } = todoDragState;
-    const fingerY = todoDragState.lastClientY - (todoDragState.liftOffset || 0); // v128: пороги — по ЭФФЕКТИВНОЙ позиции карточки (с лифтом): что видишь — туда и упадёт
+    const fingerY = todoDragState.lastClientY; // v137: без лифта — пороги прямо по пальцу, как у желаний
     const others = itemsSnapshot.filter(s => s.id !== id);
 
     let targetIndex = others.length;
@@ -11611,9 +11621,8 @@ function initTodoDrag() {
       // за какое место ручки взялись: перелистывание всегда на половине соседней.
       grabOffset: clientY - (draggedSnap.midY - draggedSnap.h / 2),
       cardH: draggedSnap.h,
-      // v128: touch-лифт — на телефоне палец закрывал карточку («саму карточку не видно»):
-      // летящая поднимается на 56px выше пальца, пороги свопа считаются от той же точки (WYSIWYG)
-      liftOffset: pointerType === 'touch' ? 56 : 0,
+      // v137: touch-лифт v128 удалён (карточка уезжала вверх от пальца) — как в желаниях:
+      // карточка следует за пальцем 1:1 без вертикальной поправки
       startTop: cardRect.top, // база свободного полёта
       currentTargetIndex: startFullIndex
     };
@@ -16528,7 +16537,7 @@ async function extractIcsFromZip(buf) {
 window.extractIcsFromZip = extractIcsFromZip;
 
 // Файл .ics (или .zip от Google) → кандидаты импорта (с дедупликацией) → общая превью-модалка
-const APP_VERSION = 'v136'; // v135: итоги дня и подсчёты — правила честного счёта в промпте чата (дата события из текста, дубль-пересказ = одно событие, сначала перечень потом сумма, важное первым) и в вечернем итогe (двойной счёт запрещён, ручные цифры главные, приоритеты) — по разбору выгрузки чата
+const APP_VERSION = 'v137'; // v137: драг тудушки — карточка точно под пальцем (убран touch-лифт v128, фидбек «карточка уезжает вверх от области нажатия»); на фокус-карточке главной показывается «🌠 название желания» (механика v130) + обновление после поздней загрузки желаний
 window.APP_VERSION = APP_VERSION;
 try { const _vc = document.getElementById('ver-chip'); if (_vc) _vc.textContent = APP_VERSION; } catch(e) {}
 window.handleIcsFile = async function(file) {
