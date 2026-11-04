@@ -11780,8 +11780,8 @@ async function reorderTodo(id, newIndex, byVisible) {
     dragged.skippedAt = null;
     try { updateDoc(uDocRef('notes', dragged.id), { skippedAt: null }).catch(() => {}); } catch(e) {}
   }
-  const dragFut = isFutureTodo(dragged);
-  const dz = todoZoneOf(dragged); // v127: зона перетаскиваемой (после снятия пропуска — драг пропущенной его снимает)
+  let dragFut = isFutureTodo(dragged);
+  let dz = todoZoneOf(dragged); // v127: зона перетаскиваемой (после снятия пропуска — драг пропущенной его снимает); v138: может смениться на дропе (lift/снятие lift)
   const hSet = todoHiddenSet();
 
   // v119: БЛОК перетаскиваемой — вся её цепочка (предки + бездетные «сайд»-шаги).
@@ -11831,15 +11831,67 @@ async function reorderTodo(id, newIndex, byVisible) {
       // жёсткие, не перемешиваются) — иначе splitTodoQueue вернул бы карточку на место
       // (телепорт). Пропущенные без зажима: их драг поднимается выше хвоста — это и есть
       // «вернуть в топ» (v124).
+      // v138: ВЕРХ ОЧЕРЕДИ БОЛЬШЕ НЕ ЗАМОРОЖЕН (фидбек: «тащу карточку на самый верх а она
+      // не перемещается, тащу верхнюю карточку вниз и она тоже не перемещается»):
+      //  • дроп ВЫШЕ головы своей зоны = ПОДЪЁМ (lift, как ▲): карточка входит в блок
+      //    поднятых, liftAt блока переприсваивается по итоговому визуальному порядку (ниже)
+      //    — «на самый верх» теперь работает у всех, до конца дня;
+      //  • поднятую карточку, которую тащат НИЖЕ блока поднятых, ВЫПУСКАЕМ: подъём
+      //    снимается, дальше честная посадка в её естественной зоне лестницы;
+      //  • карточка, одна в своей зоне, при драге вниз получает честный тост вместо немого
+      //    «ничего не произошло» (раньше здесь был тихий return — верх казался сломанным).
       if (dz !== 'skipped') {
+        let lFirst = -1, lLast = -1; // границы блока поднятых среди остальных
+        for (let i = 0; i < others.length; i++) {
+          if (todoZoneOf(others[i]) === 'lifted') { if (lFirst === -1) lFirst = i; lLast = i; }
+        }
+        // старая видимая позиция перетаскиваемой (сколько остальных выше неё) —
+        // чтобы «дроп на месте» не считался движением и не дёргал lift туда-сюда
+        const dragVisIdx = visual.findIndex(x => x.id === id);
+        const _nextPos = others.findIndex(o => visual.indexOf(o) > dragVisIdx);
+        const curPos = _nextPos === -1 ? others.length : _nextPos;
+        let leftLift = false;
+        // поднятую тащат НИЖЕ её старого места И за пределами блока поднятых → снять подъём,
+        // пусть живёт в своей зоне лестницы. Дроп на месте или внутри блока блок не покидает.
+        if (dz === 'lifted' && idx > curPos && idx > lLast) {
+          clearTodoLift(dragged);
+          dz = todoZoneOf(dragged);
+          dragFut = isFutureTodo(dragged);
+          leftLift = true;
+          if (!dropNote) dropNote = '⤵ Снял подъём — вернул в свой блок очереди';
+        }
         let zFirst = -1, zLast = -1;
         for (let i = 0; i < others.length; i++) {
           if (todoZoneOf(others[i]) === dz) { if (zFirst === -1) zFirst = i; zLast = i; }
         }
-        if (zFirst === -1) return; // без перетаскиваемой зона пуста — двигать некуда
-        const clamped = Math.max(zFirst, Math.min(idx, zLast + 1));
-        if (clamped !== idx && !dropNote) dropNote = '🪜 Блок очереди не перемешивается — поставил у края своего блока';
-        idx = clamped;
+        if (!leftLift && zFirst !== -1 && idx < zFirst && !dragFut) {
+          // v138: тянет ВЫШЕ своей зоны → подъём в топ (блок поднятых). Позицию внутри блока
+          // берём из места дропа — liftAt переприсвоится по итоговому визуальному порядку.
+          // (Срочные сюда не попадают: их зона — префикс списка, выше головы некуда. Будущим
+          // lift бесполезен — зона «на потом» старше lift в todoZoneOf.)
+          setTodoLift(dragged, Date.now());
+          dz = 'lifted';
+          if (lFirst !== -1) idx = Math.max(lFirst, Math.min(idx, lLast + 1));
+          if (!dropNote) dropNote = '⤴ Поднял в топ очереди — до конца дня';
+        } else if (zFirst !== -1) {
+          const clamped = Math.max(zFirst, Math.min(idx, zLast + 1));
+          if (clamped !== idx && !dropNote) dropNote = '🪜 Блок очереди не перемешивается — поставил у края своего блока';
+          idx = clamped;
+        } else if (!leftLift) {
+          // v138: карточка одна в своей зоне (раньше — тихий return, «верх сломан»):
+          // вверх — подъём в топ, вниз — честное объяснение, на месте — тихо.
+          if (idx < curPos && dz !== 'urgent' && !dragFut) {
+            setTodoLift(dragged, Date.now());
+            dz = 'lifted';
+            if (!dropNote) dropNote = '⤴ Поднял в топ очереди — до конца дня';
+          } else if (idx > curPos) {
+            try { showToast(dropNote || (dz === 'urgent'
+              ? '🔥 Срочное — всегда над очередью. Сними флажок «Срочно» в карточке, чтобы отпустить вниз'
+              : '🪜 В её блоке очереди нет других задач — очередь держит её на этом месте'), 2600); } catch (e) {}
+            return;
+          } else return; // дроп на месте — ничего не меняем
+        }
+        // else: вышла из поднятых и одна в своей зоне — сажаем как есть, лестница поставит в её блок
       }
       if (dropNote) { try { showToast(dropNote, 2600); } catch (e) {} }
       anchor = others[idx] || null;
@@ -11898,9 +11950,10 @@ async function reorderTodo(id, newIndex, byVisible) {
     else key = Math.abs(nextKey - prevKey) < 1e-9 ? null : (prevKey + nextKey) / 2; // развалка ключей — вернём к натуральному
     setTodoPin(m, key);
   }
-  // v128: дроп в БЛОКЕ ПОДНЯТЫХ — переприсваиваем liftAt по итоговому визуальному порядку
-  // (первый в блоке — самый свежий таймштамп; блок живёт по liftAt DESC). Тир A: подъём-стена
-  // не даёт вытащить карточку из блока — порядок внутри сохраняем честно.
+  // v128/v138: дроп в БЛОКЕ ПОДНЯТЫХ — переприсваиваем liftAt по итоговому визуальному порядку
+  // (первый в блоке — самый свежий таймштамп; блок живёт по liftAt DESC). v138: условие покрывает
+  // и «поднял дрогом вверх» (дроп выше своей зоны), и порядок внутри блока; ВНИЗ из блока
+  // поднятую выпускаем — lift снят ещё в leftLift-ветке, сюда такая карточка не доходит.
   if (dz === 'lifted') {
     const nowMs = Date.now();
     let li = 0;
@@ -16537,7 +16590,7 @@ async function extractIcsFromZip(buf) {
 window.extractIcsFromZip = extractIcsFromZip;
 
 // Файл .ics (или .zip от Google) → кандидаты импорта (с дедупликацией) → общая превью-модалка
-const APP_VERSION = 'v137'; // v137: драг тудушки — карточка точно под пальцем (убран touch-лифт v128, фидбек «карточка уезжает вверх от области нажатия»); на фокус-карточке главной показывается «🌠 название желания» (механика v130) + обновление после поздней загрузки желаний
+const APP_VERSION = 'v138'; // v138: верх очереди больше не заморожен (фидбек «тащу карточку на самый верх а она не перемещается, тащу верхнюю карточку вниз и она тоже не перемещается»): дроп выше своей зоны = подъём в топ (lift, как ▲, до конца дня); поднятую карточку можно утащить вниз — lift снимается, честная посадка в своём блоке; карточка, одна в своей зоне, при драге вниз получает честный тост вместо немого return (раньше верх казался сломанным)
 window.APP_VERSION = APP_VERSION;
 try { const _vc = document.getElementById('ver-chip'); if (_vc) _vc.textContent = APP_VERSION; } catch(e) {}
 window.handleIcsFile = async function(file) {
