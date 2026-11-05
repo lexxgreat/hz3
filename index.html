@@ -10928,12 +10928,13 @@ function splitTodoQueue() { // v89 Н6: срочные → отдельно (с�
     .sort((a, b) => todoEffKey(a, 'overdue') - todoEffKey(b, 'overdue') || byOrder(a, b)); // v126: свежие выше; v127: пин работает и здесь
   const noDate = tierA.filter(n => live(n) && !liftedIds.has(n.id) && !n.scheduledDate).sort(byOrder);
   const skippedUrg = tierA.filter(n => todoSkippedToday(n)).sort(byOrder); // v124: пропуск до конца дня; v126: у любой задачи, не только срочной
-  const main = [...lifted, ...todayTime, ...todayNoTime, ...overdue, ...noDate, ...skippedUrg]; // v128: поднятые — над лестницей
+  const main = [...todayTime, ...todayNoTime, ...overdue, ...noDate, ...skippedUrg]; // v139: лестница без поднятых (поднятые — отдельным блоком над срочными)
+  const top = [...lifted, ...urgent]; // v139: РУЧНОЙ ТОП очереди — поднятые ▲ НАД срочными (фидбек: «если я перетащил на самый верх, то срочное тоже должно подвинуться»: срочный блок честно съезжает вниз на слот)
   const tomorrow = q.filter(n => !urgentIds.has(n.id) && isTomorrow(n))
     .sort((a, b) => todoEffKey(a, 'tomorrow') - todoEffKey(b, 'tomorrow') || byOrder(a, b)); // v127: «на завтра» тоже можно перетаскивать (пин до конца дня)
   const future = q.filter(n => isFutureTodo(n) && n.scheduledDate > tmKey).sort((a, b) =>
     todoEffKey(a, 'future') - todoEffKey(b, 'future') || byOrder(a, b)); // v127: дата (без времени раньше обозначенного) + пин драга
-  return { urgent, main, tomorrow, future, todayTime, todayNoTime, overdue, noDate, skippedUrg, lifted };
+  return { urgent, main, top, tomorrow, future, todayTime, todayNoTime, overdue, noDate, skippedUrg, lifted };
 }
 
 // ── УМНАЯ СОРТИРОВКА (v82) ──
@@ -11010,7 +11011,7 @@ async function renormalizeTodoQueue() {
 // кнопка «✨ Умно»: пересобрать ВСЮ очередь по скору (срочность + важность + объём + время суток)
 async function smartSortTodo() {
   const { urgent, main, todayTime, todayNoTime, overdue, noDate, skippedUrg, tomorrow, future, lifted } = splitTodoQueue();
-  if (urgent.length + main.length + tomorrow.length + future.length < 2) { showToast('В очереди меньше двух задач — сортировать нечего 🙂', 2600); return; }
+  if (urgent.length + lifted.length + main.length + tomorrow.length + future.length < 2) { showToast('В очереди меньше двух задач — сортировать нечего 🙂', 2600); return; } // v139: поднятые считаются отдельно (main их больше не содержит)
   // v87: тир A — по скору; тир B («на потом») — всегда ниже и по датам: скор будущей
   // задачи больше не выбивает её наверх очереди сегодняшних дел.
   // v89: срочные — впереди всех (скор 999 сам их поднимает), «на завтра» — хвост очереди до разделителя
@@ -11210,11 +11211,12 @@ function renderFocusCard() {
   let html = '';
 
   const _hSet118 = todoHiddenSet(); // v118: матери с подзадачами скрыты — фокус показывает первый шаг
-  // v126: фокус = голова канонической лестницы (splitTodoQueue): срочные → сегодня по времени →
-  // сегодня без времени → просроч → без даты. Пропущенное сегодня стоит в хвосте тира A —
-  // в фокус не рвётся (v124), первым становится следующее живое дело
+  // v126: фокус = голова канонической лестницы (splitTodoQueue). v139: головой стала
+  // top = поднятые ▲ → срочные → сегодня по времени → сегодня без времени → просроч →
+  // без даты. Пропущенное сегодня стоит в хвосте тира A — в фокус не рвётся (v124),
+  // первым становится следующее живое дело
   const _sq126 = splitTodoQueue();
-  const queue = _sq126.urgent.concat(_sq126.main).filter(n => !_hSet118.has(n.id)); // v87: задачи на потом в фокусе не звонят
+  const queue = _sq126.top.concat(_sq126.main).filter(n => !_hSet118.has(n.id)); // v139: топ = поднятые + срочные; v87: задачи на потом в фокусе не звонят
   if (queue.length) {
     const top = queue[0];
     const restCount = queue.length - 1;
@@ -11750,8 +11752,8 @@ async function persistTodoOrderNow() {
   if (_todoPersistBusy) { scheduleTodoPersist(); return; } // запись идёт — переназначим на неё
   _todoPersistBusy = true;
   try {
-    const { urgent, main, tomorrow, future } = splitTodoQueue();
-    const visual = urgent.concat(main, tomorrow, future); // v89: пишем порядок В ВИЗУАЛЬНОМ виде (срочные → тир A → завтра → тир B)
+    const { top, main, tomorrow, future } = splitTodoQueue();
+    const visual = top.concat(main, tomorrow, future); // v139: пишем порядок В ВИЗУАЛЬНОМ виде (поднятые ▲ → срочные → тир A → завтра → тир B)
     await Promise.all(visual.map((n, i) => updateDoc(uDocRef('notes', n.id), { todoOrder: i + 1 })));
     // v127: пины пишутся сразу в setTodoPin — здесь только порядок
   } catch(e) { alert('Ошибка сортировки: ' + e.message); }
@@ -11771,8 +11773,8 @@ async function reorderTodo(id, newIndex, byVisible) {
   // очереди: схлопывание v118 скрывает матерей/шаги, старый индекс «уезжал» мимо,
   // шаги цепочек перепрыгивали друг друга и карточки при драге «пропадали».
   // byVisible=false (скип, ▲, старые вызовы) — индекс по полной очереди, как раньше.
-  const { urgent, main, tomorrow, future } = splitTodoQueue();
-  const visual = urgent.concat(main, tomorrow, future); // v89: работаем в визуальном порядке (срочные → тир A → завтра → тир B)
+  const { top, main, tomorrow, future } = splitTodoQueue();
+  const visual = top.concat(main, tomorrow, future); // v139: работаем в визуальном порядке (поднятые ▲ → срочные → тир A → завтра → тир B)
   const dragged = visual.find(n => n.id === id);
   if (!dragged) return;
   // v124: ручной перенос сильнее пропуска — тащишь пропущенную срочную, пропуск снимается
@@ -11812,13 +11814,11 @@ async function reorderTodo(id, newIndex, byVisible) {
       // ОДИН раз объясняем тостом, почему не выше/не ниже (иначе «телепорт» выглядит
       // как поломка). Порядок зажимов: срочные → тиры → зона.
       let dropNote = null; // v136: объяснение честной посадки (если зажим сработал)
-      // v120: стена СРОЧНЫХ — обычная карточка не встаёт выше срочного блока. Раньше дроп
-      // «над срочными» менял todoOrder всем срочным, а splitTodoQueue при рендере возвращал
-      // их наверх — карточка телепортировалась обратно, драг у верха списка выглядел сломанным.
-      if (!dragged.urgent) {
-        const firstNonUrg = others.findIndex(o => !o.urgent); // срочные — сплошной префикс
-        if (firstNonUrg !== -1 && idx < firstNonUrg) { idx = firstNonUrg; dropNote = '🔥 Срочные — всегда над очередью: поставил сразу под ними'; }
-      }
+      // v139: СТЕНЫ СРОЧНЫХ БОЛЬШЕ НЕТ (фидбек: «если я перетащил на самый верх, то срочное
+      // тоже должно подвинуться»). Дроп не-срочной карточки выше лестницы = ПОДЪЁМ (lift, ветка
+      // ниже): поднятые живут НАД срочным блоком, и срочные честно съезжают вниз на слот.
+      // Срочный блок по-прежнему не разрывается: внутрь него чужая карточка не сажается —
+      // она поднимается ЦЕЛИКОМ над ним.
       // v87: граница тиров А/«на потом» — по датам, дроп её не пересекает
       if (dragFut) {
         const lim = firstFut === -1 ? others.length : firstFut;
@@ -11867,12 +11867,18 @@ async function reorderTodo(id, newIndex, byVisible) {
         if (!leftLift && zFirst !== -1 && idx < zFirst && !dragFut) {
           // v138: тянет ВЫШЕ своей зоны → подъём в топ (блок поднятых). Позицию внутри блока
           // берём из места дропа — liftAt переприсвоится по итоговому визуальному порядку.
-          // (Срочные сюда не попадают: их зона — префикс списка, выше головы некуда. Будущим
-          // lift бесполезен — зона «на потом» старше lift в todoZoneOf.)
+          // v139: срочные теперь ДОСТИГАЮТ ветки (блок поднятых стоит выше срочных), но lift им
+          // бесполезен: зона urgent старше lift в todoZoneOf — splitTodoQueue заберёт срочную
+          // в срочный блок. Срочная возвращается в голову срочного блока с честным тостом.
+          if (dz === 'urgent') {
+            idx = zFirst;
+            if (!dropNote) dropNote = '🔥 Срочное уже над очередью — поставил в верх срочного блока';
+          } else {
           setTodoLift(dragged, Date.now());
           dz = 'lifted';
           if (lFirst !== -1) idx = Math.max(lFirst, Math.min(idx, lLast + 1));
           if (!dropNote) dropNote = '⤴ Поднял в топ очереди — до конца дня';
+          }
         } else if (zFirst !== -1) {
           const clamped = Math.max(zFirst, Math.min(idx, zLast + 1));
           if (clamped !== idx && !dropNote) dropNote = '🪜 Блок очереди не перемешивается — поставил у края своего блока';
@@ -11993,7 +11999,8 @@ function moveTodoTop(id) {
     topKey = todoEffKey(block[0], zone) - 1; // строго выше нынешней головы блока
   } else if (zone !== 'urgent') {
     const blocks = splitTodoQueue();
-    if (!blocks.main.length || blocks.main[0].id === id) return; // уже самая первая в очереди
+    const headSeq = (blocks.top && blocks.top.length) ? blocks.top : blocks.main; // v139: топ очереди = поднятые ▲ → срочные
+    if (!headSeq.length || headSeq[0].id === id) return; // уже самая первая в очереди
   }
   const listEl = document.getElementById('todo-list');
   if (!listEl) {
@@ -12388,12 +12395,12 @@ function renderTodo() {
   if (!el) return;
   if (todoDragState) return; // v119: перерисовка посреди драга убивает летящую карточку (DOM заменяется, transform теряется) — отложим до отпускания
   let { urgent, tomorrow, future, todayTime, todayNoTime, overdue, noDate, skippedUrg, lifted } = splitTodoQueue(); // v126: лестница тира A — блоки по отдельности; v128: + поднятые ▲
-  let main = [...lifted, ...todayTime, ...todayNoTime, ...overdue, ...noDate, ...skippedUrg];
+  let main = [...todayTime, ...todayNoTime, ...overdue, ...noDate, ...skippedUrg]; // v139: лестница без поднятых (поднятые рендерим отдельным блоком над срочными)
   // v89 Н6: наступившее «завтра» улетает наверх — одноразовый бамп при переходе даты
   try {
     const _tKey = formatDateKey(new Date());
     tomorrow.concat(future).forEach(n => { if (!n.done && !localStorage.getItem('hz3_mat_' + n.id)) localStorage.setItem('hz3_mat_' + n.id, '1'); });
-    const matured = main.filter(n => n.scheduledDate === _tKey && !n.done && localStorage.getItem('hz3_mat_' + n.id) === '1');
+    const matured = [...lifted, ...main].filter(n => n.scheduledDate === _tKey && !n.done && localStorage.getItem('hz3_mat_' + n.id) === '1'); // v139: поднятые не теряются (main их больше не содержит)
     if (matured.length) {
       matured.forEach(n => localStorage.removeItem('hz3_mat_' + n.id));
       (async () => {
@@ -12419,7 +12426,7 @@ function renderTodo() {
     urgent = vis(urgent); tomorrow = vis(tomorrow); future = vis(future);
     todayTime = vis(todayTime); todayNoTime = vis(todayNoTime); overdue = vis(overdue); noDate = vis(noDate); skippedUrg = vis(skippedUrg); lifted = vis(lifted);
   }
-  main = [...lifted, ...todayTime, ...todayNoTime, ...overdue, ...noDate, ...skippedUrg]; // v128: поднятые ▲ — над лестницей; конкат после фильтров
+  main = [...todayTime, ...todayNoTime, ...overdue, ...noDate, ...skippedUrg]; // v139: лестница без поднятых; конкат после фильтров
   // v128: разделитель «⚠ Просрочено» — перед ГОЛОВОЙ натурального просроча (поднятые просрочки
   // выше разделителя — юзер сам их поднял; плашка честно считает только блок под ней)
   const _odHead = overdue[0] || null;
@@ -12442,9 +12449,9 @@ function renderTodo() {
       }
     }
   } catch(e) {}
-  const totalAll = urgent.length + main.length + tomorrow.length + future.length;
+  const totalAll = urgent.length + lifted.length + main.length + tomorrow.length + future.length; // v139: поднятые считаются отдельно
   document.getElementById('todo-count').textContent =
-    (urgent.length + main.length + tomorrow.length) + ' в очереди' + (future.length ? ' · ' + future.length + ' на потом' : '');
+    (urgent.length + lifted.length + main.length + tomorrow.length) + ' в очереди' + (future.length ? ' · ' + future.length + ' на потом' : '');
   if (!totalAll) {
     el.innerHTML = '<div class="hist-empty"><div class="hist-empty-icon">📋</div>' + (activeTodoTag ? 'С этим тегом задач нет' : 'Список пуст — напиши задачу на главном, ИИ сам поставит её сюда. Или добавь из Истории кнопкой «В тудулист»') + '</div>';
     return;
@@ -12493,10 +12500,23 @@ function renderTodo() {
   };
   let html = '';
   let idx = 0;
+  // v139: РУЧНОЙ ТОП — поднятые ▲ над срочными (фидбек: «если я перетащил на самый верх,
+  // то срочное тоже должно подвинуться»): срочный блок честно съезжает вниз на слот.
+  // Под блоком поднятых — тёплая плашка, чтобы сдвиг срочного выглядел не поломкой,
+  // а ручным топом до конца дня (сгорит назавтра — лестница вернётся).
+  if (lifted.length) html += lifted.map((n, i) => cardHtml(n, idx++, 'main', i)).join('');
+  if (lifted.length && urgent.length) {
+    html += `
+    <div class="todo-future-divider" style="display:flex;align-items:center;gap:10px;margin:14px 0 10px;">
+      <div style="flex:1;height:0.5px;background:rgba(255,255,255,0.12);"></div>
+      <div style="font-size:10.5px;letter-spacing:0.6px;text-transform:uppercase;font-weight:600;color:rgba(255,209,102,0.75);white-space:nowrap;">⤴ поднято вручную — до конца дня</div>
+      <div style="flex:1;height:0.5px;background:rgba(255,255,255,0.12);"></div>
+    </div>`;
+  }
   if (urgent.length) html += urgent.map((n, i) => cardHtml(n, idx++, 'urgent', i)).join('');
-  // v128: тир A = единый список: поднятые ▲ (liftAt DESC) → естественная лестница
-  // (сегодня по времени → без времени → ⚠ просроч с честной плашкой → без даты → пропущенное).
-  // ▲ скрыта ТОЛЬКО у самой первой карточки очереди — подниматься наверх можно у любой другой
+  // v128/v139: тир A = единый список: естественная лестница
+  // (сегодня по времени → без времени → ⚠ просроч с честной плашкой → без даты → пропущенное),
+  // поднятые ▲ стоят над срочными (см. выше). ▲ скрыта ТОЛЬКО у первой карточки своего блока
   const overdueDivider = `
     <div class="todo-future-divider" style="display:flex;align-items:center;gap:10px;margin:14px 0 10px;">
       <div style="flex:1;height:0.5px;background:rgba(255,255,255,0.12);"></div>
@@ -13640,6 +13660,7 @@ function openDailySummaryModal(day) {
       <div class="modal" style="max-width:440px;max-height:88vh;overflow-y:auto;">
         <div class="modal-title" id="ds-title">📊 Итог дня</div>
         <div id="ds-stats"></div>
+        <div id="ds-result"></div>
         <div style="margin-top:14px;padding-top:12px;border-top:0.5px solid rgba(255,255,255,0.08);">
           <div style="font-size:11px;color:rgba(255,255,255,0.5);margin-bottom:6px;letter-spacing:0.5px;text-transform:uppercase;font-weight:600;">Настроение дня</div>
           <div id="ds-moods" style="display:flex;gap:8px;">${DS_MOODS.map(m => `<button onclick="dsSetMood('${m.v}')" data-v="${m.v}" style="flex:1;aspect-ratio:1;font-size:20px;border-radius:12px;border:0.5px solid rgba(255,255,255,0.1);background:rgba(255,255,255,0.04);cursor:pointer;">${m.e}</button>`).join('')}</div>
@@ -13655,7 +13676,7 @@ function openDailySummaryModal(day) {
           </div>
         </div>
         <div class="modal-btns">
-          <button class="modal-cancel" onclick="closeDailySummaryModal(true)">Позже</button>
+          <button class="modal-cancel" id="ds-cancel" onclick="closeDailySummaryModal(true)">Позже</button>
           <button class="modal-save" id="ds-go" onclick="generateDailySummary()">Подвести итог</button>
         </div>
       </div>`;
@@ -13683,6 +13704,13 @@ function openDailySummaryModal(day) {
     + dsListHtml(longStale.map(n => n.text + ' · ' + longStaleDays(n) + ' дн.'), '', 4) + '</div>');
   document.getElementById('ds-stats').innerHTML = parts.join('');
   document.getElementById('ds-title').textContent = '📊 Итог дня — ' + dLbl;
+  // v139: сброс результата прошлой генерации (итог показывается тут же после «Подвести итог»)
+  const _res = document.getElementById('ds-result');
+  if (_res) _res.innerHTML = '';
+  const _go = document.getElementById('ds-go');
+  if (_go) { _go.textContent = 'Подвести итог'; _go.setAttribute('onclick', 'generateDailySummary()'); }
+  const _cn = document.getElementById('ds-cancel');
+  if (_cn) { _cn.textContent = 'Позже'; _cn.setAttribute('onclick', 'closeDailySummaryModal(true)'); }
   modal.classList.add('open');
 }
 window.dsSetMood = function(v) {
@@ -13702,46 +13730,91 @@ window.closeDailySummaryModal = function(release) {
   }
 };
 
-// Резерв без ИИ — те же железные правила статусов
-function buildLocalDailySummary(day, doneNotes, doneMs, added, planned, mood, money, time) {
+// ── v139: КРАТКИЙ ЛОКАЛЬНЫЙ ИТОГ ДНЯ ──
+// Фидбек юзера: «С итогом дня в итоге чото не понял что произошло. Такое ощущение что
+// ничего. Он должен быть кратким не имшным. Типа такие то сферы сегодня были, есть
+// просроченое, завтра вкратце тото и хотелось бы чтото обсудить? Например.... И чтото
+// что кажется наиболее важным по задачам». Итог больше НЕ генерирует ИИ (жалобы v135:
+// «ИИ очень плохо подводит итоги» — и подсчёты, и вода): детерминированные строки из
+// честных статусов и живой очереди — мгновенно, одинаково на всех устройствах, подсчёты
+// не могут соврать физически (нечего пересчитывать). Структура — буквально по пожеланию:
+// сферы дня → цифры → просрочено → завтра вкратце → самое важное → «обсудить?».
+// Данные сферы: где сегодня было движение (сделано/добавлено/план дня) — тег или область.
+function dsDiscussTopic(overdueT, tomorrowT, stale) { // о чём предложить поговорить
+  if (overdueT.length) return 'как разобрать просрочку «' + String(overdueT[0].text || '').slice(0, 40) + '»';
+  if (tomorrowT.length) return 'что завтра главное и когда его делать';
+  if (stale.length) return 'почему «' + String(stale[0].text || '').slice(0, 40) + '» висит уже ' + longStaleDays(stale[0]) + ' дн.';
+  return 'как прошёл день и что сделать завтра лучше';
+}
+function dsChatStarter(overdueT, tomorrowT, stale) { // заготовка вопроса в чат-инпут по кнопке «Обсудить»
+  if (overdueT.length) return 'Давай разберём просрочку: «' + String(overdueT[0].text || '').slice(0, 60) + '» — как раскладываем на шаги?';
+  if (tomorrowT.length) return 'Что завтра главное и с чего начнём?';
+  if (stale.length) return '«' + String(stale[0].text || '').slice(0, 60) + '» висит уже ' + longStaleDays(stale[0]) + ' дней — почему не двигается?';
+  return 'Как прошёл день? Что улучшить завтра?';
+}
+function buildBriefDailySummary(day, doneNotes, doneMs, added, planned, mood, money, time) {
   const L = [];
-  // группировка по областям — компактный локальный фолбэк в стиле нового ИИ-саммери
-  const areaOf = n => (n.area || n.tag || '').trim();
-  const groupAreas = arr => {
-    const g = {};
-    for (const n of arr) { const a = areaOf(n) || 'Без области'; (g[a] = g[a] || []).push(n); }
-    return g;
-  };
-  const moneyRe = /(купил|куплю|купила|заплатил|заплатила|потратил|потратила|оплатил|оплатила|перевёл|перевел|перевела|внёс|внес|₽|руб)/i;
-  const moneyNotes = [...doneNotes, ...added, ...planned].filter(n => moneyRe.test(n.text || ''));
-  L.push('📊 Итог дня (' + day.split('-').reverse().join('.') + ')');
-  L.push('');
-  L.push('Добавлено ' + added.length + ', выполнено ' + doneNotes.length + (doneMs.length ? ', шагов желаний ' + doneMs.length : '') + '.');
-  const gDone = groupAreas(doneNotes), gAdd = groupAreas(added);
-  const areas = [...new Set([...Object.keys(gDone), ...Object.keys(gAdd)])];
-  if (areas.length) {
-    L.push('');
-    for (const a of areas) {
-      if (gDone[a]) L.push('✅ ' + a + ' — сделано: ' + gDone[a].map(n => n.text).join('; '));
-      if (gAdd[a]) L.push('🆕 ' + a + ' — записано: ' + gAdd[a].map(n => n.text).join('; ') + ' (планы, не выполнения)');
-    }
+  L.push('🌙 Итог дня — ' + day.split('-').reverse().join('.'));
+  // Сферы дня: тег/область записей, у которых сегодня было движение (уникально по id)
+  const seen = new Set(); const aCount = {};
+  for (const n of [...doneNotes, ...added, ...planned]) {
+    if (!n || seen.has(n.id)) continue; seen.add(n.id);
+    const a = String(n.area || n.tag || '').trim();
+    if (!a) continue; // без области — не сфера
+    aCount[a] = (aCount[a] || 0) + 1;
   }
-  if (planned.length) L.push('📅 Не успело: ' + planned.map(n => n.text).join('; ') + ' — ничего страшного, перенесём.');
-  // v87: зависшие — локальный фолбэк тоже подсказывает разбор
-  const longStale = getLongStaleNotes();
-  if (longStale.length) {
-    L.push('');
-    L.push('🔒 Висят без движения (разбери сам(а) или попроси ИИ в чате: «разбей ⟨задача⟩ на шаги»):');
-    for (const n of longStale.slice(0, 5)) {
-      L.push('  • ' + n.text + ' — висит ' + longStaleDays(n) + ' дн. Попробуй: выделить 10 минут на первый микрошаг или честно снять задачу.');
-    }
-  }
-  if (moneyNotes.length || money !== null) {
-    L.push('💰 Финансы: ' + (money !== null ? 'ручной ввод ' + money + ' ₽. ' : '') + (moneyNotes.length ? moneyNotes.map(n => n.text).join('; ') : ''));
-  }
-  L.push('⏱ Время в фокусе: ' + (time !== null ? time + ' ч' : 'не указано') + ' · 🙂 ' + (mood || 'не отмечено'));
+  const areas = Object.keys(aCount).sort((x, y) => aCount[y] - aCount[x] || x.localeCompare(y));
+  if (areas.length) L.push('Сферы дня: ' + areas.map(a => a + (aCount[a] > 1 ? ' ×' + aCount[a] : '')).join(', '));
+  L.push('Сделано ' + doneNotes.length + (doneMs.length ? ' · шагов желаний ' + doneMs.length : '') + ' · добавлено ' + added.length);
+  // Просроченное: живая очередь, не выполнено, срок уже прошёл
+  const sq = splitTodoQueue();
+  const odT = sq.overdue.slice(0, 3).map(n => '«' + String(n.text || '').slice(0, 48) + '»');
+  if (odT.length) L.push('Просрочено: ' + odT.join(', ') + (sq.overdue.length > 3 ? ' — и ещё ' + (sq.overdue.length - 3) : ''));
+  else L.push('Просроченного нет ✨');
+  // Завтра вкратце
+  if (sq.tomorrow.length) L.push('Завтра вкратце: ' + sq.tomorrow.slice(0, 3).map(n => '«' + String(n.text || '').slice(0, 48) + '»').join(', ') + (sq.tomorrow.length > 3 ? ' — и ещё ' + (sq.tomorrow.length - 3) : ''));
+  // Самое важное по задачам: срочное → важность 4–5 → давняя просрочка → голова очереди
+  const act = getTodoQueue().filter(n => !n.done);
+  const imps = act.filter(n => typeof n.importance === 'number').sort((a, b) => b.importance - a.importance);
+  let imp = null;
+  if (act.some(n => n.urgent === true)) imp = { n: act.find(n => n.urgent === true), why: '🔥 срочное' };
+  else if (imps.length && imps[0].importance >= 4) imp = { n: imps[0], why: 'важность ' + imps[0].importance + '/5' };
+  else if (sq.overdue.length) imp = { n: sq.overdue[0], why: 'давно ждёт' };
+  else { const head = sq.top.concat(sq.main)[0]; if (head) imp = { n: head, why: null }; }
+  if (imp) L.push('Важное: «' + String(imp.n.text || '').slice(0, 60) + '»' + (imp.why ? ' — ' + imp.why : ''));
+  // Приглашение к разговору — с конкретным примером, не абстрактное
+  const stale = getLongStaleNotes();
+  L.push('Хочется что-то обсудить? Например, ' + dsDiscussTopic(sq.overdue, sq.tomorrow, stale) + ' — напиши мне 🙂');
+  // Ручные ответы дня — одной короткой строкой (если введены)
+  const bits = [];
+  if (mood) bits.push('🙂 ' + mood);
+  if (money !== null) bits.push('💰 ' + money + ' ₽');
+  if (time !== null) bits.push('⏱ ' + time + ' ч');
+  if (bits.length) L.push(bits.join(' · '));
   return L.join('\n');
 }
+
+// v139: итог прямо в модалке + переход в чат для разговора («хотелось бы что-то обсудить»)
+function showDailySummaryResult(text) {
+  const res = document.getElementById('ds-result');
+  if (res) res.innerHTML = '<div style="margin-top:14px;padding:12px 14px;background:rgba(108,71,255,0.08);border:0.5px solid rgba(108,71,255,0.3);border-radius:14px;white-space:pre-wrap;font-size:13px;line-height:1.55;color:rgba(255,255,255,0.88);">' + escHtml(text) + '</div>';
+  const _go = document.getElementById('ds-go');
+  if (_go) { _go.textContent = '💬 Обсудить в чате'; _go.setAttribute('onclick', 'discussDailySummary()'); }
+  const _cn = document.getElementById('ds-cancel');
+  if (_cn) { _cn.textContent = 'Готово'; _cn.setAttribute('onclick', 'closeDailySummaryModal(false)'); }
+  try { res && res.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); } catch(e) {}
+}
+window.discussDailySummary = function() {
+  const modal = document.getElementById('daily-summary-modal');
+  if (modal) modal.classList.remove('open');
+  try { goTo('chat'); } catch(e) {}
+  const inp = document.getElementById('chat-input');
+  if (inp && dsState.topic) {
+    inp.value = dsState.topic;
+    try { inp.dispatchEvent(new Event('input', { bubbles: true })); } catch(e) {}
+    setTimeout(() => { try { inp.focus(); } catch(e) {} }, 400);
+  }
+};
 
 async function generateDailySummary() {
   const btn = document.getElementById('ds-go');
@@ -13761,81 +13834,16 @@ async function generateDailySummary() {
   // Ответы пользователя (деньги/время/настроение) — в Firestore, пригодятся ИИ-психологу
   try { await setDoc(uDocRef('meta', 'ds_' + day), { mood: mood || null, money, time, savedAt: new Date().toISOString() }); } catch(e) {}
 
-  let text;
-  try {
-    // ── группировка по областям жизни (разметка второго мозга) ──
-    const areaOf = n => (n.area || n.tag || '').trim();
-    const groupAreas = arr => {
-      const g = {};
-      for (const n of arr) { const a = areaOf(n) || 'Без области'; (g[a] = g[a] || []).push(n); }
-      return g;
-    };
-    const mk = (arr, f) => arr.map(f).join('\n') || '—';
-    const gDone = groupAreas(doneNotes), gAdd = groupAreas(added), gPlan = groupAreas(planned);
-    const areaNames = [...new Set([...Object.keys(gDone), ...Object.keys(gAdd), ...Object.keys(gPlan)])].filter(a => a !== 'Без области');
-    const areasText = areaNames.length
-      ? areaNames.map(a => {
-          const d = (gDone[a] || []).map(n => '«' + String(n.text || '').slice(0, 70).replace(/\s+/g, ' ').trim() + '»').join(', ') || 'нет';
-          const ad = (gAdd[a] || []).map(n => '«' + String(n.text || '').slice(0, 70).replace(/\s+/g, ' ').trim() + '»').join(', ') || 'нет';
-          const p = (gPlan[a] || []).map(n => '«' + String(n.text || '').slice(0, 70).replace(/\s+/g, ' ').trim() + '»').join(', ') || 'нет';
-          return 'СФЕРА «' + a + '» — сделано: ' + d + ' | добавлено (планы): ' + ad + ' | не выполнено: ' + p;
-        }).join('\n')
-      : '—';
-    // ── финансовые операции из текста записей за день ──
-    const moneyRe = /(купил|куплю|купила|заплатил|заплатила|потратил|потратила|оплатил|оплатила|перевёл|перевел|перевела|внёс|внес|₽|\d[\d\s.,]*\s*(руб|₽))/i;
-    const moneyNotes = [...doneNotes, ...added, ...planned].filter(n => moneyRe.test(n.text || ''));
-    const moneyText = moneyNotes.length
-      ? moneyNotes.map(n => '- ' + String(n.text || '').slice(0, 120).replace(/\s+/g, ' ').trim()).join('\n')
-      : '—';
-    const systemPrompt = `Ты — персональный ИИ-ассистент «Хэзэнштейн». Подводишь итог дня ${day}.
-Тебе даны списки, УЖЕ проверенные по статусам. ЖЕЛЕЗНЫЕ ПРАВИЛА:
-1. «Сделано» — ТОЛЬКО записи из СДЕЛАНО / столбца «сделано» по сферам (их статус «выполнено» подтверждён).
-2. Всё из ДОБАВЛЕНО / «добавлено» и ПЛАН / «не выполнено» — это ЗАПЛАНИРОВАНО, а НЕ выполнено. НИКОГДА не называй их сделанными.
-3. Если выполнено 0 — честно так и скажи. Не приукрашивай. Не выдумывай события и суммы, которых нет в данных.
-4. Двойной счёт запрещён: похожие записи об одном событии (пересказ + оригинал) считай ОДНИМ; ручные цифры пользователя (деньги/время, если ввёл) — главные, не пересчитывай их заново из текста.
-5. ПРИОРИТЕТЫ: в каждом блоке первым — самое важное (крупные суммы, важность 4–5, здоровье, семья), мелочь — одной фразой в конце или опусти. Итог не должен начинаться с мелочи.
-6. Цифры: перечисли отрезки/записи ПОТОМ суммируй; заявленное количество должно совпадать с перечисленным.
-СТРУКТУРА ОТВЕТА (сама суть, без канцелярита):
-📊 Итог дня (${day})
-1️⃣ ЦИФРЫ одной строкой: добавлено N, выполнено M, шагов желаний K (если были). НЕ перечисляй все заметки подряд — только количество.
-2️⃣ ПО СФЕРАМ: возьми сферы из списка СФЕРЫ. По каждой непустой сфере — 1-2 предложения: что сделано, что записано. Сфера с одной записью — одна фраза. Пустых сфер и «Без области» не упоминай вообще. Если сфер нет — пропусти этот блок.
-3️⃣ ЧТО НЕ ВЫШЛО: из НЕ ВЫПОЛНЕНО — мягко, без упрёков, 1 фраза (упомяни только главное, не все пункты). Ничего не висит — пропусти.
-4️⃣ 🔍 ЗАВИСШИЕ: для КАЖДОЙ задачи из списка ЗАВИСШИЕ (висят дольше 14 дней) — 2-3 предложения: мягкая гипотеза, почему она не делается (слишком большая и неясная? страшно браться? уже не актуальна? ждёт чего-то?) и затем 2-4 КОНКРЕТНЫХ маленьких шага для старта (каждый — на 5-30 минут, начинай с глагола: «написать…», «позвонить…», «разбить на 3 пункта в редакторе»). Напомни, что шаги можно добавить подзадачами в карточке задачи. Список пуст — пропусти блок.
-5️⃣ 💰 ДЕНЬГИ: если в ДЕНЬГИ-операциях или ручном вводе есть суммы — расскажи в 1-2 предложениях, куда ушли. Ничего нет — пропусти блок.
-6️⃣ 🌟 ИТОГ: 2-3 предложения ВДОХНОВЛЯЮЩЕГО ИТОГА: поддержи человека, подчеркни продвижение к желаниям (шаги желаний), дай мягкий позитивный вектор на завтра. Без пафоса, без фальши, на «ты».
-🙂 Настроение и ⏱ фокус — если указаны, впиши одной короткой строкой.
-Объём 110-200 слов. Пиши тепло и живо.`;
-    const userPrompt = `ЦИФРЫ: добавлено ${added.length}, выполнено ${doneNotes.length}${doneMs.length ? ', шагов желаний ' + doneMs.length : ''}${planned.length ? ', не выполнено ' + planned.length : ''}.
-
-СФЕРЫ (по областям жизни):
-${areasText}
-
-НЕ ВЫПОЛНЕНО (план на день, висит):
-${mk(planned, n => '- ' + String(n.text || '').slice(0, 80).replace(/\s+/g, ' ').trim())}
-
-ЗАВИСШИЕ (в тудушке дольше ${LONG_STALE_DAYS} дней, без будущего срока — разбери каждый):
-${(() => { const ls = getLongStaleNotes(); return ls.length ? ls.map(n => { const kids = notes.filter(k => k.parentId === n.id); return '- «' + String(n.text || '').slice(0, 90).replace(/\s+/g, ' ').trim() + '» (висит ' + longStaleDays(n) + ' дн.' + (n.tag ? ', сфера: ' + n.tag : '') + (n.importance ? ', важность ' + n.importance + '/5' : '') + ', подзадач: ' + kids.length + ')'; }).join('\n') : '— (зависших нет)'; })()}
-
-ШАГИ ЖЕЛАНИЙ (выполнены):
-${mk(doneMs, m => '- ' + m.text + ' (желание: ' + m.wish + ')')}
-
-ДЕНЬГИ-операции из записей за день:
-${moneyText}
-
-💰 Ручной ввод потрачено: ${money !== null ? money + ' ₽' : 'не указано'}
-⏱ Время в фокусе: ${time !== null ? time + ' ч' : 'не указано'}
-🙂 Настроение: ${mood || 'не отмечено'}`;
-    text = await callPolzaAI([
-      { role: 'system', content: systemPrompt },
-      { role: 'user', content: userPrompt }
-    ], { max_tokens: 800, temperature: 0.7 });
-  } catch(e) { console.error('[Daily Summary] AI error:', e); }
-  if (!text) text = buildLocalDailySummary(day, doneNotes, doneMs, added, planned, mood, money, time);
+  // v139: итог краткий и ЛОКАЛЬНЫЙ — без ИИ (фидбек: «чото не понял что произошло… должен
+  // быть кратким не имшным»; жалобы v135: «ИИ очень плохо подводит итоги»). Честные статусы
+  // + живая очередь → фиксированные строки. Тема для «Обсудить» — из тех же данных.
+  const sqDS = splitTodoQueue();
+  dsState.topic = dsChatStarter(sqDS.overdue, sqDS.tomorrow, getLongStaleNotes());
+  const text = buildBriefDailySummary(day, doneNotes, doneMs, added, planned, mood, money, time);
 
   try { await addChatMessage('assistant', text); } catch(e) {}
-  window.closeDailySummaryModal(false);
-  setStatus('📊 Итог дня готов — смотри чат 💬', 4000);
-  if (btn) { btn.disabled = false; btn.textContent = 'Подвести итог'; }
+  showDailySummaryResult(text); // итог прямо здесь + кнопка «💬 Обсудить в чате»
+  if (btn) { btn.disabled = false; btn.textContent = '💬 Обсудить в чате'; }
 }
 window.generateDailySummary = generateDailySummary;
 window.openDailySummaryModal = openDailySummaryModal; // тесты
@@ -16590,7 +16598,7 @@ async function extractIcsFromZip(buf) {
 window.extractIcsFromZip = extractIcsFromZip;
 
 // Файл .ics (или .zip от Google) → кандидаты импорта (с дедупликацией) → общая превью-модалка
-const APP_VERSION = 'v138'; // v138: верх очереди больше не заморожен (фидбек «тащу карточку на самый верх а она не перемещается, тащу верхнюю карточку вниз и она тоже не перемещается»): дроп выше своей зоны = подъём в топ (lift, как ▲, до конца дня); поднятую карточку можно утащить вниз — lift снимается, честная посадка в своём блоке; карточка, одна в своей зоне, при драге вниз получает честный тост вместо немого return (раньше верх казался сломанным)
+const APP_VERSION = 'v139'; // v138: верх очереди больше не заморожен (фидбек «тащу карточку на самый верх а она не перемещается, тащу верхнюю карточку вниз и она тоже не перемещается»): дроп выше своей зоны = подъём в топ (lift, как ▲, до конца дня); поднятую карточку можно утащить вниз — lift снимается, честная посадка в своём блоке; карточка, одна в своей зоне, при драге вниз получает честный тост вместо немого return (раньше верх казался сломанным). v139: поднятые ▲ теперь НАД срочными — «если перетащил на самый верх, срочное тоже подвигается»; итог дня — краткий локальный (сферы/просрочено/завтра/важное/«обсудить?») без ИИ
 window.APP_VERSION = APP_VERSION;
 try { const _vc = document.getElementById('ver-chip'); if (_vc) _vc.textContent = APP_VERSION; } catch(e) {}
 window.handleIcsFile = async function(file) {
