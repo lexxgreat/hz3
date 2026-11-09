@@ -748,9 +748,9 @@ body.todo-mouse-dragging *{cursor:grabbing !important}
 .rem-plaque-addrow{display:flex;justify-content:center;padding-top:7px;pointer-events:auto}
 .rem-plaque-addbtn{background:rgba(255,209,102,0.08);border:0.5px solid rgba(255,209,102,0.3);border-radius:999px;padding:6px 14px;color:rgba(255,224,138,0.9);font-size:11px;font-weight:600;cursor:pointer;font-family:Inter,sans-serif;-webkit-tap-highlight-color:transparent;transition:background .2s}
 .rem-plaque-addbtn:hover{background:rgba(255,209,102,0.15)}
-/* v136: цитата на день — спокойный текст с переносами (не однострочный эллипсис) */
-.quote-plaque-text{font-size:12.5px;line-height:1.6;color:rgba(255,242,210,0.78);font-family:Inter,sans-serif;white-space:normal;font-style:italic;padding:2px 0 1px}
-.quote-plaque-author{font-size:10.5px;color:rgba(255,209,102,0.55);font-family:Inter,sans-serif;text-align:right;margin-top:5px;font-weight:600}
+/* v140: цитата дня в утренней модалке — спокойный текст с переносами, длинные цитаты скроллятся */
+.quote-modal-text{font-size:13.5px;line-height:1.65;color:rgba(255,242,210,0.88);font-family:Inter,sans-serif;white-space:normal;font-style:italic;max-height:38vh;overflow-y:auto;padding:2px 2px 1px;text-align:left}
+.quote-modal-author{font-size:11.5px;color:rgba(255,209,102,0.6);font-family:Inter,sans-serif;text-align:right;margin-top:10px;font-weight:600}
 .rem-card .rem-star{flex-shrink:0;font-size:12px;color:#FFD166;padding-top:1.5px;line-height:1}
 .rem-card .rem-text{flex:1;min-width:0;font-size:13px;line-height:1.5;color:rgba(255,255,255,0.86);word-break:break-word;font-family:'Inter',sans-serif}
 .rem-card .rem-del{flex-shrink:0;background:none;border:none;color:rgba(255,255,255,0.28);font-size:14px;cursor:pointer;padding:0 0 0 6px;line-height:1;-webkit-tap-highlight-color:transparent}
@@ -1395,11 +1395,10 @@ body[data-theme="business"] .cap-mic.recording{box-shadow:0 0 10px rgba(140,176,
       </button>
     </div>
 
-    <!-- v136: «Цитата на день» (Аму Мом) — утренняя встреча вместо старого напоминания
-         «Помнить всегда» (фидбек: «отсюда брать цитаты для встречания утром… цитата на день»).
-         Тихая плашка в стиле v131, показывается триггером первого открытия за день,
-         ✕ прячет, назавтра — новая цитата. Наполняется showQuotePlaque. -->
-    <div id="quote-plaque" style="display:none;padding:8px 16px 0;" aria-live="polite"></div>
+    <!-- v140: «Цитата дня» переехала из тихой плашки (v136) в отдельное всплывающее окно
+         при ПЕРВОМ открытии за день, кнопки «Ок» и «Поделиться» (showQuoteModal).
+         Каждая цитата показывается человеку ровно один раз (курсор hz3_quote_cursor):
+         «если цитата показалась, она потом уже больше не показывалась». -->
 
     <!-- v136: область «Помнить всегда» — на месте убранного поля тегов (фидбек: «вместо поля
          с тегами на главной сделать область с помнить всегда с возможностью скрыть или добавить,
@@ -9428,10 +9427,10 @@ function hintChain(list) {
 let _squeezeSoft = false;   // focus-soft спрятан спасателем
 let _squeezeReg = false;    // reg-полоска спрятана спасателем
 let _squeezeHint = null;    // аргументы hint-карточки, спрятанной спасателем
-// v136: на главном вернулись золотая плашка «Желания», цитата дня и область «Помнить всегда»
-// (+~150px) — спасатель учится прятать и их: цитата (мимолётная) → область → золотая плашка
-// (навигация к желаниям — последней), возвращая в обратном порядке, когда место освободилось.
-let _squeezeQuote = false;  // цитата-плашка спрятана спасателем
+// v136: на главном вернулись золотая плашка «Желания» и область «Помнить всегда»
+// (+~150px) — спасатель умеет прятать их: область → золотая плашка (навигация к
+// желаниям — последней), возвращая в обратном порядке, когда место освободилось.
+// v140: цитата дня переехала в утреннюю модалку — её ветка в спасателе снята.
 let _squeezeRem = false;    // область «Помнить всегда» спрятана спасателем
 let _squeezeWish = false;   // золотая плашка «Желания» спрятана спасателем
 let _activeHintArgs = null; // аргументы активной hint-карточки (для возврата)
@@ -9471,12 +9470,7 @@ function enforceMainButtonSpace() {
   // кнопке (130px) тесно даже с спрятанной подписью (запас 6px на округление) —
   // прячем карточки по приоритету, пока не освободится
   while (chaosZoneH() < 136 && guard++ < 8) {
-    // v136: мимолётная цитата дня — прячется первой из новых блоков
-    if (!_squeezeQuote) {
-      const q = document.getElementById('quote-plaque');
-      if (q && q.style.display !== 'none' && q.innerHTML.trim()) { _squeezeQuote = true; q.style.display = 'none'; continue; }
-    }
-    // v136: область «Помнить всегда» — тихий контент, прячется второй
+    // v136: область «Помнить всегда» — тихий контент, прячется первой
     if (!_squeezeRem) {
       const ra = document.getElementById('remember-area');
       if (ra && ra.style.display !== 'none' && ra.innerHTML.trim()) { _squeezeRem = true; ra.style.display = 'none'; continue; }
@@ -9505,7 +9499,8 @@ function enforceMainButtonSpace() {
   // запас: после возврата зоне остаётся ≥145 — повторного прятания нет, осцилляция
   // невозможна. v136: плашки возвращаются уже в полосе 220..300 (раньше полоса
   // [136..300] была «застрявшей» — спрятанное ждало редких resize-ов). Порядок
-  // обратный прятанию: hint → soft → reg → золотая плашка → область → цитата.
+  // обратный прятанию: hint → soft → reg → золотая плашка → область (v140: цитаты в
+  // списке больше нет — она живёт в утренней модалке, спасателя не касается).
   let _z = chaosZoneH();
   let rguard = 0;
   while (rguard++ < 8) {
@@ -9525,11 +9520,6 @@ function enforceMainButtonSpace() {
       returned = true;
     } else if (_squeezeRem && _z > 235) { // область ~85px: 235-85=150 ≥ 136
       _squeezeRem = false; _remAreaSig = null; renderRememberArea(); returned = true; // sig сброшен — перерисуется и покажется
-    } else if (_squeezeQuote && _z > 260) { // цитата до ~110px: 260-110=150 ≥ 136
-      _squeezeQuote = false;
-      const q = document.getElementById('quote-plaque');
-      if (q && q.innerHTML.trim()) q.style.display = 'block';
-      returned = true;
     } else if (_squeezeSoft && !(pendingTagSuggestions && pendingTagSuggestions.length)) {
       _squeezeSoft = false; // контент soft-карточки исчез — флаг больше не нужен
     }
@@ -10460,7 +10450,7 @@ function rememberGreet() {
 function maybeShowRememberPopup() {
   if (!remModalAllowed()) return;
   if (rememberShownToday()) return;
-  if (document.getElementById('remember-daily-open') || document.getElementById('quote-plaque-card')) return;
+  if (document.getElementById('remember-daily-open') || document.getElementById('quote-modal')) return;
   // v122: ждём ЗАГРУЗКИ notes. Раньше попап вызывался по таймеру 3.6с после логина, и если
   // сеть была медленной (утро, телефон только проснулся), rememberList() был ещё пуст —
   // день помечался «показано», и карточка не выскочила ВЕСЬ день. Теперь пустой список ДО
@@ -10506,13 +10496,44 @@ function showRememberDaily(items) {
   ov.addEventListener('click', (e) => { if (e.target === ov) closeRememberDaily(); });
   return;
   }
-  showQuotePlaque(); // v136: прод-путь — «Цитата на день» вместо старого напоминания
+  showQuoteModal(); // v140: прод-путь — всплывающее окно «Цитата дня» с «Ок» и «Поделиться»
 }
 
-// ── v136: «Цитата на день» — утренняя встреча (Аму Мом) ──
-// Фидбек юзера: rutube «Аму Мом — книга по сознанию себя» — «отсюда брать цитаты для
-// встречания утром, вместо старого напоминания помнить всегда. Цитата на день».
-// Подлинные изречения Аму Мом: oum.ru/quotes/author/amu-mom и citaty.info/self/amu-mom.
+// ── v140: «Цитата дня» — отдельное всплывающее окно при первом открытии за день ──
+// Фидбеки юзера: «Цитату на день я хочу чтобы было как у нас до этого показывалось сообщение
+// помнить всегда. Отдельным всплывающим окном при открытии приложения первый раз за день.
+// И там кнопочка ок и поделиться» + «Добавь все и аму мом. И так чтобы если цитата показалась,
+// она потом уже больше не показывалась человеку. Потом добавим еще какие нибудь».
+// Пул: мудрое про жизнь + мечты и их исполнение от великих людей (подлинные слова, источник
+// у каждой в комментарии; блок «приписывается» — широко известные, но без достоверного
+// первоисточника — юзер выбрал взять) + прежний пул Аму Мом (v136; подлинные изречения:
+// oum.ru/quotes/author/amu-mom и citaty.info/self/amu-mom).
+const GREAT_WISDOM_QUOTES = [ // 🕯 мудрое про жизнь
+  { t: 'Пока мы откладываем жизнь, она проходит.', a: 'Сенека' }, // «Письма к Луцилию», письмо I
+  { t: 'Дело не в том, что у нас мало времени — в том, что мы много его теряем.', a: 'Сенека' }, // «О скоротечности жизни»
+  { t: 'Для счастливой жизни нужно совсем немного: всё — в тебе самом, в твоём образе мыслей.', a: 'Марк Аврелий' }, // «Размышления»
+  { t: 'Людей тревожат не сами вещи, а представления о них.', a: 'Эпиктет' }, // «Энхиридион», 5
+  { t: 'Кто знает других — умён; кто знает себя — мудр.', a: 'Лао-цзы' }, // «Дао дэ цзин», 33
+  { t: 'Не делай другому того, чего не желаешь себе.', a: 'Конфуций' }, // «Лунь юй», 15.24
+  { t: 'Быть человеком — значит быть ответственным.', a: 'Антуан де Сент-Экзюпери' }, // «Планета людей»
+  { t: 'Твоё время ограничено — не трать его, проживая чужую жизнь.', a: 'Стив Джобс' }, // речь в Стэнфорде, 2005
+  { t: 'Как хорошо, что никто не обязан ждать ни единой минуты, чтобы начать делать мир лучше.', a: 'Анна Франк' } // дневник, 26.03.1944
+];
+const GREAT_DREAM_QUOTES = [ // 🌠 мечты и их исполнение
+  { t: 'Путь в тысячу ли начинается с первого шага.', a: 'Лао-цзы' }, // «Дао дэ цзин», 64
+  { t: 'Препятствия не могут сломать меня: любое препятствие уступает упорной решимости. Кто устремлён к звезде — не изменит своего решения.', a: 'Леонардо да Винчи' }, // «Атлантический кодекс»
+  { t: 'Мы знаем, что мы есть, но не знаем, чем можем стать.', a: 'Уильям Шекспир' }, // «Гамлет», акт 4
+  { t: 'Воображение важнее знания: знание ограничено, воображение охватывает целый мир.', a: 'Альберт Эйнштейн' }, // интервью, 1929
+  { t: 'То, что ты ищешь, тоже ищет тебя.', a: 'Руми' }, // традиционная атрибуция
+  { t: 'Спорь за свои ограничения — и они наверняка станут твоими.', a: 'Ричард Бах' }, // «Иллюзии»
+  { t: 'Цель не всегда должна быть достигнута — часто она просто точка прицела.', a: 'Брюс Ли' },
+  { t: 'Следуй за своей радостью — и двери откроются там, где не открылись бы ни для кого.', a: 'Джозеф Кэмпбелл' }, // «Сила мифа»
+  { t: 'Планета есть колыбель разума, но нельзя вечно жить в колыбели.', a: 'Константин Циолковский' }, // письмо, 1911
+  { t: 'Будущее принадлежит тем, кто верит в красоту своей мечты.', a: 'Элеонора Рузвельт' }, // приписывается
+  { t: 'Все мечты сбываются, если у тебя хватит смелости идти за ними.', a: 'Уолт Дисней' }, // приписывается
+  { t: 'Я мечтаю о своей картине, а потом рисую свою мечту.', a: 'Винсент Ван Гог' }, // приписывается
+  { t: 'Всё кажется невозможным, пока не будет сделано.', a: 'Нельсон Мандела' } // приписывается
+];
 const AMU_MOM_QUOTES = [
   'Твой ум — это то, что создаёт твой рай и твой ад. Он создаёт счастье, создаёт страдания. Как только ты осознаешь силу собственного ума, твоя жизнь начнёт меняться. Будь ответственным за то, чем наполняешь ум, именно этим наполнится твоя жизнь.',
   'Представь, что случилось бы с твоим телом, если бы ты ел всё, что попадается на пути. Так и с умом — не «ешь» что попало.',
@@ -10543,36 +10564,87 @@ const AMU_MOM_QUOTES = [
   'Пока ты не примешь себя — ты ищешь кого-то другого.',
   'То, что необходимо — произойдёт.'
 ];
-const QUOTE_AUTHOR = 'Аму Мом';
-function quoteOfTheDay() { // одна цитата на день (по МСК), каждый день — новая, цикл по пулу
-  const dayNum = Number(hziDayStr().replace(/-/g, '')) || 0;
-  return AMU_MOM_QUOTES[dayNum % AMU_MOM_QUOTES.length];
+// v140: общий пул дня — великие чередуются с Аму Мом («великий → Аму Мом → великий → …»);
+// внутри «великих» мудрость про жизнь и мечты идут поочерёдно. Новые цитаты добавлять
+// ТОЛЬКО В КОНЕЦ соответствующего массива: курсор показанного идёт по индексам, вставка
+// в середину может привести к повтору уже виденной цитаты.
+const DAILY_QUOTES = (() => {
+  const g = [];
+  const life = GREAT_WISDOM_QUOTES.slice(), dream = GREAT_DREAM_QUOTES.slice();
+  while (life.length || dream.length) {
+    if (life.length) g.push(life.shift());
+    if (dream.length) g.push(dream.shift());
+  }
+  const out = [], amu = AMU_MOM_QUOTES.map(t => ({ t, a: 'Аму Мом' }));
+  let gi = 0, ai = 0;
+  while (gi < g.length || ai < amu.length) {
+    if (gi < g.length) out.push(g[gi++]);
+    if (ai < amu.length) out.push(amu[ai++]);
+  }
+  return out;
+})();
+const QUOTE_CURSOR_KEY = 'hz3_quote_cursor'; // сколько цитат уже показано этому человеку (каждая — ровно один раз)
+function quoteCursorInfo() {
+  let cur = 0;
+  try { cur = Math.max(0, Number(localStorage.getItem(QUOTE_CURSOR_KEY)) || 0); } catch (e) {}
+  return { cur, len: DAILY_QUOTES.length, idx: DAILY_QUOTES.length ? cur % DAILY_QUOTES.length : 0 };
 }
-function showQuotePlaque() {
-  const wrap = document.getElementById('quote-plaque');
-  if (!wrap) return;
-  if (_squeezeQuote) return; // v136: спасатель спрятал — не возвращаем поверх его решения
-  const q = quoteOfTheDay();
-  wrap.innerHTML = `
-    <div id="quote-plaque-card" class="rem-plaque-card">
-      <div class="rem-plaque-title">🕯 Цитата на день</div>
-      <div class="quote-plaque-text">${escHtml(q)}</div>
-      <div class="quote-plaque-author">— ${escHtml(QUOTE_AUTHOR)}</div>
-      <button class="rem-plaque-close" onclick="dismissQuotePlaque()" aria-label="Скрыть" title="Скрыть — назавтра будет новая">✕</button>
+function quoteOfTheDay() { // v140: сегодняшняя цитата — первая ещё не показанная (курсор идёт вперёд по одной в день)
+  const q = DAILY_QUOTES[quoteCursorInfo().idx];
+  return q ? q.t : 'То, что необходимо — произойдёт.';
+}
+function quoteOfDayAuthor() {
+  const q = DAILY_QUOTES[quoteCursorInfo().idx];
+  return q ? q.a : 'Аму Мом';
+}
+async function shareQuoteOfDay(qi) { // системное «поделиться», иначе — буфер обмена
+  const text = '«' + qi.t + '» — ' + qi.a;
+  try {
+    if (navigator.share) { await navigator.share({ title: 'Цитата дня', text }); return; }
+  } catch (e) { if (e && e.name === 'AbortError') return; } // юзер сам отменил системное меню — не фолбэчим
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) await navigator.clipboard.writeText(text);
+    try { showToast('Цитата скопирована 📋', 2000); } catch (e2) {}
+  } catch (e) { try { showToast('Не получилось поделиться', 2000); } catch (e2) {} }
+}
+function showQuoteModal() { // первое открытие за день (триггер maybeShowRememberPopup, механика v122/v124 общая)
+  if (document.getElementById('quote-modal')) return; // уже открыта — не дублируем
+  const qi = DAILY_QUOTES[quoteCursorInfo().idx] || { t: quoteOfTheDay(), a: quoteOfDayAuthor() };
+  const ov = document.createElement('div');
+  ov.id = 'quote-modal';
+  ov.className = 'modal-overlay';
+  ov.innerHTML = `
+    <div class="modal" style="max-width:340px;text-align:center;padding:22px 20px 18px;animation:remPop .4s ease;">
+      <div style="font-size:24px;line-height:1;">🕯</div>
+      <div style="font-size:16px;font-weight:800;color:#FFD166;font-family:Inter,sans-serif;margin-top:7px;">Цитата дня</div>
+      <div style="font-size:11.5px;color:rgba(255,255,255,0.45);margin:5px 0 13px;font-family:Inter,sans-serif;">${rememberGreet()}. Наставление на сегодня</div>
+      <div class="quote-modal-text">${escHtml(qi.t)}</div>
+      <div class="quote-modal-author">— ${escHtml(qi.a)}</div>
+      <div style="display:flex;gap:8px;margin-top:16px;">
+        <button class="modal-cancel" id="quote-modal-share" style="flex:1;">Поделиться</button>
+        <button class="modal-save" id="quote-modal-ok" style="flex:1.3;">Ок</button>
+      </div>
     </div>`;
-  wrap.style.display = 'block';
-  requestAnimationFrame(() => { const c = document.getElementById('quote-plaque-card'); if (c) c.classList.add('in'); });
-  scheduleMainSpaceCheck(); // v136: на главном появился блок — спасатель пересчитает зону
+  document.body.appendChild(ov);
+  requestAnimationFrame(() => ov.classList.add('open'));
+  ov.addEventListener('click', (e) => { if (e.target === ov) closeQuoteModal(); });
+  const _qs = ov.querySelector('#quote-modal-share'), _qo = ov.querySelector('#quote-modal-ok');
+  if (_qs) _qs.addEventListener('click', () => shareQuoteOfDay(qi));
+  if (_qo) _qo.addEventListener('click', closeQuoteModal);
+  try { localStorage.setItem(QUOTE_CURSOR_KEY, String(quoteCursorInfo().cur + 1)); } catch (e) {} // показалась ⇒ больше не покажется
 }
-function dismissQuotePlaque() {
-  const wrap = document.getElementById('quote-plaque');
-  if (wrap) { wrap.style.display = 'none'; wrap.innerHTML = ''; }
-  try { showToast('Цитата вернётся завтра 🌅', 2000); } catch(e) {}
+function closeQuoteModal() {
+  const ov = document.getElementById('quote-modal');
+  if (ov) ov.remove();
 }
 window.AMU_MOM_QUOTES = AMU_MOM_QUOTES; // тесты v136
-window.showQuotePlaque = showQuotePlaque; // тесты v136
-window.dismissQuotePlaque = dismissQuotePlaque;
+window.DAILY_QUOTES = DAILY_QUOTES; // тесты v140
+window.QUOTE_CURSOR_KEY = QUOTE_CURSOR_KEY; // тесты v140
 window.quoteOfTheDay = quoteOfTheDay;
+window.quoteOfDayAuthor = quoteOfDayAuthor;
+window.showQuoteModal = showQuoteModal;
+window.closeQuoteModal = closeQuoteModal;
+window.quoteCursorInfo = quoteCursorInfo;
 
 // ── v136: область «Помнить всегда» на главном (вместо поля тегов) ──
 // Фидбек: «вместо поля с тегами на главной сделать область с помнить всегда с возможностью
@@ -16598,7 +16670,7 @@ async function extractIcsFromZip(buf) {
 window.extractIcsFromZip = extractIcsFromZip;
 
 // Файл .ics (или .zip от Google) → кандидаты импорта (с дедупликацией) → общая превью-модалка
-const APP_VERSION = 'v139'; // v138: верх очереди больше не заморожен (фидбек «тащу карточку на самый верх а она не перемещается, тащу верхнюю карточку вниз и она тоже не перемещается»): дроп выше своей зоны = подъём в топ (lift, как ▲, до конца дня); поднятую карточку можно утащить вниз — lift снимается, честная посадка в своём блоке; карточка, одна в своей зоне, при драге вниз получает честный тост вместо немого return (раньше верх казался сломанным). v139: поднятые ▲ теперь НАД срочными — «если перетащил на самый верх, срочное тоже подвигается»; итог дня — краткий локальный (сферы/просрочено/завтра/важное/«обсудить?») без ИИ
+const APP_VERSION = 'v140'; // v139: поднятые ▲ над срочными + краткий локальный итог дня. v140: «Цитата дня» — отдельное всплывающее окно при ПЕРВОМ открытии за день с кнопками «Ок» и «Поделиться» (системное меню → буфер обмена с тостом); пул 50 цитат — мудрое про жизнь и мечты великих (Сенека, Леонардо, Шекспир, Эйнштейн, Циолковский…) чередуются с Аму Мом; каждая цитата показывается человеку ровно один раз (курсор hz3_quote_cursor); тихая плашка v136 снята
 window.APP_VERSION = APP_VERSION;
 try { const _vc = document.getElementById('ver-chip'); if (_vc) _vc.textContent = APP_VERSION; } catch(e) {}
 window.handleIcsFile = async function(file) {
@@ -17532,7 +17604,7 @@ window.__t = {
   hideActiveHint,
   forceSoftCard: (list) => { pendingTagSuggestions = list; renderFocusCard(); },
   clearSoftCard: () => { pendingTagSuggestions = null; renderFocusCard(); },
-  squeezeState: () => ({ soft: _squeezeSoft, reg: _squeezeReg, hint: _squeezeHint ? _squeezeHint.id : null, quote: _squeezeQuote, rem: _squeezeRem, wish: _squeezeWish }), // v136: + плашки
+  squeezeState: () => ({ soft: _squeezeSoft, reg: _squeezeReg, hint: _squeezeHint ? _squeezeHint.id : null, rem: _squeezeRem, wish: _squeezeWish }), // v136: плашки; v140: quote снят (цитата — утренняя модалка)
   updateRegHintBar,
   regBarForce: null, // тесты: true — показать reg-полоску в тест-режиме (читает updateRegHintBar)
   heuristicIsTask,
