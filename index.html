@@ -10451,30 +10451,40 @@ function maybeShowRememberPopup() {
   if (!remModalAllowed()) return;
   if (rememberShownToday()) return;
   if (document.getElementById('remember-daily-open') || document.getElementById('quote-modal')) return;
-  // v122: ждём ЗАГРУЗКИ notes. Раньше попап вызывался по таймеру 3.6с после логина, и если
-  // сеть была медленной (утро, телефон только проснулся), rememberList() был ещё пуст —
-  // день помечался «показано», и карточка не выскочила ВЕСЬ день. Теперь пустой список ДО
-  // первой успешной загрузки заметок — повод подождать, а не закрывать вопрос.
-  if (!window.__notesLoadedOnce) {
-    if (_remPopupTries < 240) { _remPopupTries++; setTimeout(maybeShowRememberPopup, 1500); } // v124: 40→240 (6 минут) — медленная утренняя сеть не отменяет попап
+  if (window.__rememberShowModals === true) {
+    // v141: легаси-модалка «Помнить всегда» — только для тестов (__rememberShowModals=true).
+    // Ждёт ЗАГРУЗКИ notes (v122): пустой список ДО первой успешной загрузки — повод подождать,
+    // а не закрывать вопрос (медленная утренняя сеть не отменяет попап, v124).
+    if (!window.__notesLoadedOnce) {
+      if (_remPopupTries < 240) { _remPopupTries++; setTimeout(maybeShowRememberPopup, 1500); } // v124: 40→240 (6 минут) — медленная утренняя сеть не отменяет попап
+      return;
+    }
+    const items = rememberList().filter(n => n.rememberOn !== false).slice(0, REMEMBER_ACTIVE_MAX);
+    if (!items.length) { markRememberShown(); return; } // активных нет — не дёргаем, попробуем завтра
+    if (document.querySelector('.modal-overlay.open')) {
+      if (_remPopupTries < 400) { _remPopupTries++; setTimeout(maybeShowRememberPopup, 1500); } // v124: 60→400 — ждём тишины дольше
+      return;
+    }
+    markRememberShown();
+    showRememberDaily(items);
     return;
   }
-  const items = rememberList().filter(n => n.rememberOn !== false).slice(0, REMEMBER_ACTIVE_MAX);
-  // v136: цитате на день правила не нужны — проверка активных только для легаси-модалки (тесты)
-  if (window.__rememberShowModals === true && !items.length) { markRememberShown(); return; } // активных нет — не дёргаем, попробуем завтра
+  // v141: прод — «Цитата дня» всплывающим окном при первом открытии за день
+  maybeShowQuotePopup();
+}
+function maybeShowQuotePopup() {
+  if (rememberShownToday()) return; // прямые вызовы из тика/visibilitychange — дёшево и надёжно
   // другие стартовые модалки (регистрация, итог дня, офферы) важнее — дождёмся тишины
   if (document.querySelector('.modal-overlay.open')) {
-    if (_remPopupTries < 400) { _remPopupTries++; setTimeout(maybeShowRememberPopup, 1500); } // v124: 60→400 — ждём тишины дольше
+    if (_remPopupTries < 400) { _remPopupTries++; setTimeout(maybeShowQuotePopup, 1500); } // v124: ждём тишины дольше
     return;
   }
-  markRememberShown();
-  showRememberDaily(items);
+  markRememberShown(); // пометка дня — только перед реальным показом (регресс v122); цитата от notes не зависит
+  showQuoteModal();
 }
 function showRememberDaily(items) {
-  // v131: в проде ежедневный попап заменён ТИХОЙ ПЛАШКОЙ на главной (фидбек юзера:
-  // «помнить всегда пусть будет на главной, какой-то менее яркой плашкой чем главная задача,
-  // ненажимаемой, с прозрачным крестиком, каждый день будет появляться»). Легаси-модалка
-  // остаётся для тестов (__rememberShowModals=true) — вся механика дня (v122/v124) общей.
+  // v141: легаси-модалка «Помнить всегда» — только для тестов (__rememberShowModals=true);
+  // в проде показывается попап «Цитата дня» (maybeShowQuotePopup → showQuoteModal).
   if (window.__rememberShowModals === true) {
     const stage = _hzi ? hziStageOf(hziLevelOf(_hzi.xpMax || _hzi.xp)) : 1;
   const ov = document.createElement('div');
@@ -10496,7 +10506,7 @@ function showRememberDaily(items) {
   ov.addEventListener('click', (e) => { if (e.target === ov) closeRememberDaily(); });
   return;
   }
-  showQuoteModal(); // v140: прод-путь — всплывающее окно «Цитата дня» с «Ок» и «Поделиться»
+  showQuoteModal(); // v140: прод-путь (не используется с v141 — прод-ветка ушла в maybeShowQuotePopup)
 }
 
 // ── v140: «Цитата дня» — отдельное всплывающее окно при первом открытии за день ──
@@ -10607,7 +10617,7 @@ async function shareQuoteOfDay(qi) { // системное «поделитьс�
     try { showToast('Цитата скопирована 📋', 2000); } catch (e2) {}
   } catch (e) { try { showToast('Не получилось поделиться', 2000); } catch (e2) {} }
 }
-function showQuoteModal() { // первое открытие за день (триггер maybeShowRememberPopup, механика v122/v124 общая)
+function showQuoteModal() { // попап «Цитата дня» — первое открытие за день (триггер maybeShowQuotePopup, механика v122/v124 общая)
   if (document.getElementById('quote-modal')) return; // уже открыта — не дублируем
   const qi = DAILY_QUOTES[quoteCursorInfo().idx] || { t: quoteOfTheDay(), a: quoteOfDayAuthor() };
   const ov = document.createElement('div');
@@ -10717,6 +10727,7 @@ window.rememberStartEdit = rememberStartEdit;
 window.rememberCancelEdit = rememberCancelEdit;
 window.closeRememberDaily = closeRememberDaily;
 window.maybeShowRememberPopup = maybeShowRememberPopup;
+window.maybeShowQuotePopup = maybeShowQuotePopup; // v141: прод-ветка цитаты (не ждёт notes)
 // v124: триггер НЕ только на холодном старте. PWA обычно ВОЗОБНОВАЕТСЯ из фона (процесс жив,
 // страница не перезагружается) — таймер 3.6с после логина давно отработал, и попап не выскакивал
 // весь день (фидбек: «опять не выскочило»). Теперь: возврат в приложение + тик раз в минуту +
@@ -16670,7 +16681,7 @@ async function extractIcsFromZip(buf) {
 window.extractIcsFromZip = extractIcsFromZip;
 
 // Файл .ics (или .zip от Google) → кандидаты импорта (с дедупликацией) → общая превью-модалка
-const APP_VERSION = 'v140'; // v139: поднятые ▲ над срочными + краткий локальный итог дня. v140: «Цитата дня» — отдельное всплывающее окно при ПЕРВОМ открытии за день с кнопками «Ок» и «Поделиться» (системное меню → буфер обмена с тостом); пул 50 цитат — мудрое про жизнь и мечты великих (Сенека, Леонардо, Шекспир, Эйнштейн, Циолковский…) чередуются с Аму Мом; каждая цитата показывается человеку ровно один раз (курсор hz3_quote_cursor); тихая плашка v136 снята
+const APP_VERSION = 'v141'; // v140: «Цитата дня» — отдельное всплывающее окно при ПЕРВОМ открытии за день с кнопками «Ок» и «Поделиться» (системное меню → буфер обмена с тостом); пул 50 цитат — мудрое про жизнь и мечты великих (Сенека, Леонардо, Шекспир, Эйнштейн, Циолковский…) чередуются с Аму Мом; каждая цитата показывается человеку ровно один раз (курсор hz3_quote_cursor); тихая плашка v136 снята
 window.APP_VERSION = APP_VERSION;
 try { const _vc = document.getElementById('ver-chip'); if (_vc) _vc.textContent = APP_VERSION; } catch(e) {}
 window.handleIcsFile = async function(file) {
